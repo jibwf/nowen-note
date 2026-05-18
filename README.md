@@ -123,6 +123,17 @@ QQ 群：`1093473044`
 
 > 最近 5 个版本的更新内容，完整历史见 [CHANGELOG.md](./CHANGELOG.md)。
 
+### v1.1.1 - 2026-05-18
+
+### ✨ 新增
+
+- **mobile**: 移动端编辑器体验大改造 + 修复输入回退/Failed to fetch/点笔记没反应 (10b3e59)
+- **backup**: P0~P1 backup/export/import improvements (0764826)
+
+### 🐛 修复
+
+- **ai**: scope knowledge-base notebook by workspace on import (9fd5138)
+
 ### v1.1.0 - 2026-05-15
 
 ### ✨ 新增
@@ -255,12 +266,5 @@ QQ 群：`1093473044`
 ### 🔧 其他
 
 - **clipper**: support Chrome/Edge/Firefox packaging + release v0.1.1 artifacts (10b36d2)
-
-### v1.0.35 - 2026-05-11
-
-### 🐛 修复
-
-- **db**: 修复老库启动崩溃 SqliteError: no such column: workspaceId (d445c10)
-- **release**: .fpk 产物只收集当前版本，避免 dist-fpk 历史堆积误传 (4e3bf3b)
 
 <!-- CHANGELOG:END -->

@@ -12,6 +12,18 @@
 
 <!-- ADD_NEW_HERE -->
 
+## v1.1.1 - 2026-05-18
+
+### ✨ 新增
+
+- **mobile**: 移动端编辑器体验大改造 + 修复输入回退/Failed to fetch/点笔记没反应 (10b3e59)
+- **backup**: P0~P1 backup/export/import improvements (0764826)
+
+### 🐛 修复
+
+- **ai**: scope knowledge-base notebook by workspace on import (9fd5138)
+
+
 ## v1.1.0 - 2026-05-15
 
 ### ✨ 新增

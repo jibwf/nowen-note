@@ -22,5 +22,6 @@ fnpack-1.2.1-*
 
 # 本地导入测试样本（用户私人数据，不应入库）
 docs/samples/
+*.note.attach/
 
 

@@ -317,7 +317,11 @@ app.post("/import", async (c) => {
         }
       }
 
-      imported.push({ id, title: note.title, notebookId: targetId });
+      // 返回 version 让前端在后续 PUT /notes/:id 时能正确传入（H4 乐观锁强校验
+      //   title/content/contentText 必须带 version），避免有道云导入等链路在
+      //   "占位笔记 → 上传附件 → 回填正文"第三步因漏 version 被 400。
+      //   新建笔记 notes.version DEFAULT 1，这里直接写死 1。
+      imported.push({ id, title: note.title, notebookId: targetId, version: 1 });
     }
   });
   tx();

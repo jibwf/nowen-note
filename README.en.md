@@ -123,6 +123,12 @@ If this project helps you, feel free to scan the QR code and buy the author a co
 
 > 最近 5 个版本的更新内容，完整历史见 [CHANGELOG.md](./CHANGELOG.md)。
 
+### v1.1.3 - 2026-05-20
+
+### ✨ 新增
+
+- **trash**: 笔记本删除改为软删，回收站恢复自动还原祖先笔记本链 (aeba393)
+
 ### v1.1.2 - 2026-05-19
 
 ### ✨ 新增
@@ -253,15 +259,5 @@ If this project helps you, feel free to scan the QR code and buy the author a co
 ### 🔧 其他
 
 - **clipper**: release v0.1.2 (01ebf0c)
-
-### v1.0.37 - 2026-05-12
-
-### ✨ 新增
-
-- AI 批量归类加确认面板；剪藏来源用完整 URL；版本提示按版本号去重 (d6b30bd)
-
-### 🐛 修复
-
-- **android**: 修复键盘弹起后输入框下方一大片白色空白 (35cfb74)
 
 <!-- CHANGELOG:END -->

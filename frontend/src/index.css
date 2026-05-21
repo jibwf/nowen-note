@@ -2232,3 +2232,84 @@ html[data-electron="darwin"][data-fullscreen="1"] main::before {
 
 
 
+/* ===== 作者感言 Modal 专属排版微调 =====
+ * 复用 .shared-note-content 自给自足的基础排版，再为长文阅读场景做几处增强：
+ *   - 主标题（H1）更大、靠下加一道淡描边，强化"封面感"
+ *   - H2 前面留更多呼吸空间，做章节切分
+ *   - blockquote 改成左侧色条 + 浅底，让"副标题/题记"更醒目
+ *   - <hr> 用渐变虚线，避免 Tailwind preflight 重置后看不见
+ *   - <strong> 借品牌色，跟正文区分但不喧宾夺主
+ */
+.author-story-content {
+  font-size: 14.5px;
+  line-height: 1.85;
+}
+.author-story-content h1 {
+  font-size: 1.5em;
+  text-align: left;
+  margin: 0.2em 0 0.8em;
+  padding-bottom: 0.55em;
+  border-bottom: 1px solid rgb(228 228 231 / 0.8); /* zinc-200 */
+}
+.dark .author-story-content h1 {
+  border-bottom-color: rgb(63 63 70 / 0.6); /* zinc-700 */
+}
+.author-story-content h2 {
+  font-size: 1.18em;
+  margin: 2em 0 0.7em;
+}
+.author-story-content blockquote {
+  margin: 1em 0 1.4em;
+  padding: 0.6em 1em;
+  border-left: 3px solid var(--color-accent-primary, #6366f1);
+  background: rgb(99 102 241 / 0.06);
+  border-radius: 0 6px 6px 0;
+  color: rgb(82 82 91); /* zinc-600 */
+  font-style: normal;
+}
+.dark .author-story-content blockquote {
+  background: rgb(99 102 241 / 0.1);
+  color: rgb(212 212 216); /* zinc-300 */
+}
+.author-story-content blockquote p {
+  margin: 0.25em 0;
+}
+.author-story-content hr {
+  border: none;
+  height: 1px;
+  margin: 2em 0;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgb(161 161 170 / 0.4) 20%,
+    rgb(161 161 170 / 0.4) 80%,
+    transparent
+  );
+}
+.author-story-content strong {
+  color: var(--color-accent-primary, #6366f1);
+  font-weight: 600;
+}
+.dark .author-story-content strong {
+  color: #a5b4fc; /* indigo-300，深色模式下加亮一档 */
+}
+/* 内联代码：让 nowen-note / 群名 QQ 号一类的标识更显眼 */
+.author-story-content :not(pre) > code {
+  background: rgb(244 244 245); /* zinc-100 */
+  color: rgb(99 102 241);
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+  font-size: 0.88em;
+}
+.dark .author-story-content :not(pre) > code {
+  background: rgb(39 39 42); /* zinc-800 */
+  color: #a5b4fc;
+}
+/* 列表项给一点点间距，长文阅读不挤 */
+.author-story-content ol > li,
+.author-story-content ul > li {
+  margin: 0.4em 0;
+}
+
+
+

@@ -82,6 +82,9 @@
   },
   "sidebar": {
     "newNote": "New Note",
+    "importWordNote": "Import Word Document",
+    "importUrlNote": "Import Article from URL",
+    "importUrlPrompt": "Paste a WeChat article URL (https://mp.weixin.qq.com/s/...)",
     "newSubNotebook": "New Sub-Notebook",
     "railMode": {
       "switchTo": {
@@ -1029,6 +1032,22 @@
     "label": "Language",
     "zh": "简体中文",
     "en": "English"
+  },
+  "urlImport": {
+    "title": "Import From URL",
+    "description": "Paste a WeChat public-account article link (mp.weixin.qq.com/s/...). The article body is fetched, layout preserved, and inline images downloaded into your local attachment library.",
+    "urlLabel": "Article URL",
+    "urlRequired": "Please enter an article URL",
+    "unsupportedUrl": "Only WeChat public-account article links are supported for now (mp.weixin.qq.com/s/...)",
+    "autoCreateNotebook": "Auto-create \"Imported Articles\"",
+    "importing": "Fetching and importing...",
+    "importButton": "Import Article",
+    "importedAgain": "Import another",
+    "importSuccess": "Imported: {{title}}",
+    "importFailed": "Import failed",
+    "imagesDownloaded": "Downloaded {{count}} image(s) to attachments",
+    "imagesFailed": "{{count}} image(s) failed; original URLs kept",
+    "openNote": "Open Note"
   },
   "miCloud": {
     "title": "Mi Cloud Import",

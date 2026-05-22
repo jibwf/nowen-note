@@ -1289,6 +1289,26 @@ export const api = {
       body: JSON.stringify({ notes, notebookId }),
     }),
 
+  // URL 导入：当前仅支持微信公众号文章
+  //   - 带当前 workspaceId（个人空间不带），让导入的笔记落到正确的空间
+  //   - 后端会顺手把文章里的图片下载到 attachments 目录，url 改写为 /api/attachments/<id>
+  urlImport: (url: string, notebookId?: string) => {
+    const ws = getCurrentWorkspace();
+    const qs = ws && ws !== "personal" ? `?workspaceId=${encodeURIComponent(ws)}` : "";
+    return request<{
+      success: boolean;
+      noteId: string;
+      title: string;
+      author?: string;
+      publishDate?: string;
+      notebookId: string;
+      images: { downloaded: number; failed: number };
+    }>(`/url-import${qs}`, {
+      method: "POST",
+      body: JSON.stringify({ url, notebookId }),
+    });
+  },
+
   // Mind Maps
   // Y4: 与 tasks/diary 一致——"集合"接口自动带当前 workspaceId（personal 不带），
   //   "按 id"接口（get/update/delete）不带，后端按行自带的 workspaceId 做 ACL。

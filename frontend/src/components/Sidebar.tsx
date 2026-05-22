@@ -6,7 +6,7 @@ import {
   Settings, LogOut, FilePlus, FolderPlus, Edit2, X, BrainCircuit,
   Sparkles, NotebookPen, Smile, GripVertical,
   FolderInput, Check, Home, Download, FolderOpen,
-  Columns2, Columns3, FileType2,
+  Columns2, Columns3, FileType2, Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,7 @@ import { Notebook, ViewMode, WorkspaceFeatures } from "@/types";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 import { toast } from "@/lib/toast";
+import { prompt as appPrompt } from "@/components/ui/confirm";
 
 /* ===== Emoji 图标选择器 ===== */
 const EMOJI_GROUPS = [
@@ -706,6 +707,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
     const items: ContextMenuItem[] = [
       { id: "new_note", label: t('sidebar.newNote'), icon: <FilePlus size={14} /> },
       { id: "new_word_note", label: t('sidebar.importWordNote') || "导入 Word 文档", icon: <FileType2 size={14} /> },
+      { id: "new_url_note", label: t('sidebar.importUrlNote') || "导入公众号文章", icon: <Link2 size={14} /> },
       { id: "new_sub", label: t('sidebar.newSubNotebook'), icon: <FolderPlus size={14} /> },
       { id: "sep1", label: "", separator: true },
       { id: "change_icon", label: t('sidebar.changeIcon'), icon: <Smile size={14} /> },
@@ -1032,6 +1034,65 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
         } catch (err: any) {
           const { toast } = await import("@/lib/toast");
           toast.error(err?.message || "导入 Word 文档失败");
+        }
+        break;
+      }
+      case "new_url_note": {
+        // 导入公众号文章：用项目统一的 prompt 弹窗输入 URL（替代原生 window.prompt）
+        // - validate 内联做格式校验：错误信息直接展示在弹窗里，避免关闭后再 toast 报错
+        // - 后端会抓取 HTML、下载图片到附件库、并把笔记落到 targetId 笔记本
+        const raw = await appPrompt({
+          title: t('sidebar.importUrlNote') || "导入公众号文章",
+          description: t('sidebar.importUrlPrompt') || "请输入微信公众号文章链接（https://mp.weixin.qq.com/s/...）",
+          placeholder: "https://mp.weixin.qq.com/s/...",
+          confirmText: t('common.confirm') || "导入",
+          cancelText: t('common.cancel') || "取消",
+          validate: (v) => {
+            const s = (v || "").trim();
+            if (!s) return t('urlImport.emptyUrl') || "请输入文章链接";
+            if (!/^https:\/\/mp\.weixin\.qq\.com\/s[\/?]/.test(s)) {
+              return t('urlImport.unsupportedUrl') || "暂只支持微信公众号文章链接";
+            }
+            return null;
+          },
+        });
+        if (raw == null) break; // 用户取消
+        const url = raw.trim();
+        const toastId = toast.info(t('urlImport.importing') || "正在导入文章…", 0);
+        try {
+          const result = await api.urlImport(url, targetId);
+          // urlImport 只返回 noteId+title，需要再取完整 note 推到 store
+          const note = await api.getNote(result.noteId);
+          actions.setActiveNote(note as any);
+          actions.setSelectedNotebook(targetId);
+          actions.setViewMode("notebook");
+          actions.addNoteToList({
+            id: note.id,
+            userId: note.userId,
+            title: note.title,
+            contentText: note.contentText || "",
+            notebookId: note.notebookId,
+            isPinned: note.isPinned || 0,
+            isFavorite: note.isFavorite || 0,
+            isLocked: note.isLocked || 0,
+            isArchived: note.isArchived || 0,
+            isTrashed: note.isTrashed || 0,
+            version: note.version || 1,
+            sortOrder: note.sortOrder || 0,
+            updatedAt: note.updatedAt,
+            createdAt: note.createdAt,
+          } as any);
+          actions.refreshNotebooks();
+          toast.dismiss(toastId);
+          const failedTip = result.images.failed > 0
+            ? `（${result.images.failed} 张图片下载失败）`
+            : "";
+          toast.success(
+            (t('urlImport.importSuccess', { title: result.title }) || `已导入：${result.title}`) + failedTip
+          );
+        } catch (err: any) {
+          toast.dismiss(toastId);
+          toast.error(err?.message || t('urlImport.importFailed') || "导入失败");
         }
         break;
       }

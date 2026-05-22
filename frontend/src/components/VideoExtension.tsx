@@ -22,9 +22,13 @@
  * 后续可扩展：抖音 / 西瓜 / Vimeo / 优酷……扩 `parseVideoUrl` 即可。
  */
 
-import { Node, mergeAttributes, type NodeViewRendererProps } from "@tiptap/core";
+import { Node, mergeAttributes } from "@tiptap/core";
 import { Node as PMNode } from "@tiptap/pm/model";
-import { ReactNodeViewRenderer, NodeViewWrapper } from "@tiptap/react";
+import {
+  ReactNodeViewRenderer,
+  NodeViewWrapper,
+  type ReactNodeViewProps,
+} from "@tiptap/react";
 import React from "react";
 
 // ---------------------------------------------------------------------------
@@ -149,7 +153,7 @@ export function parseVideoUrl(rawUrl: string): ParsedVideo | null {
 // React NodeView：包一层 div，叠透明遮罩拦 iframe 焦点
 // ---------------------------------------------------------------------------
 
-const VideoNodeView: React.FC<NodeViewRendererProps> = ({ node, selected }) => {
+const VideoNodeView: React.FC<ReactNodeViewProps> = ({ node, selected }) => {
   const src: string = node.attrs.src || "";
   const platform: VideoPlatform = node.attrs.platform || "unknown";
   const kind: VideoKind = node.attrs.kind || "iframe";

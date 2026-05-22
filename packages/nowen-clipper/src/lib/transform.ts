@@ -220,29 +220,50 @@ export function buildContentBundle(params: {
   //   - siteName 不为空时作为前缀的"站点标签"放在 URL 前，便于扫读；
   //   - target=_blank + rel 让点击在新页签打开，避免跳出当前笔记页面；
   //   - word-break:break-all 防止长 URL 撑爆容器、被截断成 "..."。
-  const footerParts: string[] = [];
+  //
+  // 注意：之前用 <small> 包裹是为了"小一号字"，但 Tiptap 编辑器 schema 没有
+  // <small> 节点/标记，导入时会被整个吞掉，连同里面的 <a> 一起丢失，
+  // 表现为"来源"行只剩前缀文字、链接消失。这里改用普通 <p>，视觉上略大
+  // 但跨编辑器更稳健。
+  //
+  // **markdown 分支单独拼 footer 的原因**（方案 A）：
+  //   把 footer HTML 一并丢给 turndown 转 MD 时，曾出现"来源 URL 链接文本被吞、
+  //   只剩 '站点名 · '"的现象。turndown 对 link text === href 这种自指链接、
+  //   以及链接前后 inline 文本的边界处理存在不可控空间。与其调 turndown 规则，
+  //   不如把 footer（结构稳定、内容简单）直接拼成 markdown，turndown 只负责
+  //   正文 html。这样行为强可预测，未来加来源/标签字段也只在两处镜像维护即可。
+  const footerHtmlParts: string[] = [];
+  const footerMdParts: string[] = [];
   if (includeSource) {
     const sitePrefix = siteName ? `${escapeText(siteName)} · ` : "";
-    footerParts.push(
-      `<hr/>\n<p><small>📎 来源：${sitePrefix}<a href="${escapeAttr(sourceUrl)}" target="_blank" rel="noopener noreferrer" style="word-break:break-all;">${escapeText(sourceUrl)}</a></small></p>`,
+    footerHtmlParts.push(
+      `<hr/>\n<p>📎 来源：${sitePrefix}<a href="${escapeAttr(sourceUrl)}" target="_blank" rel="noopener noreferrer" style="word-break:break-all;">${escapeText(sourceUrl)}</a></p>`,
     );
+    // markdown 形态：用 [text](url) 行内链接；text 与 url 相同时 marked 仍能正常渲染为 <a>。
+    // siteName / sourceUrl 是普通文本，无需 escape（marked 会按 MD 规则解析）。
+    const sitePrefixMd = siteName ? `${siteName} · ` : "";
+    footerMdParts.push(`---\n\n📎 来源：${sitePrefixMd}[${sourceUrl}](${sourceUrl})`);
   }
   if (tags.length > 0) {
-    footerParts.push(
-      `<p><small>🏷️ ${tags.map((t) => `#${escapeText(t)}`).join(" ")}</small></p>`,
+    footerHtmlParts.push(
+      `<p>🏷️ ${tags.map((t) => `#${escapeText(t)}`).join(" ")}</p>`,
     );
+    footerMdParts.push(`🏷️ ${tags.map((t) => `#${t}`).join(" ")}`);
   }
-  const footer = footerParts.join("\n");
-
-  const fullHtml = `<h1>${escapeText(title)}</h1>\n${commentHtml}${html}\n${footer}`;
+  const footerHtml = footerHtmlParts.join("\n");
+  const footerMd = footerMdParts.join("\n\n");
 
   if (format === "html") {
+    const fullHtml = `<h1>${escapeText(title)}</h1>\n${commentHtml}${html}\n${footerHtml}`;
     const text = fullHtml.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
     return { content: fullHtml, contentText: text };
   }
 
   // format === "markdown"
-  const md = htmlToMarkdown(fullHtml);
+  // 关键：footer 不进 turndown，直接以 markdown 文本追加。
+  const bodyHtml = `<h1>${escapeText(title)}</h1>\n${commentHtml}${html}`;
+  const bodyMd = htmlToMarkdown(bodyHtml);
+  const md = footerMd ? `${bodyMd}\n\n${footerMd}\n` : bodyMd;
   // 纯文本直接用去标签后的结果
   const text = md.replace(/[#*>`_~\[\]\(\)!-]/g, "").replace(/\s+/g, " ").trim();
   return { content: md, contentText: text };

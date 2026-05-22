@@ -521,19 +521,26 @@ function absolutizeUrls(root: HTMLElement, base: string): void {
  * 简单的 HTML 清洗：移除明显不需要的标签/属性。
  * 目的不是严格 XSS 防御（后端会再处理），而是避免把一堆 <script> / <style>
  * / 追踪脚本一起剪藏进去。
+ *
+ * 特殊处理：iframe / object / embed 这类视频或外链嵌入节点不直接删除，
+ * 而是先转成"占位卡片 + 原始链接"的形式保留下来——
+ *   原因：Tiptap 默认 schema 不接受 iframe，但 BiliBili / YouTube / 在线视频
+ *         几乎都是 iframe 嵌入；直接删会丢失关键信息。占位卡片至少保留
+ *         "这里有个视频 + 跳到原页面"的线索，用户体验远好于"凭空消失"。
  */
 function sanitizeHtml(html: string): string {
   const tpl = document.createElement("template");
   tpl.innerHTML = html;
   const root = tpl.content;
 
+  // 第 1 步：把 iframe / object / embed 转成占位卡片（先于删除）
+  replaceEmbedsWithPlaceholders(root);
+
   const removeSelector = [
     "script",
     "style",
     "noscript",
-    "iframe",
-    "object",
-    "embed",
+    // iframe / object / embed 已在上面转成占位卡片，不再列入移除列表
     "svg",
     "canvas",
     "link",
@@ -560,4 +567,60 @@ function sanitizeHtml(html: string): string {
   const container = document.createElement("div");
   container.appendChild(root.cloneNode(true));
   return container.innerHTML;
+}
+
+/**
+ * 把 <iframe> / <video> / <object> / <embed> 转成占位卡片。
+ *
+ * 设计要点：
+ *   - 输出 <blockquote> + emoji + <a href> 的纯结构化 HTML，
+ *     避开 Tiptap 自定义节点；用 blockquote 是因为它最稳，所有富文本
+ *     编辑器都支持，渲染样式也接近"卡片"。
+ *   - 链接文本就是完整 URL，方便用户一眼看到去哪、复制粘贴；
+ *     target=_blank + rel=noopener 让点击不会跳出当前笔记页面。
+ *   - <video> 标签很少出现（多数视频站点用 iframe），但顺手处理掉，
+ *     免得在少数 mp4 页面剪藏后丢内容。
+ *   - 没有 src 的嵌入直接删除（占位也没意义）。
+ */
+function replaceEmbedsWithPlaceholders(root: DocumentFragment): void {
+  const selector = "iframe, video, audio, object, embed";
+  for (const el of Array.from(root.querySelectorAll(selector))) {
+    // 取真实 URL：iframe/video 用 src；object 用 data；都拿不到就放弃
+    let url =
+      el.getAttribute("src") ||
+      el.getAttribute("data") ||
+      "";
+    // <video> 可能是子 <source src="...">
+    if (!url) {
+      const source = el.querySelector("source[src]");
+      if (source) url = source.getAttribute("src") || "";
+    }
+    if (!url) {
+      el.parentNode?.removeChild(el);
+      continue;
+    }
+    // 协议补全：BiliBili 等常用 //player.bilibili.com 协议相对地址
+    try {
+      url = new URL(url, location.href).href;
+    } catch {
+      /* 相对路径修不好就用原样 */
+    }
+
+    const tag = el.tagName.toLowerCase();
+    const label =
+      tag === "video"
+        ? "🎬 视频"
+        : tag === "audio"
+          ? "🔊 音频"
+          : "🎬 嵌入内容";
+    const safeUrl = url
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
+    const card = document.createElement("blockquote");
+    card.innerHTML = `<p>${label}：<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeUrl}</a></p>`;
+    el.parentNode?.replaceChild(card, el);
+  }
 }

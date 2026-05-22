@@ -791,12 +791,13 @@ async function uploadScreenshot(
 /**
  * 发消息到 content script 抽取。
  *
- * 关键：**始终先注入最新版 content.js**，确保 listener 是最新的。
+ * 注：content.js 由 manifest 的 content_scripts 在 document_idle 阶段声明式注入，
+ * 这里不再用 chrome.scripting.executeScript 主动注入第二次——重复注入会导致
+ * 顶层 const 重名 SyntaxError（content.js 已用 IIFE + __nowenClipperLoaded 做了
+ * 幂等防御，但避免触发就更稳）。
  *
- * 原因：扩展更新/刷新后，旧页面上仍可能运行着旧版 content script。
- * 如果先发消息，旧版 script 会响应并返回旧逻辑的结果（比如缺少 fallback 的
- * extractArticle）。content.js 内部有防重复注册机制（移除旧 listener + 注册新的），
- * 所以重复注入是安全的。
+ * 代价：扩展热更新后，旧标签页仍跑旧版 content script，需要刷新页面才能生效，
+ * 这是开发期可接受的小成本。
  */
 async function requestExtract(
   tabId: number,
@@ -805,18 +806,6 @@ async function requestExtract(
   const msg: ExtractRequest = { type: "EXTRACT_REQUEST", mode };
   console.log("[nowen-clipper] requestExtract: tabId =", tabId, "mode =", mode);
 
-  // 始终先注入最新版 content script（防止旧版本响应消息）
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["content.js"],
-    });
-  } catch (e: any) {
-    console.warn("[nowen-clipper] 注入 content.js 失败:", e?.message || e);
-    // 注入失败不阻断——页面上可能已有可用的 content script
-  }
-
-  // 发消息给（刚注入的）content script
   try {
     const res = (await chrome.tabs.sendMessage(tabId, msg)) as ExtractResponse;
     if (res && res.type === "EXTRACT_RESPONSE") {
@@ -1049,7 +1038,11 @@ function injectAIBlock(
     }
     return base + "\n\n---\n\n" + block;
   } else {
-    const m = base.match(/<hr\s*\/?>\s*<p><small>📎\s*来源/i);
+    // 兼容两种 footer 结构：
+    //   - 旧版：<hr/><p><small>📎 来源…</small></p>
+    //   - 新版：<hr/><p>📎 来源…</p>
+    // <small> 改成可选 (?:<small>)?，确保已有旧笔记 append 时仍能命中锚点
+    const m = base.match(/<hr\s*\/?>\s*<p>(?:<small>)?\s*📎\s*来源/i);
     if (m && typeof m.index === "number") {
       return base.slice(0, m.index) + "\n<hr/>\n" + block + "\n" + base.slice(m.index);
     }

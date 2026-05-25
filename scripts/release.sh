@@ -147,8 +147,16 @@ FPK_DOCKERHUB_REPO=""           # --fpk-dockerhub-repo
 
 # ===== 绿联 .upk 打包 =====
 # 复用 scripts/upk/build-upk.mjs。与 fpk 不同，upk **必须把镜像 tar 打进包里**，
-# 所以该步骤依赖本机 docker 已有镜像（buildx --load 产出或 docker pull）。
+# 所以该步骤依赖本机 docker daemon 里已有目标 tag 的镜像。
 # 安排在 docker push 之前（与 fpk 同原子语义：push 失败不出包）。
+#
+# 镜像来源策略（按 ARCH 分支）：
+#   - amd64 / arm64：前面 buildx 已经 --load 到本机，直接 docker save。
+#   - multi（amd64,arm64）：buildx 多架构 manifest **无法 --load 到本机 docker daemon**，
+#     第一次构建只把层写进 buildx 缓存。所以这里 upk 段开头会针对每个架构
+#     额外跑一次 `buildx --platform linux/<arch> --load`，吃前一次的缓存秒级落地，
+#     再交给 build-upk.mjs。这样保留了"upk 失败 → docker 还没推 → 全链路阻断"的强原子语义。
+#   - HAS_DOCKER=0（只跑 upk 不跑 docker）：build-upk.mjs 自己开 --pull 拉远端镜像。
 UPK_BUILD_NO="1"                # --upk-build
 UPK_IMAGE_REF=""                # --upk-image，默认 ${FPK_DOCKERHUB_REPO}:v${VERSION}
 
@@ -377,8 +385,8 @@ if [ "$TARGETS_EXPLICIT" = "0" ] && [ "$BUILD_ONLY" = "0" ] && [ "$ASSUME_YES" =
             info "   - git tag:     ${C_GREEN}是${C_RESET}"
             info "   - GitHub 发布: ${C_GREEN}是${C_RESET}"
             info "   - git pull:    ${C_GREEN}是${C_RESET}"
-            info "   - 飞牛 .fpk:   ${C_GREEN}是${C_RESET}（在 Docker push 后构建）"
-            info "   - 绿联 .upk:   ${C_GREEN}是${C_RESET}（在 Docker push 前构建，复用 buildx --load 镜像）"
+info "   - 飞牛 .fpk:   ${C_GREEN}是${C_RESET}（在 Docker push 后构建）"
+        info "   - 绿联 .upk:   ${C_GREEN}是${C_RESET}（在 Docker push 前构建；multi 模式会先 buildx --load 单架构镜像）"
             info "   - Lite 版:     ${C_GREEN}是${C_RESET}（无后端 PC 安装包）"
             info "   - 浏览器扩展:  ${C_GREEN}是${C_RESET}（nowen-clipper zip）"
             info "   - 原子发布:    ${C_GREEN}是${C_RESET}（三端全部构建成功才推送）"
@@ -2202,14 +2210,54 @@ if [ "$HAS_UPK" = "1" ]; then
     step "绿联 .upk 打包"
     UPK_START=$(date +%s)
 
-    # build-upk.mjs 通过 UPK_IMAGE_REF / UPK_BUILD_NO / DOCKERHUB_REPO 接收参数
-    # 单独跑 upk（HAS_DOCKER=0）时打开 --pull，让脚本能自动 docker pull 远端已发布的镜像
-    UPK_ARGS=( scripts/upk/build-upk.mjs --build "$UPK_BUILD_NO" )
+    # ---- multi 架构预热：把镜像 --load 到本机 docker ----
+    # 背景：HAS_DOCKER=1 + ARCH=multi 时，前面那次 buildx 走的是
+    #   - 原子模式 BUILDX_OUTPUT=()         （只写缓存，不 push 不 load）
+    #   - 非原子   BUILDX_OUTPUT=( --push ) （直接推 registry，本机仍无镜像）
+    # 两种情况下 docker daemon 里都查不到 ${IMAGE_NAME}:${VERSION_TAG}，build-upk.mjs
+    # 走 docker image inspect 必然失败，触发"找不到任何架构镜像"的警告并跳过。
+    #
+    # 解决：在这里对每个架构跑一次 `buildx --platform linux/<arch> --load`，
+    # 但用 **带架构后缀的独立 tag**（${IMAGE_NAME}:${VERSION_TAG}-amd64 / -arm64）
+    # 避免相互覆盖。build-upk.mjs 的候选清单里本来就含 ${IMAGE_REF}-${arch}，
+    # 会用 `docker image inspect --format '{{.Architecture}}'` 自动选中正确架构。
+    # 第一次 buildx 的层全部还在缓存里，这一步基本秒级（重打 manifest + 解压本地）。
+    UPK_NEEDS_PULL=0
     if [ "$HAS_DOCKER" != "1" ]; then
+        # 没跑 docker target（单独跑 upk），让 build-upk.mjs 自己 docker pull 远端
+        UPK_NEEDS_PULL=1
+    elif [ "$ARCH" = "multi" ] && [ "$DRY_RUN" != "1" ]; then
+        info "multi 模式：upk 需要本机镜像，先 buildx --load 各架构（带 -<arch> 后缀，吃缓存，秒级）"
+        ensure_buildx_builder
+        for upk_plat in amd64 arm64; do
+            UPK_ARCH_TAG="${IMAGE_NAME}:${VERSION_TAG}-${upk_plat}"
+            info "  buildx --load linux/${upk_plat} -> ${UPK_ARCH_TAG}"
+            UPK_LOAD_CMD=(
+                docker buildx build
+                --platform "linux/${upk_plat}"
+                -f "$REPO_ROOT/Dockerfile"
+                -t "$UPK_ARCH_TAG"
+                "${OCI_LABELS[@]}"
+                "${DOCKER_BUILD_ARGS[@]}"
+                --load
+                "$REPO_ROOT"
+            )
+            # 失败一定是 buildx 缓存被清或 Dockerfile 改坏了，直接 die（不靠 --pull 兜底，
+            # 因为远端 multi tag 的 manifest 拉下来本机仍只能存一个架构）。
+            run_argv "${UPK_LOAD_CMD[@]}"
+        done
+        ok "multi 镜像已 --load 到本机：${IMAGE_NAME}:${VERSION_TAG}-{amd64,arm64}"
+    fi
+    # amd64 / arm64 单架构模式下，前面 buildx 已经 --load 到 ${IMAGE_NAME}:${VERSION_TAG}，
+    # 不需要预热；build-upk.mjs 直接 docker save 即可（另一架构会被自然跳过）。
+
+    # build-upk.mjs 通过 UPK_IMAGE_REF / UPK_BUILD_NO / DOCKERHUB_REPO 接收参数
+    UPK_ARGS=( scripts/upk/build-upk.mjs --build "$UPK_BUILD_NO" )
+    if [ "$UPK_NEEDS_PULL" = "1" ]; then
         UPK_ARGS+=( --pull )
     fi
 
-    info "调用 scripts/upk/build-upk.mjs（UPK_IMAGE_REF=${UPK_IMAGE_REF}, build=${UPK_BUILD_NO}, pull=$([ "$HAS_DOCKER" != "1" ] && echo yes || echo no)）"
+    info "调用 scripts/upk/build-upk.mjs（UPK_IMAGE_REF=${UPK_IMAGE_REF}, build=${UPK_BUILD_NO}, pull=$([ "$UPK_NEEDS_PULL" = "1" ] && echo yes || echo no)）"
     if [ "$DRY_RUN" = "1" ]; then
         echo "  (dry-run) UPK_IMAGE_REF=${UPK_IMAGE_REF} UPK_BUILD_NO=${UPK_BUILD_NO} DOCKERHUB_REPO=${FPK_DOCKERHUB_REPO} node ${UPK_ARGS[*]}"
     else

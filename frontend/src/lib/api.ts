@@ -6,6 +6,12 @@ import {
   extractNoteId as _extractNoteId,
   generateLocalNoteId,
 } from "@/lib/offlineQueue";
+import {
+  readNotebooks as _readNotebooks,
+  readNotesList as _readNotesList,
+  readTags as _readTags,
+  readNote as _readNote,
+} from "@/lib/offlineRead";
 
 // 服务器地址管理
 const SERVER_URL_KEY = "nowen-server-url";
@@ -595,6 +601,24 @@ function handleOfflineEnqueue<T>(url: string, method: string, bodyStr?: string):
   // 派发自定义事件通知 UI（syncStatus = offline）
   window.dispatchEvent(new CustomEvent("nowen:offline-queued"));
 
+  // Phase D: 离线写也要立刻反映到 localStore，否则用户离线创建的笔记
+  //   在重启后会消失（offlineQueue 在 localStorage、笔记本身却没在 IDB 中）。
+  //   动态 import 避免 syncEngine ↔ api 顶层循环。
+  if (mutationType === "createNote" || mutationType === "updateNote") {
+    const optimisticNote = {
+      id: noteId,
+      title: body?.title || "",
+      content: body?.content || "",
+      contentText: body?.contentText || "",
+      version: body?.version || 1,
+      updatedAt: new Date().toISOString(),
+      ...body,
+    };
+    void import("@/lib/syncEngine").then((m) => m.cacheNoteContent(optimisticNote as any)).catch(() => {});
+  } else if (mutationType === "deleteNote") {
+    void import("@/lib/localStore").then((m) => m.deleteNote(noteId)).catch(() => {});
+  }
+
   // 构造乐观返回值
   if (mutationType === "createNote") {
     return {
@@ -799,7 +823,8 @@ export const api = {
   getNotebooks: (workspaceId?: string) => {
     const ws = workspaceId ?? getCurrentWorkspace();
     const qs = ws ? `?workspaceId=${encodeURIComponent(ws)}` : "";
-    return request<Notebook[]>(`/notebooks${qs}`);
+    // Phase C: 网络失败时回退到 localStore 缓存
+    return _readNotebooks(() => request<Notebook[]>(`/notebooks${qs}`));
   },
   createNotebook: (data: Partial<Notebook>) => {
     // 自动带上当前工作区（除非数据里显式带了 workspaceId 或为个人空间）
@@ -825,9 +850,33 @@ export const api = {
       finalParams.workspaceId = getCurrentWorkspace();
     }
     const qs = "?" + new URLSearchParams(finalParams).toString();
-    return request<NoteListItem[]>(`/notes${qs}`);
+    // Phase C: 网络失败 -> 本地缓存 + 在客户端复刻主要 filter
+    //   只覆盖三个高频场景：notebookId / isFavorite / isTrashed；
+    //   其他复杂 query（全文搜索 / sort / page 等）离线不支持，让上层报错。
+    const offlineFilter = (n: any): boolean => {
+      const wsMatch = ("workspaceId" in finalParams)
+        ? (n.workspaceId === finalParams.workspaceId
+          || (finalParams.workspaceId === "personal" && !n.workspaceId))
+        : true;
+      if (!wsMatch) return false;
+      if (finalParams.notebookId && n.notebookId !== finalParams.notebookId) return false;
+      if (finalParams.isFavorite === "1" && !n.isFavorite) return false;
+      if (finalParams.isTrashed === "1" && !n.isTrashed) return false;
+      // 默认返回未在垃圾桶的（服务端默认过滤）
+      if (finalParams.isTrashed !== "1" && n.isTrashed) return false;
+      return true;
+    };
+    return _readNotesList(
+      () => request<NoteListItem[]>(`/notes${qs}`),
+      offlineFilter,
+    );
   },
-  getNote: (id: string) => request<Note>(`/notes/${id}`),
+  getNote: (id: string) => _readNote(id, async () => {
+    const note = await request<Note>(`/notes/${id}`);
+    // Phase C: \u6210\u529f\u62c9\u5230\u7b14\u8bb0\u6b63\u6587 \u2192 \u5199\u5165\u672c\u5730\u7f13\u5b58\uff0c\u4f9b\u540e\u7eed\u79bb\u7ebf\u6253\u5f00
+    void import("@/lib/syncEngine").then((m) => m.cacheNoteContent(note)).catch(() => {});
+    return note;
+  }),
   /**
    * 轻量版笔记 GET：不返回 content / contentText，仅元数据（含 version）。
    *
@@ -845,8 +894,26 @@ export const api = {
     request<Partial<Note> & { id: string; version: number; title: string; updatedAt: string }>(
       `/notes/${id}?slim=1`,
     ),
-  createNote: (data: Partial<Note>) => request<Note>("/notes", { method: "POST", body: JSON.stringify(data) }),
-  updateNote: (id: string, data: Partial<Note>) => request<Note>(`/notes/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  createNote: (data: Partial<Note>) => {
+    // Phase D: 客户端提前生成 UUID v4，后端接受。
+    //   - 优点：离线创建不需要临时 ID + 后期映射；
+    //   - 调用方依然可以显式传 id 覆盖（如导入场景）。
+    const payload: Partial<Note> & { id?: string } = { ...data };
+    if (!payload.id) {
+      payload.id = (typeof crypto !== "undefined" && (crypto as any).randomUUID)
+        ? (crypto as any).randomUUID()
+        : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 10)}-4${Math.random().toString(16).slice(2, 5)}-${Math.random().toString(16).slice(2, 6)}-${Math.random().toString(16).slice(2, 14)}`;
+    }
+    return request<Note>("/notes", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updateNote: (id: string, data: Partial<Note>) => {
+    const p = request<Note>(`/notes/${id}`, { method: "PUT", body: JSON.stringify(data) });
+    // Phase D: 成功后同步本地缓存，保证离线重启后也能看到最新内容
+    p.then((note) => {
+      void import("@/lib/syncEngine").then((m) => m.cacheNoteContent(note)).catch(() => {});
+    }).catch(() => { /* 失败不写入本地 */ });
+    return p;
+  },
   deleteNote: (id: string) => request(`/notes/${id}`, { method: "DELETE" }),
   emptyTrash: () =>
     request<{
@@ -879,7 +946,8 @@ export const api = {
   getTags: (workspaceId?: string) => {
     const ws = workspaceId ?? getCurrentWorkspace();
     const qs = ws ? `?workspaceId=${encodeURIComponent(ws)}` : "";
-    return request<Tag[]>(`/tags${qs}`);
+    // Phase C: 网络失败时回退到 localStore 缓存
+    return _readTags(() => request<Tag[]>(`/tags${qs}`));
   },
   createTag: (data: Partial<Tag> & { workspaceId?: string | null }) => {
     const payload: any = { ...data };

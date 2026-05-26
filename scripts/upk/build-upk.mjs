@@ -316,6 +316,7 @@ function listUpksRecursive(dir, acc = []) {
     }
     return acc;
 }
+const found = [...listUpksRecursive(WORK_DIR), ...listUpksRecursive(OUT_DIR)];
 // found 里同一个文件可能被收两次：OUT_DIR 通常是 WORK_DIR 的父目录
 // （dist-upk/ 与 dist-upk/nowen-note-1.1.6/），递归会把同一路径扫两遍。
 // 必须在 cp/rm 之前按真实路径 dedupe，否则第二轮会 lstat 已删源文件 ENOENT。

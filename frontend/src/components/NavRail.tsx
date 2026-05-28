@@ -43,8 +43,8 @@ import { cn } from "@/lib/utils";
 import SettingsModal from "@/components/SettingsModal";
 import MigrationModal from "@/components/MigrationModal";
 import { useRailMode, nextRailMode, RailMode } from "@/hooks/useRailMode";
-import { getAppInfo, isDesktop as isDesktopApp, switchDesktopToFull } from "@/lib/desktopBridge";
-import { clearLocalIdMap, clearQueue } from "@/lib/offlineQueue";
+import { getAppInfo, isDesktop as isDesktopApp, switchDesktopToFull, type AppInfo } from "@/lib/desktopBridge";
+import { clearLocalIdMap, clearQueue, getQueueLength } from "@/lib/offlineQueue";
 
 type NavGroup = "workspace" | "modules" | "tools";
 
@@ -125,31 +125,43 @@ export default function NavRail({ variant = "desktop" }: { variant?: "desktop" |
   const [showSettings, setShowSettings] = useState(false);
   // D-2：迁移向导弹窗。点"切换到云端"会先弹出，让用户选择是否把本地数据迁过去。
   const [showMigration, setShowMigration] = useState(false);
-  const [desktopMode, setDesktopMode] = useState<"full" | "lite" | null>(null);
+  const [desktopInfo, setDesktopInfo] = useState<AppInfo | null>(null);
 
   useEffect(() => {
     if (!isDesktopApp()) return;
     let cancelled = false;
     getAppInfo()
       .then((info) => {
-        if (!cancelled) setDesktopMode(info?.mode ?? null);
+        if (!cancelled) setDesktopInfo(info ?? null);
       })
       .catch(() => {
-        if (!cancelled) setDesktopMode(null);
+        if (!cancelled) setDesktopInfo(null);
       });
     return () => { cancelled = true; };
   }, []);
 
   const normalizeUrl = (url: string) => url.replace(/\/+$/, "").toLowerCase();
+  const isLoopbackUrl = (url: string) => {
+    try {
+      const u = new URL(url);
+      return u.hostname === "127.0.0.1" || u.hostname === "localhost" || u.hostname === "::1";
+    } catch {
+      return false;
+    }
+  };
   const serverUrl = getServerUrl();
   const currentOrigin = typeof window !== "undefined" && window.location.origin.startsWith("http")
     ? window.location.origin
     : "";
-  // full 桌面端也可能通过 MigrationModal 登录远端账号：此时 Electron mode 仍是 full，
-  // 但 API baseURL 已经被 nowen-server-url 指向云端，所以必须把它识别为"云端态"，
-  // 否则左下角按钮只会再次弹迁移向导，无法回本地。
-  const usingRemoteServer = !!serverUrl && (!currentOrigin || normalizeUrl(serverUrl) !== normalizeUrl(currentOrigin));
+  const desktopMode = desktopInfo?.mode ?? null;
   const usingDesktopLiteMode = desktopMode === "lite";
+  const desktopLocalUrl = desktopInfo?.backendPort ? `http://127.0.0.1:${desktopInfo.backendPort}` : "";
+  const usingCurrentLocalBackend = !!serverUrl && !!desktopLocalUrl && normalizeUrl(serverUrl) === normalizeUrl(desktopLocalUrl);
+  // Electron 打包态是 file:// origin，不能用 "!currentOrigin" 判定远端；否则本地后端
+  // http://127.0.0.1:<port> 也会被误判成云端，点击“本地”会反复清状态/刷新。
+  const usingRemoteServer = !!serverUrl
+    && !usingCurrentLocalBackend
+    && (usingDesktopLiteMode || !isLoopbackUrl(serverUrl) || (!!currentOrigin && normalizeUrl(serverUrl) !== normalizeUrl(currentOrigin)));
   const canSwitchBackToLocal = isDesktopApp() && (usingRemoteServer || usingDesktopLiteMode);
 
   const items = features
@@ -170,32 +182,21 @@ export default function NavRail({ variant = "desktop" }: { variant?: "desktop" |
       return;
     }
 
-    // lite 模式是真正的 Electron 运行模式切换，必须交给主进程写 settings.json、
-    // 清 WebStorage 并重启；renderer 自己清 localStorage 不足以启动本地后端。
-    if (usingDesktopLiteMode) {
-      await switchDesktopToFull();
-      return;
+    const queuedCount = getQueueLength();
+    if (queuedCount > 0) {
+      const confirmed = window.confirm(
+        t('sidebar.switchToLocalConfirmWithQueue', '切回本地离线模式？当前云端账号还有未同步操作，切换后这些待同步操作会被丢弃，云端数据不会被删除。')
+      );
+      if (!confirmed) return;
     }
 
-    let queuedCount = 0;
-    try {
-      const raw = localStorage.getItem("nowen-offline-queue");
-      queuedCount = raw ? JSON.parse(raw).length : 0;
-    } catch { /* ignore */ }
+    // 桌面端切回本地统一交给主进程：写 settings、清 Electron session storage、
+    // 停/启后端并 relaunch。renderer 内部 location.reload() 在 file:// + query serverUrl
+    // 场景下容易和 AuthGate / serverUrl 持久化互相打架，表现为黑屏/闪屏。
+    const result = await switchDesktopToFull();
+    if (result?.ok !== false) return;
 
-    const confirmed = window.confirm(
-      queuedCount > 0
-        ? t('sidebar.switchToLocalConfirmWithQueue', '切回本地离线模式？当前云端账号还有未同步操作，切换后这些待同步操作会被丢弃，云端数据不会被删除。')
-        : t('sidebar.switchToLocalConfirm', '切回本地离线模式？云端数据不会被删除，本地数据会继续保留。')
-    );
-    if (!confirmed) return;
-
-    // 从"full + 云端账号"切回"full + 本地零登录"：
-    // 1) 先清当前云端上下文的 scoped offlineQueue / local-id-map（此时 token/serverUrl 还在，
-    //    能定位到正确 key；不能等 broadcastLogout 后再清，否则会切到 anonymous/local key）；
-    // 2) 再用当前 server-url/token 尝试吊销云端会话并清快速登录镜像；
-    // 3) 清 server-url/token/prefer-cloud；
-    // 4) reload 后 App.tsx 会重新走 getLocalAuth()，恢复本地零登录。
+    // 旧版 preload 不支持 mode IPC 时的兜底：只做 renderer 级清理并刷新。
     clearQueue();
     clearLocalIdMap();
     broadcastLogout("switch_to_local");
@@ -203,12 +204,11 @@ export default function NavRail({ variant = "desktop" }: { variant?: "desktop" |
       clearServerUrl();
       localStorage.removeItem("nowen-token");
       localStorage.removeItem("nowen-prefer-cloud");
-      // 清一次旧版全局 key，兼容升级前遗留数据；v2 scoped key 已由 clearQueue 清理。
       localStorage.removeItem("nowen-offline-queue");
       localStorage.removeItem("nowen-offline-id-map");
     } catch { /* ignore */ }
     window.location.reload();
-  }, [canSwitchBackToLocal, t, usingDesktopLiteMode]);
+  }, [canSwitchBackToLocal, t]);
 
   // ===== 尺寸常量 =====
   // icon 模式：48px 宽栏 / 40px 方按钮

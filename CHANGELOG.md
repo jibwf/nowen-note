@@ -28,6 +28,7 @@
 
 ### 🐛 修复
 
+- 修复桌面端切回本地离线模式时，本地后端被误判为远端导致黑屏/反复闪屏的问题。
 - 修复后端实时删除广播编译错误 (22fcc3c)
 - improve multi-device note sync (0beb31e)
 - **upk**: 补回被上一个 commit 误删的 const found 行 (0e81338)

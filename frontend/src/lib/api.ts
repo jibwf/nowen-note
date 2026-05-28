@@ -59,27 +59,54 @@ function readServerUrlFromQuery(): string {
     const params = new URLSearchParams(window.location.search);
     const raw = params.get("serverUrl") || params.get("nowen-server-url") || "";
     if (!raw || !isValidServerUrl(raw)) return "";
-    const normalized = raw.replace(/\/+$/, "");
-    localStorage.setItem(SERVER_URL_KEY, normalized);
-    return normalized;
+    return raw.replace(/\/+$/, "");
   } catch {
     return "";
   }
 }
 
+function isLoopbackServerUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.hostname === "127.0.0.1" || u.hostname === "localhost" || u.hostname === "::1";
+  } catch {
+    return false;
+  }
+}
+
+function shouldPreferInjectedServerUrl(stored: string, injected: string): boolean {
+  if (!injected) return false;
+  if (!stored) return true;
+  // Electron full 本地模式每次启动后端端口可能变化；如果二者都是 loopback，
+  // 注入地址代表本次真实后端，应覆盖旧端口。
+  if (isLoopbackServerUrl(stored) && isLoopbackServerUrl(injected)) return true;
+  // 从 full 本地切到 lite 远端时，主进程注入远端 URL；若 storage 里还残留旧本地
+  // loopback，以主进程本次注入为准。
+  if (isLoopbackServerUrl(stored) && !isLoopbackServerUrl(injected)) return true;
+  // 反过来：full 桌面端通过 MigrationModal 手动切云时，loadFile 的 query 仍可能是
+  // 本地 loopback。此时不能每次 getServerUrl 都把手动云端地址冲回本地，否则会出现
+  // 云端/本地状态抖动甚至反复刷新。
+  return false;
+}
+
 export function getServerUrl(): string {
-  // Electron 本地 UI 会通过 query 注入本次运行的 API 地址（本地后端端口可能每次变），
-  // 因此 query 优先于 localStorage，并会写回 storage。
-  const raw = readServerUrlFromQuery() || localStorage.getItem(SERVER_URL_KEY) || "";
+  const injected = readServerUrlFromQuery();
+  const stored = localStorage.getItem(SERVER_URL_KEY) || "";
+  let raw = shouldPreferInjectedServerUrl(stored, injected) ? injected : stored;
   if (!raw) return "";
   if (!isValidServerUrl(raw)) {
     // 自愈：清掉坏值，避免无限触发 `<!DOCTYPE` 报错
     // eslint-disable-next-line no-console
     console.warn("[api] invalid server url in localStorage, clearing:", raw);
     try { localStorage.removeItem(SERVER_URL_KEY); } catch { /* ignore */ }
-    return "";
+    raw = injected;
+    if (!raw || !isValidServerUrl(raw)) return "";
   }
-  return raw;
+  const normalized = raw.replace(/\/+$/, "");
+  if (normalized !== stored) {
+    try { localStorage.setItem(SERVER_URL_KEY, normalized); } catch { /* ignore */ }
+  }
+  return normalized;
 }
 
 export function setServerUrl(url: string) {

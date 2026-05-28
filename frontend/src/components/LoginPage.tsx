@@ -956,6 +956,7 @@ export default function LoginPage({ onLogin, isClientMode = false, onDisconnect 
                     try {
                       localStorage.removeItem("nowen-prefer-cloud");
                       localStorage.removeItem("nowen-token");
+                      clearServerUrl();
                     } catch { /* ignore */ }
                     window.location.reload();
                   }}

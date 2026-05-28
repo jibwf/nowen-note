@@ -24,7 +24,7 @@ const path = require("path");
 const DEFAULT_SETTINGS = Object.freeze({
   mode: "full",
   remoteUrl: "",
-  hideMenuBar: false,
+  hideMenuBar: true,
 });
 
 const VALID_MODES = new Set(["full", "lite"]);

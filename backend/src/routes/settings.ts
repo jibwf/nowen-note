@@ -44,7 +44,7 @@ const DEFAULTS: SiteSettings = {
   feature_personal_export_enabled: "true",
   feature_personal_import_enabled: "true",
   debug_files_query: "false",
-  web_ui_enabled: "false",
+  web_ui_enabled: "true",
 };
 
 // 获取所有站点设置

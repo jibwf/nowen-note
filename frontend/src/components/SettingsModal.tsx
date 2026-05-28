@@ -688,7 +688,7 @@ function SwitchesPanel() {
   const { prefs: userPrefs, setPref: setUserPref } = useUserPreferences();
   const [isAdmin, setIsAdmin] = useState(false);
   const [webUiEnabled, setWebUiEnabled] = useState(false);
-  const [desktopHideMenuBar, setDesktopHideMenuBar] = useState(false);
+  const [desktopHideMenuBar, setDesktopHideMenuBar] = useState(true);
   const [desktopPlatform, setDesktopPlatform] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const desktop = isDesktop();

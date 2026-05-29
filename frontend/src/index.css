@@ -787,7 +787,11 @@ html[data-code-theme="solarized-light"] {
 .ProseMirror img {
   max-width: 100%;
   border-radius: 8px;
-  margin: 1.25rem auto;
+  /* 上下 margin 收紧，避免图片块与正文之间空白过大；
+     与 ResizableImageView wrapper 的 margin 保持一致。
+     注：wrapper 是 inline-block 不与外层 <p> 的 margin 折叠，
+     所以此处取小值，让叠加后的视觉间距落在 ~14px。 */
+  margin: 0.25rem auto;
   display: block;
   cursor: zoom-in;
   /*

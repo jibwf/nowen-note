@@ -21,14 +21,11 @@
  *   - TableRowResizable: 包含拖拽 plugin（用于 TiptapEditor 主实例）
  *   - TableRowWithHeight: 仅 attribute schema（用于旁路 generateHTML/JSON）
  */
-
 import { TableRow } from "@tiptap/extension-table";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
-
 const ROW_RESIZE_HANDLE_HEIGHT = 12; // 拖拽热区高度（px），稍微放宽一点，更好命中
 const MIN_ROW_HEIGHT = 24; // 最小行高，防止拖到看不见
-
 /**
  * 仅 attribute 增强版（不带拖拽插件）。
  * 用于 generateHTML / generateJSON 的旁路 schema：
@@ -65,7 +62,6 @@ export const TableRowWithHeight = TableRow.extend({
     };
   },
 });
-
 /**
  * 拖拽手柄 ProseMirror plugin。
  * 通过单一 mousemove listener 检测鼠标是否落在某个 <tr> 底边的
@@ -89,7 +85,6 @@ function rowResizePlugin(): Plugin {
   // hover 检测节流：避免 mousemove 高频触发抖动
   let pendingHover: { x: number; y: number } | null = null;
   let rafId: number | null = null;
-
   function ensureHandle(view: EditorView): HTMLDivElement {
     if (handleEl) return handleEl;
     const el = document.createElement("div");
@@ -107,7 +102,6 @@ function rowResizePlugin(): Plugin {
     handleEl = el;
     return el;
   }
-
   function ensureGuide(): HTMLDivElement {
     if (guideEl) return guideEl;
     const el = document.createElement("div");
@@ -125,15 +119,12 @@ function rowResizePlugin(): Plugin {
     guideEl = el;
     return el;
   }
-
   function hideHandle() {
     if (handleEl) handleEl.style.display = "none";
   }
-
   function hideGuide() {
     if (guideEl) guideEl.style.display = "none";
   }
-
   function findRowAtY(target: HTMLElement, clientX: number, clientY: number): HTMLTableRowElement | null {
     // 找到鼠标点下方所属的 <tr>：先看 elementFromPoint，再向上回溯
     const node = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
@@ -143,7 +134,6 @@ function rowResizePlugin(): Plugin {
     if (!target.contains(tr)) return null;
     return tr;
   }
-
   function getRowDocPos(view: EditorView, rowEl: HTMLTableRowElement): number | null {
     // 让 prosemirror 帮我们算 <tr> 节点在 doc 中的位置
     // 取 <tr> 第一个文本子节点的 posAtDOM 然后回溯到 row 起点
@@ -160,7 +150,6 @@ function rowResizePlugin(): Plugin {
     }
     return null;
   }
-
   return new Plugin({
     key: new PluginKey("tableRowResize"),
     view: (view) => {
@@ -192,22 +181,24 @@ function rowResizePlugin(): Plugin {
         handle.style.width = `${rect.width}px`;
         (handle as unknown as { _rowEl: HTMLTableRowElement })._rowEl = rowEl;
       };
-
       const onMouseMove = (e: MouseEvent) => {
         // 拖拽中：把高度同步给该行所有 td/th（td.height 在 table 布局里立即生效），
         // 同时移动跟随鼠标的蓝色参考线 → 视觉上 100% 跟手
         if (dragging) {
           const dy = e.clientY - dragging.startY;
-          const next = Math.max(MIN_ROW_HEIGHT, dragging.startHeight + dy);
-          // 给 tr 也加一份（部分浏览器 tr.height 也生效）
-          dragging.rowEl.style.height = `${next}px`;
-          dragging.rowEl.style.minHeight = `${next}px`;
-          // 真正驱动行高的：所有 cell 的 inline height + min-height
-          for (const cell of dragging.cells) {
-            cell.style.height = `${next}px`;
-            cell.style.minHeight = `${next}px`;
+          const next = Math.max(MIN_ROW_HEIGHT, Math.round(dragging.startHeight + dy));
+          // 通过 transaction 实时更新行高，避免 inline style 被 ProseMirror 重渲染覆盖
+          const { rowPos, view: v } = dragging;
+          const node = v.state.doc.nodeAt(rowPos);
+          if (node && node.type.name === "tableRow" && (node.attrs as any).height !== next) {
+            const tr = v.state.tr.setNodeMarkup(rowPos, undefined, {
+              ...node.attrs,
+              height: next,
+            });
+            tr.setMeta("addToHistory", false);
+            v.dispatch(tr);
           }
-          // 参考线跟随鼠标 Y（夹到行 top + MIN_ROW_HEIGHT 之下不可以）
+          // 参考线跟随鼠标 Y
           const minBottomY = dragging.rowTopAtStart + MIN_ROW_HEIGHT;
           const guideY = Math.max(minBottomY, e.clientY);
           const g = ensureGuide();
@@ -221,7 +212,6 @@ function rowResizePlugin(): Plugin {
           rafId = requestAnimationFrame(flushHover);
         }
       };
-
       const onMouseDown = (e: MouseEvent) => {
         if (!handleEl || handleEl.style.display === "none") return;
         const rowEl = (handleEl as unknown as { _rowEl?: HTMLTableRowElement })._rowEl;
@@ -261,7 +251,6 @@ function rowResizePlugin(): Plugin {
         // 拖拽中隐藏 hover 手柄，避免视觉重叠
         hideHandle();
       };
-
       const onMouseUp = (e: MouseEvent) => {
         if (!dragging) return;
         const dy = e.clientY - dragging.startY;
@@ -277,22 +266,14 @@ function rowResizePlugin(): Plugin {
           v.dispatch(tr);
         }
         // 清掉行内 inline style，让 schema 渲染接管
-        dragging.rowEl.style.height = "";
-        dragging.rowEl.style.minHeight = "";
-        for (const cell of dragging.cells) {
-          cell.style.height = "";
-          cell.style.minHeight = "";
-        }
         dragging = null;
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
         hideGuide();
       };
-
       window.addEventListener("mousemove", onMouseMove);
       window.addEventListener("mousedown", onMouseDown, true);
       window.addEventListener("mouseup", onMouseUp, true);
-
       return {
         destroy() {
           window.removeEventListener("mousemove", onMouseMove);
@@ -313,7 +294,6 @@ function rowResizePlugin(): Plugin {
     },
   });
 }
-
 /**
  * 主编辑器版本：attribute + 拖拽 plugin。
  * 在 TiptapEditor.tsx 里替换原裸 TableRow。
@@ -326,5 +306,4 @@ export const TableRowResizable = TableRowWithHeight.extend({
     ];
   },
 });
-
 export default TableRowResizable;

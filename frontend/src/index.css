@@ -4,6 +4,33 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===== 旧版 WebView 兼容性回退 =====
+ * 小米 8 等旧设备的 WebView 不支持 dvh / color-mix,
+ * 导致根容器高度为 0 → 黑屏。
+ * 用 @supports 做渐进增强，保证新设备不受影响。
+ */
+
+/* dvh 回退：旧浏览器用 vh 兑替 */
+@supports not (height: 100dvh) {
+  .h-\[100dvh\] { height: 100vh !important; }
+  .min-h-\[100dvh\] { min-height: 100vh !important; }
+  .max-h-\[100dvh\] { max-height: 100vh !important; }
+  .max-md\:h-\[100dvh\] { height: 100vh !important; }
+  /* LoginPage 内联样式回退 */
+  [style*="100dvh"] {
+    min-height: 100vh !important;
+    max-height: 100vh !important;
+    height: 100vh !important;
+  }
+}
+
+/* color-mix 回退：用固定透明度代替 */
+@supports not (color-mix(in srgb, red 50%, transparent)) {
+  *:focus-visible {
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.5) !important;
+  }
+}
+
 /* ===== Light Theme (默认) ===== */
 :root {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;

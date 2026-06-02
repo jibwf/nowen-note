@@ -69,7 +69,6 @@ import CodeBlockView from "@/components/CodeBlockView";
 import { SearchReplacePanel, createSearchReplaceExtension } from "@/components/SearchReplacePanel";
 import { Video as VideoExtension } from "@/components/VideoExtension";
 
-
 import { useTranslation } from "react-i18next";
 
 const lowlight = createLowlight(common);
@@ -114,7 +113,6 @@ if (!(ProseMirrorNode.prototype as any)[RESOLVE_PATCHED]) {
   };
   (ProseMirrorNode.prototype as any)[RESOLVE_PATCHED] = true;
 }
-
 
 // ---------------------------------------------------------------------------
 // 粘贴 HTML 归一化：把"伪多行段落"拆成真正的多个 <p>
@@ -445,8 +443,6 @@ function mergeRtfImagesIntoHtml(html: string, rtfImages: string[]): string {
   }
 }
 
-
-
 function normalizePastedHtmlForBlocks(html: string): { html: string; imageStats: RescueStats; isWordSource: boolean } {
   const empty: RescueStats = { total: 0, rescued: 0, failed: 0 };
   if (!html) return { html, imageStats: empty, isWordSource: false };
@@ -516,7 +512,6 @@ function normalizePastedHtmlForBlocks(html: string): { html: string; imageStats:
     return { html, imageStats: empty, isWordSource };
   }
 }
-
 
 // ---------------------------------------------------------------------------
 // 智能 toggleHeading：先把当前段落里的 hardBreak 拆成独立段落，再 toggle
@@ -591,7 +586,6 @@ function toggleHeadingSmart(editor: any, level: 1 | 2 | 3 | 4 | 5 | 6) {
     editor.chain().focus().toggleHeading({ level }).run();
   }
 }
-
 
 // 自定义缩进扩展
 // 支持段落、标题、列表（bullet / ordered / task）、引用、代码块整体做"手动缩进"调整。
@@ -735,6 +729,30 @@ function createKeyboardExtension(flushSaveRef: React.MutableRefObject<() => void
       };
 
       return {
+        Backspace: () => {
+          const { state } = editor;
+          const { selection } = state;
+          if (!selection.empty) return false;
+          const { $from } = selection;
+          if ($from.parentOffset !== 0) return false;
+          const parent = $from.parent;
+          const parentType = parent.type.name;
+          // 行首 Backspace：若有 indent > 0 则先减缩进
+          const currentIndent = (parent.attrs as any).indent || 0;
+          if (currentIndent > 0) {
+            return (editor as any).chain().focus().changeIndent(-1).run();
+          }
+          // heading → paragraph
+          if (parentType === "heading") {
+            const paragraphType = state.schema.nodes.paragraph;
+            if (!paragraphType) return false;
+            const depth = $from.depth;
+            const tr = state.tr.setBlockType($from.before(depth), $from.after(depth), paragraphType);
+            editor.view.dispatch(tr.scrollIntoView());
+            return true;
+          }
+          return false;
+        },
         Tab: () => handleTab(1),
         "Shift-Tab": () => handleTab(-1),
         Enter: () => handleEnterInListItem(),
@@ -1304,6 +1322,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
 
   const editor: Editor | null = useEditor({
     extensions: [
+      keyboardExtension.current,
       StarterKit.configure({
         codeBlock: false,
         // 行内代码（inline code）使用 StarterKit 默认实现：
@@ -1418,7 +1437,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         types: ['heading', 'paragraph'],
       }),
       IndentExtension,
-      keyboardExtension.current,
+
       slashExtension.current,
       // Markdown 语法增强：~~删除线~~ / ==高亮== input rule + 智能粘贴 markdown
       ...MarkdownEnhancements,
@@ -1519,47 +1538,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
           return false;
         },
       },
-      // 在 heading / blockquote 等块级节点行首按 Backspace 时，
-      // 统一把当前节点转为普通段落，避免某些导入/InputRule 后的
-      // 节点难以通过 Backspace 退出的问题（用户反馈的 # 开头无法删除）。
-      handleKeyDown: (view, event): boolean => {
-        if (event.key !== "Backspace" || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
-          return false;
-        }
-        const { state: s } = view;
-        const { selection } = s;
-        if (!selection.empty) return false;
-        const { $from } = selection;
-        // 必须位于块级节点的第一个位置（行首）
-        if ($from.parentOffset !== 0) return false;
-        const parent = $from.parent;
-        const parentType = parent.type.name;
-        // 行首 Backspace ：若有 indent > 0 则先减缩进
-        const currentIndent = (parent.attrs as any).indent || 0;
-        if (currentIndent > 0) {
-          return (editor as any).chain().focus().changeIndent(-1).run();
-        }
-        // 仅对 heading / blockquote 做行首 backspace 转段落
-        if (parentType !== "heading" && parentType !== "blockquote") {
-          return false;
-        }
-        const paragraphType = s.schema.nodes.paragraph;
-        if (!paragraphType) return false;
-        try {
-          // 对 heading：直接 setNode 变为 paragraph
-          if (parentType === "heading") {
-            const depth = $from.depth;
-            const tr = s.tr.setBlockType($from.before(depth), $from.after(depth), paragraphType);
-            view.dispatch(tr.scrollIntoView());
-            return true;
-          }
-          // 对 blockquote：lift 出引用
-          // 交由默认命令处理 —— 返回 false
-          return false;
-        } catch {
-          return false;
-        }
-      },
+
       handlePaste: (view, event) => {
         // 始终阻止浏览器默认粘贴行为，防止页面跳转到空白页
         event.preventDefault();
@@ -1682,8 +1661,6 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
               return true;
             }
           }
-
-
 
           const text = event.clipboardData?.getData("text/plain") || "";
           const html = event.clipboardData?.getData("text/html") || "";
@@ -2377,8 +2354,6 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
     }
   }, [editor, editable]);
 
-
-
   // ---------- 链接编辑：弹项目统一 prompt 弹窗，工具栏 & 链接气泡共用 ----------
   // 抽成共享回调避免两处重复 ~40 行 prompt + 解析 + apply 逻辑。
   // 输入框支持 markdown.com.cn 标准 `https://x.com "标题"` 写法，
@@ -3008,8 +2983,6 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         });
     }
   }, [editor, t]);
-
-
 
   /**
    * 严格作用于当前选区的代码块切换：

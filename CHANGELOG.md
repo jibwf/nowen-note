@@ -12,6 +12,15 @@
 
 <!-- ADD_NEW_HERE -->
 
+## v1.1.13 - 2026-06-02
+
+### 🐛 修复
+
+- restrict color-mix focus fallback to form elements only (f9e58ec)
+- Backspace at line start now correctly decreases indent (Office-like behavior) (aadc88a)
+- add CSS fallbacks for older Android WebViews (Xiaomi 8 black screen) (aa9a2fd)
+
+
 ## v1.1.12 - 2026-06-01
 
 ### 🐛 修复

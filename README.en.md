@@ -134,6 +134,14 @@ If this project helps you, feel free to scan the QR code and buy the author a co
 
 > 最近 5 个版本的更新内容，完整历史见 [CHANGELOG.md](./CHANGELOG.md)。
 
+### v1.1.13 - 2026-06-02
+
+### 🐛 修复
+
+- restrict color-mix focus fallback to form elements only (f9e58ec)
+- Backspace at line start now correctly decreases indent (Office-like behavior) (aadc88a)
+- add CSS fallbacks for older Android WebViews (Xiaomi 8 black screen) (aa9a2fd)
+
 ### v1.1.12 - 2026-06-01
 
 ### 🐛 修复
@@ -181,11 +189,5 @@ If this project helps you, feel free to scan the QR code and buy the author a co
 ### 🐛 修复
 
 - **desktop**: prevent local mode reload loop (490f5a3)
-
-### v1.1.8 - 2026-05-28
-
-### 🐛 修复
-
-- 调整访问控制默认开关 (b49534c)
 
 <!-- CHANGELOG:END -->

@@ -2217,7 +2217,10 @@ body.density-compact {
  * 閫夋嫨鍣ㄧ敤 `html[data-electron="darwin"]`鈥斺€攎ain.tsx 鍦ㄦ寕杞藉墠宸插啓鍏ワ紱
  * Web 绔拰 Windows/Linux Electron 涓嬪畬鍏ㄤ笉鐢熸晥锛岄浂褰卞搷銆?
  * ========================================================================= */
-html[data-electron="darwin"] .vibrancy-sidebar,
+html[data-electron="darwin"] .vibrancy-sidebar {
+  -webkit-app-region: no-drag;
+}
+
 html[data-electron="darwin"] .vibrancy-sidebar > :first-child {
   /* 鏁翠釜渚ф爮椤堕儴鍙樻垚鎷栨嫿鍖猴紝瀛愬厓绱犻噷鐨勬寜閽?閾炬帴鍗曠嫭澹版槑 no-drag 鏀捐浜や簰 */
   -webkit-app-region: drag;

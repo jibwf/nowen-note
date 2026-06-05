@@ -135,6 +135,56 @@ export function generateOpenAPISpec(): Record<string, any> {
             createdAt: { type: "string", format: "date-time" },
           },
         },
+        AttachmentStorageConfig: {
+          type: "object",
+          properties: {
+            enabled: { type: "boolean" },
+            endpoint: { type: "string" },
+            region: { type: "string" },
+            bucket: { type: "string" },
+            accessKeyId: { type: "string" },
+            prefix: { type: "string" },
+            secretAccessKeySet: { type: "boolean" },
+            source: { type: "string", enum: ["settings", "env", "default"] },
+            updatedAt: { type: "string", nullable: true },
+          },
+        },
+        AttachmentStorageStatus: {
+          type: "object",
+          properties: {
+            storage: {
+              type: "object",
+              properties: {
+                driver: { type: "string", enum: ["local", "s3"] },
+                localDir: { type: "string" },
+                bucket: { type: "string" },
+                endpoint: { type: "string" },
+                prefix: { type: "string" },
+                migrationCommand: { type: "string" },
+              },
+            },
+            database: { type: "object" },
+            local: { type: "object" },
+            migrationCommand: { type: "string", nullable: true },
+            checkedAt: { type: "string", format: "date-time" },
+          },
+        },
+        AttachmentRemoteStorageCheck: {
+          type: "object",
+          properties: {
+            ok: { type: "boolean" },
+            skipped: { type: "boolean" },
+            reason: { type: "string" },
+            storage: { type: "object" },
+            total: { type: "integer" },
+            limit: { type: "integer" },
+            checked: { type: "integer" },
+            exists: { type: "integer" },
+            missing: { type: "array", items: { type: "object" } },
+            errors: { type: "array", items: { type: "object" } },
+            checkedAt: { type: "string", format: "date-time" },
+          },
+        },
         Error: {
           type: "object",
           properties: {
@@ -282,6 +332,66 @@ export function generateOpenAPISpec(): Record<string, any> {
         get: { tags: ["导出"], summary: "导出笔记", parameters: [{ name: "noteId", in: "path", required: true, schema: { type: "string" } }, { name: "format", in: "query", schema: { type: "string", enum: ["markdown", "html", "json", "txt"] } }], responses: { "200": { description: "导出内容" } } },
       },
 
+      // ===== Attachment Storage =====
+      "/api/attachments/_storage/status": {
+        get: {
+          tags: ["Attachment Storage"],
+          summary: "Get attachment storage status and migration summary",
+          responses: { "200": { description: "Attachment storage status", content: { "application/json": { schema: { $ref: "#/components/schemas/AttachmentStorageStatus" } } } } },
+        },
+      },
+      "/api/attachments/_storage/config": {
+        get: {
+          tags: ["Attachment Storage"],
+          summary: "Get object storage config",
+          responses: { "200": { description: "Object storage config", content: { "application/json": { schema: { $ref: "#/components/schemas/AttachmentStorageConfig" } } } } },
+        },
+        put: {
+          tags: ["Attachment Storage"],
+          summary: "Save object storage config (admin sudo required)",
+          requestBody: {
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    enabled: { type: "boolean" },
+                    endpoint: { type: "string" },
+                    region: { type: "string", default: "auto" },
+                    bucket: { type: "string" },
+                    accessKeyId: { type: "string" },
+                    secretAccessKey: { type: "string", description: "Leave empty to keep the saved secret." },
+                    prefix: { type: "string" },
+                  },
+                  required: ["enabled"],
+                },
+              },
+            },
+          },
+          responses: { "200": { description: "Saved object storage config", content: { "application/json": { schema: { $ref: "#/components/schemas/AttachmentStorageConfig" } } } } },
+        },
+        delete: {
+          tags: ["Attachment Storage"],
+          summary: "Delete saved object storage config and return to env/default source (admin sudo required)",
+          responses: { "200": { description: "Effective config after deletion", content: { "application/json": { schema: { $ref: "#/components/schemas/AttachmentStorageConfig" } } } } },
+        },
+      },
+      "/api/attachments/_storage/test": {
+        post: {
+          tags: ["Attachment Storage"],
+          summary: "Test current object storage config (admin sudo required)",
+          responses: { "200": { description: "Test result", content: { "application/json": { schema: { type: "object", properties: { ok: { type: "boolean" }, error: { type: "string" } } } } } } },
+        },
+      },
+      "/api/attachments/_storage/remote-check": {
+        get: {
+          tags: ["Attachment Storage"],
+          summary: "Sample-check whether DB attachment paths exist in remote object storage",
+          parameters: [{ name: "limit", in: "query", schema: { type: "integer", default: 50, minimum: 1, maximum: 200 } }],
+          responses: { "200": { description: "Remote check result", content: { "application/json": { schema: { $ref: "#/components/schemas/AttachmentRemoteStorageCheck" } } } } },
+        },
+      },
+
       // ===== 分享 =====
       "/api/shares": {
         get: { tags: ["分享"], summary: "获取分享列表", responses: { "200": { description: "分享列表" } } },
@@ -317,6 +427,7 @@ export function generateOpenAPISpec(): Record<string, any> {
       { name: "审计日志", description: "操作审计日志" },
       { name: "备份恢复", description: "数据备份与恢复" },
       { name: "导出", description: "笔记导出" },
+      { name: "Attachment Storage", description: "Local attachment and S3-compatible object storage management" },
       { name: "分享", description: "笔记分享" },
       { name: "系统", description: "系统设置与健康检查" },
     ],

@@ -1502,6 +1502,37 @@ export function DataFileSection() {
     }
   };
 
+  const handleResetStorageConfig = async () => {
+    if (!storageConfig) return;
+    const ok = await confirmDialog({
+      title: "恢复附件存储默认来源",
+      description: "这会删除保存在数据库里的对象存储配置。之后系统会重新使用环境变量配置；如果没有环境变量，则回到本地附件存储。",
+      confirmText: "恢复默认来源",
+      danger: true,
+    });
+    if (!ok) return;
+
+    setStorageConfigBusy(true);
+    setStorageConfigMsg(null);
+    try {
+      const deleted = await withSudo(
+        (sudoToken) => api.attachmentsAdmin.deleteStorageConfig(sudoToken),
+        askStorageSudoPassword,
+        storageSudoToken,
+      );
+      if (!deleted) return;
+      setStorageSudoToken(deleted.sudoToken);
+      setStorageConfig(deleted.result);
+      setStorageSecret("");
+      await loadStorageStatus();
+      setStorageConfigMsg({ type: "ok", text: "已恢复默认来源。当前会使用环境变量配置；未配置环境变量时使用本地存储。" });
+    } catch (err: any) {
+      setStorageConfigMsg({ type: "err", text: err?.message || "恢复默认来源失败" });
+    } finally {
+      setStorageConfigBusy(false);
+    }
+  };
+
   const handleRemoteStorageCheck = async () => {
     setRemoteCheckLoading(true);
     setRemoteCheckError("");
@@ -2098,6 +2129,16 @@ export function DataFileSection() {
                         {storageConfigBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
                         保存并测试
                       </button>
+                      {storageConfig.source === "settings" && (
+                        <button
+                          onClick={() => void handleResetStorageConfig()}
+                          disabled={storageConfigBusy}
+                          className="inline-flex items-center gap-1 rounded-md border border-zinc-200 dark:border-zinc-700 px-2 py-1 text-[11px] font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50"
+                        >
+                          {storageConfigBusy ? <Loader2 size={12} className="animate-spin" /> : <Eraser size={12} />}
+                          恢复默认来源
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}

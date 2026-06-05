@@ -53,6 +53,7 @@ import { verifySudoFromRequest } from "../lib/auth-security";
 import { extractAttachmentIdsFromContent, syncReferences } from "../lib/attachmentRefs";
 import {
   checkAttachmentObjectExists,
+  deleteObjectStorageConfig,
   deleteAttachmentObject,
   ensureAttachmentsDir as ensureStorageAttachmentsDir,
   getAttachmentStorageInfo,
@@ -1373,6 +1374,13 @@ app.put("/_storage/config", async (c) => {
     prefix: body.prefix || "",
   });
   return c.json(saved);
+});
+
+/** DELETE /api/attachments/_storage/config */
+app.delete("/_storage/config", async (c) => {
+  const denied = requireAdminSudoOrDeny(c);
+  if (denied) return denied;
+  return c.json(deleteObjectStorageConfig());
 });
 
 /** POST /api/attachments/_storage/test */

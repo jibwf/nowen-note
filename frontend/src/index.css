@@ -1,4 +1,4 @@
-/* 浣跨敤绯荤粺瀛椾綋鏍堬紝鏃犻渶渚濊禆 Google Fonts CDN */
+﻿/* 浣跨敤绯荤粺瀛椾綋鏍堬紝鏃犻渶渚濊禆 Google Fonts CDN */
 
 @tailwind base;
 @tailwind components;
@@ -1106,6 +1106,23 @@ body.density-compact {
   background: rgba(250, 204, 21, 0.3);
   border-radius: 2px;
   padding: 0 2px;
+}
+
+/* Search result keyword highlight in note list cards */
+.search-result-highlight {
+  background: rgba(250, 204, 21, 0.35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.dark .search-result-highlight {
+  background: rgba(250, 204, 21, 0.25);
+}
+.note-card-preview mark {
+  background: rgba(250, 204, 21, 0.35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
 }
 
 /* Scrollbar */

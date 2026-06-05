@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useState, useRef, useMemo } from "react";
+﻿import React, { useEffect, useCallback, useState, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Pin, PinOff, Star, StarOff, Clock, FileText, FileType2, Trash2, ArchiveRestore, Menu, FolderInput, ChevronRight, ChevronDown, ChevronLeft, Folder, X, Check, Lock, Unlock, CalendarDays, RefreshCw, Share2, GripVertical, Download, ArrowUpDown, ArrowUp, ArrowDown, Image as ImageIcon, Printer, User as UserIcon, Sparkles, Tag as TagIcon, Loader2, FileUp, PanelLeftClose } from "lucide-react";
@@ -14,7 +14,8 @@ import { useTranslation } from "react-i18next";
 import { haptic } from "@/hooks/useCapacitor";
 import { toast } from "@/lib/toast";
 import { exportSingleNote, exportSingleNoteAsPDF, exportSingleNoteAsImage } from "@/lib/exportService";
-import { realtime } from "@/lib/realtime";
+import { realtime } from "@/lib/realtime"
+import DOMPurify from "dompurify";
 // "导入 Word 文档" 走 dynamic import（见 createNoteInNotebook），减少首屏 bundle 体积。
 
 /* ===== 排序模式 ===== */
@@ -993,6 +994,19 @@ function PullToRefresh({
   );
 }
 
+
+/** 搜索高亮：将文本中的搜索关键词用 <mark> 包裹 */
+function highlightText(text: string, query: string): string {
+  if (!query || !text) return text;
+  const keywords = query.split(/\s+/).filter(Boolean);
+  let result = DOMPurify.sanitize(text);
+  for (const kw of keywords) {
+    const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`(${escaped})`, "gi");
+    result = result.replace(re, '<mark class="search-result-highlight">$1</mark>');
+  }
+  return result;
+}
 // 这里刻意不用 React.forwardRef：framer-motion v12 的 <AnimatePresence> 内部
 // PopChild 会通过 `child.ref` 读取子元素 ref 转交给自己的 wrapper，而 React 18.3
 // 起把 `ref` 视为非普通 prop，访问会触发
@@ -1002,7 +1016,7 @@ function PullToRefresh({
 const NoteCard = React.memo(function NoteCard({
   note, isActive, onClick, onContextMenu, isContextTarget, isShared, isSelected,
   draggable, onDragStart, onDragOver, onDragEnd, onDrop, isDragOver,
-  onTouchStart, onTouchMove, onTouchEnd, cardRef,
+  onTouchStart, onTouchMove, onTouchEnd, cardRef, searchQuery,
 }: {
   note: NoteListItem; isActive: boolean; onClick: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
@@ -1019,6 +1033,7 @@ const NoteCard = React.memo(function NoteCard({
   onTouchMove?: (e: React.TouchEvent) => void;
   onTouchEnd?: () => void;
   cardRef?: (el: HTMLDivElement | null) => void;
+  searchQuery?: string;
 }) {
   // 预览文本：取正文前 100 字，并把所有空白序列（含 \n、\r、\t、连续空格）
   // 压成单个空格。否则 markdown 多段落正文里的换行会被 <p> 当作空白渲染，
@@ -1100,7 +1115,11 @@ const NoteCard = React.memo(function NoteCard({
             "text-sm font-medium line-clamp-1 break-all flex-1 min-w-0",
             isActive ? "text-tx-primary" : "text-tx-secondary group-hover:text-tx-primary"
           )}>
-            {note.title || t('common.untitledNote')}
+            {searchQuery ? (
+              <span dangerouslySetInnerHTML={{ __html: highlightText(note.title || t('common.untitledNote'), searchQuery) }} />
+            ) : (
+              note.title || t('common.untitledNote')
+            )}
           </h3>
           <div className="flex items-center gap-1 shrink-0">
             {isShared && <Share2 size={11} className="text-emerald-500" />}
@@ -1117,7 +1136,11 @@ const NoteCard = React.memo(function NoteCard({
               "整行装不下的长不可断词"时才强制打破，对中英混排最友好。
             - overflow-wrap-anywhere 避免极长 URL 撑破容器。 */}
         {preview && (
-          <p className="text-xs text-tx-tertiary mt-1.5 line-clamp-2 leading-relaxed break-words [overflow-wrap:anywhere]">{preview}</p>
+          searchQuery ? (
+            <p className="note-card-preview text-xs text-tx-tertiary mt-1.5 line-clamp-2 leading-relaxed break-words [overflow-wrap:anywhere]" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(preview, { ADD_TAGS: ["mark"], ADD_ATTR: ["class"] }) }} />
+          ) : (
+            <p className="text-xs text-tx-tertiary mt-1.5 line-clamp-2 leading-relaxed break-words [overflow-wrap:anywhere]">{preview}</p>
+          )
         )}
 
         {/* 底部元信息行

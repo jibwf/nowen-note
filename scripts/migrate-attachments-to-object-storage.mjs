@@ -6,7 +6,11 @@
  *   node scripts/migrate-attachments-to-object-storage.mjs --dry-run
  *   node scripts/migrate-attachments-to-object-storage.mjs --apply
  *
- * Env:
+ * Config:
+ *   By default the script reads the object storage config saved in
+ *   Settings -> Data Management. A complete env config below overrides it.
+ *
+ * Env override:
  *   ATTACHMENT_STORAGE=s3
  *   S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
  *   S3_REGION=auto
@@ -24,6 +28,7 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
+const SETTING_KEY = "attachmentStorage:config";
 
 function parseArgs(argv) {
   const out = {
@@ -66,7 +71,13 @@ Options:
   --attachments-dir   Local attachment directory. Defaults to data/attachments.
   --limit             Process at most N unique attachment paths.
   --verbose           Print every changed or problematic path.
-  --include-existing  Also print paths that already exist remotely.`);
+  --include-existing  Also print paths that already exist remotely.
+
+Config:
+  Uses a complete env config first. If env is not configured, reads the
+  Settings -> Data Management object storage config from the SQLite DB.
+  If that config has an encrypted secret, run with the same JWT_SECRET used
+  by the backend that saved it.`);
 }
 
 function requireBetterSqlite3() {
@@ -90,6 +101,24 @@ function env(name) {
   return (process.env[name] || "").trim();
 }
 
+function deriveCipherKey() {
+  const secret = process.env.JWT_SECRET || "nowen-note-default-secret";
+  return crypto.scryptSync(secret, "nowen-attachment-storage-v1", 32);
+}
+
+function decryptSecret(encoded) {
+  if (!encoded || !encoded.startsWith("v1:")) return "";
+  try {
+    const [, ivB64, tagB64, dataB64] = encoded.split(":");
+    const decipher = crypto.createDecipheriv("aes-256-gcm", deriveCipherKey(), Buffer.from(ivB64, "base64"));
+    decipher.setAuthTag(Buffer.from(tagB64, "base64"));
+    const dec = Buffer.concat([decipher.update(Buffer.from(dataB64, "base64")), decipher.final()]);
+    return dec.toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
 function resolveDbPath(cliPath) {
   if (cliPath) return path.resolve(cliPath);
   if (process.env.DB_PATH) return path.resolve(process.env.DB_PATH);
@@ -103,12 +132,13 @@ function resolveAttachmentsDir(cliPath) {
   return path.resolve(base, "attachments");
 }
 
-function getS3Config() {
+function getEnvS3Config() {
   const storage = env("ATTACHMENT_STORAGE").toLowerCase();
   if (storage !== "s3" && storage !== "r2" && storage !== "minio") {
-    throw new Error("ATTACHMENT_STORAGE must be s3/r2/minio before running this migration.");
+    return null;
   }
   const cfg = {
+    source: "env",
     endpoint: env("S3_ENDPOINT").replace(/\/+$/, ""),
     region: env("S3_REGION") || "auto",
     bucket: env("S3_BUCKET"),
@@ -121,6 +151,52 @@ function getS3Config() {
     .map(([k]) => k);
   if (missing.length) throw new Error(`Missing S3 config: ${missing.join(", ")}`);
   return cfg;
+}
+
+function readDbS3Config(db) {
+  if (!tableExists(db, "system_settings")) return null;
+  const row = db
+    .prepare("SELECT value, updatedAt FROM system_settings WHERE key = ?")
+    .get(SETTING_KEY);
+  if (!row) return null;
+
+  const parsed = JSON.parse(row.value || "{}");
+  if (parsed.enabled !== true) {
+    throw new Error("Saved object storage config is disabled. Enable it in Settings or provide env config.");
+  }
+
+  const cfg = {
+    source: "settings",
+    endpoint: String(parsed.endpoint || "").trim().replace(/\/+$/, ""),
+    region: String(parsed.region || "auto").trim() || "auto",
+    bucket: String(parsed.bucket || "").trim(),
+    accessKeyId: String(parsed.accessKeyId || "").trim(),
+    secretAccessKey: decryptSecret(String(parsed.secretAccessKeyEnc || "")),
+    prefix: String(parsed.prefix || "").trim().replace(/^\/+|\/+$/g, ""),
+    updatedAt: row.updatedAt || null,
+  };
+  const missing = Object.entries(cfg)
+    .filter(([k, v]) => !["prefix", "updatedAt"].includes(k) && !v)
+    .map(([k]) => k);
+  if (missing.length) {
+    const extra = missing.includes("secretAccessKey")
+      ? " If the secret is saved in the UI, run this script with the same JWT_SECRET as the backend."
+      : "";
+    throw new Error(`Saved object storage config is incomplete: ${missing.join(", ")}.${extra}`);
+  }
+  return cfg;
+}
+
+function getS3Config(db) {
+  const envCfg = getEnvS3Config();
+  if (envCfg) return envCfg;
+
+  const dbCfg = readDbS3Config(db);
+  if (dbCfg) return dbCfg;
+
+  throw new Error(
+    "Object storage is not configured. Save it in Settings -> Data Management, or set ATTACHMENT_STORAGE=s3/r2/minio with S3_* env vars.",
+  );
 }
 
 function encodePathSegment(s) {
@@ -262,7 +338,6 @@ function collectAttachmentRows(db) {
 
 async function main() {
   const args = parseArgs(process.argv);
-  const cfg = getS3Config();
   const dbPath = resolveDbPath(args.db);
   const attachmentsDir = resolveAttachmentsDir(args.attachmentsDir);
   if (!fs.existsSync(dbPath)) throw new Error(`DB not found: ${dbPath}`);
@@ -270,6 +345,7 @@ async function main() {
 
   const Database = requireBetterSqlite3();
   const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+  const cfg = getS3Config(db);
   const allRows = collectAttachmentRows(db);
   db.close();
   const rows = args.limit > 0 ? allRows.slice(0, args.limit) : allRows;
@@ -286,6 +362,7 @@ async function main() {
   console.log(`[object-storage] mode=${args.dryRun ? "dry-run" : "apply"}`);
   console.log(`[object-storage] db=${dbPath}`);
   console.log(`[object-storage] attachments=${attachmentsDir}`);
+  console.log(`[object-storage] config=${cfg.source}${cfg.updatedAt ? ` updatedAt=${cfg.updatedAt}` : ""}`);
   console.log(`[object-storage] bucket=${cfg.bucket} endpoint=${cfg.endpoint} prefix=${cfg.prefix || "(none)"}`);
 
   for (const row of rows) {

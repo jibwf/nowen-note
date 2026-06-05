@@ -2835,6 +2835,19 @@ export const api = {
         updatedAt: string | null;
       }>("/attachments/_storage/config", { method: "PUT", body: JSON.stringify(input), sudoToken }),
 
+    deleteStorageConfig: (sudoToken?: string) =>
+      request<{
+        enabled: boolean;
+        endpoint: string;
+        region: string;
+        bucket: string;
+        accessKeyId: string;
+        prefix: string;
+        secretAccessKeySet: boolean;
+        source: "settings" | "env" | "default";
+        updatedAt: string | null;
+      }>("/attachments/_storage/config", { method: "DELETE", sudoToken }),
+
     testStorageConfig: (sudoToken?: string) =>
       request<{ ok: boolean; error?: string }>("/attachments/_storage/test", { method: "POST", sudoToken }),
 

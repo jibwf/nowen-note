@@ -332,6 +332,11 @@ export function writeObjectStorageConfig(input: WriteObjectStorageConfigInput): 
   return readObjectStorageConfigPublic();
 }
 
+export function deleteObjectStorageConfig(): ObjectStorageConfigPublic {
+  getDb().prepare("DELETE FROM system_settings WHERE key = ?").run(SETTING_KEY);
+  return readObjectStorageConfigPublic();
+}
+
 export async function testObjectStorageConfig(): Promise<{ ok: boolean; error?: string }> {
   const cfg = getS3Config();
   if (!cfg) return { ok: false, error: "object storage is not enabled or config is incomplete" };

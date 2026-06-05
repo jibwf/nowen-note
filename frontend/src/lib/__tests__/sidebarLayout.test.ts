@@ -13,5 +13,6 @@ describe("sidebarLayout", () => {
 
   it("widens the scrollable tree content by max depth", () => {
     expect(sidebarTreeContentMinWidth(12)).toBe(sidebarTreeRowMinWidth(12));
+    expect(sidebarTreeContentMinWidth(12)).toBeGreaterThan(600);
   });
 });

@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import SettingsModal from "@/components/SettingsModal";
 import ContextMenu, { ContextMenuItem } from "@/components/ContextMenu";
 import TagColorPopover from "@/components/TagColorPopover";
@@ -2015,7 +2014,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
             transition={{ duration: 0.2 }}
             className="flex-1 min-h-0 flex flex-col"
           >
-            <ScrollArea className="flex-1 min-h-0 px-1" scrollbars="both" type="always">
+            <div className="flex-1 min-h-0 px-1 overflow-auto overscroll-contain">
               <div className="space-y-0.5 pb-3 w-max min-w-full pr-2" style={{ minWidth: `${notebookTreeMinWidth}px` }}>
                 {tree.map((nb) => (
                   <NotebookItem
@@ -2055,7 +2054,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
                   />
                 ))}
               </div>
-            </ScrollArea>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

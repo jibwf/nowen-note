@@ -3,12 +3,11 @@
  *
  * 两个 UI 元素：
  *   1. PresenceBar：右上角头像条，显示"x 人在看"+ 正在编辑者徽标
- *   2. RemoteUpdateBanner：顶部横幅，提示"xx 更新了笔记"[重新加载]
  *
  * 都是纯展示组件，状态由 EditorPane 统一管理。
  */
 import { useMemo } from "react";
-import { Pencil, Users, RefreshCw, Trash2 } from "lucide-react";
+import { Pencil, Users, Trash2 } from "lucide-react";
 import type { PresenceUser } from "@/hooks/useRealtimeNote";
 import { cn } from "@/lib/utils";
 
@@ -135,76 +134,6 @@ export function EditingLockBanner({
     <div className="absolute bottom-4 right-4 z-20 flex items-center gap-2 px-3 py-2 rounded-lg shadow-md bg-amber-50/95 dark:bg-amber-900/90 border border-amber-200 dark:border-amber-800/50 text-xs text-amber-700 dark:text-amber-300 backdrop-blur-sm max-w-xs">
       <Pencil size={12} className="shrink-0" />
       <span className="truncate">{label}</span>
-    </div>
-  );
-}
-
-// --------------------- Remote Update Banner ---------------------
-
-export function RemoteUpdateBanner({
-  actorName,
-  conflict,
-  onReload,
-  onOverwrite,
-  onDismiss,
-}: {
-  actorName?: string;
-  /** true 表示本地也有未保存修改，不能静默覆盖 */
-  conflict?: boolean;
-  onReload: () => void;
-  onOverwrite?: () => void;
-  onDismiss: () => void;
-}) {
-  return (
-    <div className={cn(
-      "absolute bottom-4 right-4 z-20 flex flex-col gap-2 px-3 py-2.5 rounded-lg shadow-md text-xs backdrop-blur-sm max-w-[260px]",
-      conflict
-        ? "bg-amber-50/95 dark:bg-amber-900/90 border border-amber-200 dark:border-amber-800/50 text-amber-700 dark:text-amber-300"
-        : "bg-blue-50/95 dark:bg-blue-900/90 border border-blue-200 dark:border-blue-800/50 text-blue-700 dark:text-blue-300",
-    )}>
-      <div className="flex items-center gap-1.5">
-        <RefreshCw size={12} className="shrink-0" />
-        <span className="font-medium">
-          {conflict
-            ? "远端已更新，本地也有未保存修改"
-            : actorName ? `${actorName} 更新了笔记` : "笔记已被他人更新"}
-        </span>
-      </div>
-      {conflict && (
-        <div className="text-[11px] opacity-80 leading-snug">
-          可重新加载远端版本，或明确用本机内容覆盖远端。
-        </div>
-      )}
-      <div className="flex items-center gap-1.5 justify-end">
-        <button
-          onClick={onDismiss}
-          className={cn(
-            "px-2 py-0.5 rounded transition-colors text-[11px]",
-            conflict
-              ? "text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-800/30"
-              : "text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-800/30",
-          )}
-        >
-          稍后处理
-        </button>
-        {conflict && onOverwrite && (
-          <button
-            onClick={onOverwrite}
-            className="px-2 py-0.5 rounded bg-rose-500 text-white hover:bg-rose-600 transition-colors text-[11px]"
-          >
-            覆盖远端
-          </button>
-        )}
-        <button
-          onClick={onReload}
-          className={cn(
-            "px-2 py-0.5 rounded text-white transition-colors text-[11px]",
-            conflict ? "bg-amber-500 hover:bg-amber-600" : "bg-blue-500 hover:bg-blue-600",
-          )}
-        >
-          重新加载
-        </button>
-      </div>
     </div>
   );
 }

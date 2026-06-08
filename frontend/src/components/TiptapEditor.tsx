@@ -68,6 +68,7 @@ import {
 import CodeBlockView from "@/components/CodeBlockView";
 import { SearchReplacePanel, createSearchReplaceExtension } from "@/components/SearchReplacePanel";
 import { Video as VideoExtension } from "@/components/VideoExtension";
+import { serializeProseMirrorPlainText } from "@/lib/proseMirrorPlainText";
 
 import { useTranslation } from "react-i18next";
 
@@ -1470,6 +1471,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
       attributes: {
         class: "prose prose-sm max-w-none focus:outline-none min-h-[300px] px-1",
       },
+      clipboardTextSerializer: (slice) => serializeProseMirrorPlainText(slice.content),
       // 拦截 mailto: / tel: / sms: 链接的默认点击行为：
       //   - 编辑态：虽然 Link 扩展已配置 openOnClick:false，但浏览器对
       //     <a href="mailto:..."> 的原生点击仍可能被某些系统/浏览器拦截处理；

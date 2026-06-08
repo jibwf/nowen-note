@@ -340,7 +340,7 @@
     "attachmentUploading": "附件上传中...",
     "attachmentUploaded": "附件上传成功",
     "attachmentUploadFailed": "附件上传失败",
-    "attachmentTooLarge": "文件过大（最大 200MB）",
+    "attachmentTooLarge": "文件过大（最大 1024MB）",
     "insertTable": "插入表格",
     "insertMermaid": "插入 Mermaid 图表",
     "insertMath": "插入数学公式（LaTeX）",

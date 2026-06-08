@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  SIDEBAR_TREE_COUNT_RESERVE_WIDTH,
+  SIDEBAR_TREE_LABEL_RESERVE_WIDTH,
   SIDEBAR_TREE_ROW_BASE_WIDTH,
+  SIDEBAR_TREE_ROW_CHROME_WIDTH,
   sidebarTreeContentMinWidth,
   sidebarTreeRowMinWidth,
 } from "@/lib/sidebarLayout";
@@ -14,5 +17,14 @@ describe("sidebarLayout", () => {
   it("widens the scrollable tree content by max depth", () => {
     expect(sidebarTreeContentMinWidth(12)).toBe(sidebarTreeRowMinWidth(12));
     expect(sidebarTreeContentMinWidth(12)).toBeGreaterThan(600);
+  });
+
+  it("reserves room for notebook note counts without manual sidebar widening", () => {
+    expect(SIDEBAR_TREE_ROW_BASE_WIDTH).toBe(
+      SIDEBAR_TREE_LABEL_RESERVE_WIDTH +
+        SIDEBAR_TREE_ROW_CHROME_WIDTH +
+        SIDEBAR_TREE_COUNT_RESERVE_WIDTH,
+    );
+    expect(SIDEBAR_TREE_COUNT_RESERVE_WIDTH).toBeGreaterThanOrEqual(32);
   });
 });

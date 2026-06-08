@@ -20,9 +20,6 @@ import CommentPanel from "@/components/CommentPanel";
 import NoteAttachmentsPanel from "@/components/NoteAttachmentsPanel";
 import {
   PresenceBar,
-  EditingLockBanner,
-  RemoteUpdateBanner,
-  RemoteDeleteBanner,
 } from "@/components/PresenceBar";
 import { EditorErrorBoundary } from "@/components/EditorErrorBoundary";
 import { useRealtimeNote } from "@/hooks/useRealtimeNote";
@@ -563,7 +560,6 @@ export default function EditorPane() {
   // Phase 2: 实时协作 —— Presence / 软锁 / 远程更新提示
   // ---------------------------------------------------------------------------
   /** 远程更新横幅：当别人保存了同一篇笔记，提示用户重新加载 / 处理冲突 */
-  const [remoteUpdate, setRemoteUpdate] = useState<{ actorUserId?: string; version: number; conflict?: boolean } | null>(null);
   const lastAutoAppliedRemoteRef = useRef<string>("");
   /** 远程删除横幅 */
   const [remoteDelete, setRemoteDelete] = useState<{ actorUserId?: string; trashed?: boolean } | null>(null);
@@ -709,7 +705,6 @@ export default function EditorPane() {
     } as any);
 
     if (hasLocalUnsavedChanges()) {
-      setRemoteUpdate({ actorUserId: msg.actorUserId, version: msg.version, conflict: true });
       return;
     }
 
@@ -723,7 +718,6 @@ export default function EditorPane() {
       if (!latest || latest.id !== msg.noteId) return;
       if (latest.version >= fresh.version) return;
       if (hasLocalUnsavedChanges()) {
-        setRemoteUpdate({ actorUserId: msg.actorUserId, version: fresh.version, conflict: true });
         return;
       }
       actions.setActiveNote(fresh);
@@ -735,10 +729,8 @@ export default function EditorPane() {
         version: fresh.version,
       } as any);
       actions.setLastSynced(new Date().toISOString());
-      setRemoteUpdate(null);
     } catch (e) {
       console.warn("[EditorPane] auto apply remote note failed:", e);
-      setRemoteUpdate({ actorUserId: msg.actorUserId, version: msg.version });
     }
   }
 
@@ -860,7 +852,6 @@ export default function EditorPane() {
 
   // 切换笔记时清空横幅
   useEffect(() => {
-    setRemoteUpdate(null);
     setRemoteDelete(null);
   }, [activeNote?.id]);
 
@@ -885,76 +876,6 @@ export default function EditorPane() {
     },
     [presenceUsers],
   );
-
-  /** 用户点"重新加载"：拉取最新笔记；冲突场景下丢弃本地 pending，避免旧内容先被保存 */
-  const handleReloadRemote = useCallback(async () => {
-    const cur = activeNoteRef.current;
-    if (!cur) return;
-    if (remoteUpdate?.conflict) {
-      try { editorHandleRef.current?.discardPending?.(); } catch {}
-      try { clearDraft(cur.id); } catch { /* ignore */ }
-    } else {
-      try { editorHandleRef.current?.flushSave(); } catch {}
-    }
-    try {
-      const fresh = await api.getNote(cur.id);
-      actions.setActiveNote(fresh);
-      actions.updateNoteInList({
-        id: fresh.id,
-        title: fresh.title,
-        contentText: fresh.contentText,
-        updatedAt: fresh.updatedAt,
-      });
-    } catch (e) {
-      console.warn("[Phase2] reload remote note failed:", e);
-      toast.error("加载最新版本失败");
-    }
-    setRemoteUpdate(null);
-  }, [actions, remoteUpdate?.conflict]);
-
-  /** 冲突场景：明确使用本机当前编辑器内容覆盖远端最新版 */
-  const handleOverwriteRemote = useCallback(async () => {
-    const cur = activeNoteRef.current;
-    if (!cur || !remoteUpdate?.conflict) return;
-    const snap = getCurrentEditorSnapshot();
-    if (!snap) return;
-    try {
-      actions.setSyncStatus("saving");
-      const latest = await api.getNoteSlim(cur.id);
-      const updated = await api.updateNote(cur.id, {
-        title: cur.title,
-        content: snap.content,
-        contentText: snap.contentText,
-        version: latest.version,
-      } as any);
-      if (activeNoteRef.current?.id === cur.id) {
-        actions.setActiveNote({
-          ...activeNoteRef.current,
-          ...updated,
-          content: snap.content,
-          contentText: snap.contentText,
-        });
-        actions.updateNoteInList({
-          id: updated.id,
-          title: updated.title,
-          contentText: updated.contentText,
-          updatedAt: updated.updatedAt,
-          version: updated.version,
-        } as any);
-      }
-      try { clearDraft(cur.id); } catch { /* ignore */ }
-      setRemoteUpdate(null);
-      actions.setSyncStatus("saved");
-      actions.setLastSynced(new Date().toISOString());
-      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
-      savedTimerRef.current = setTimeout(() => actions.setSyncStatus("idle"), 2000);
-      toast.success("已用本机内容覆盖远端版本");
-    } catch (e) {
-      console.warn("[EditorPane] overwrite remote failed:", e);
-      actions.setSyncStatus("error");
-      toast.error("覆盖远端失败，请稍后重试");
-    }
-  }, [actions, remoteUpdate?.conflict]);
 
   /** 用户确认远程删除提示：清空当前笔记并从列表移除 */
   const handleAckRemoteDelete = useCallback(() => {
@@ -1139,10 +1060,8 @@ export default function EditorPane() {
           if (!is409Error(err)) throw err;
           if (activeNoteRef.current?.id !== currentNote.id) return;
           let latestVersion = typeof err?.currentVersion === "number" ? err.currentVersion : undefined;
-          let latestMeta: any = null;
           try {
             const fresh = await api.getNote(currentNote.id);
-            latestMeta = fresh;
             latestVersion = fresh.version;
             actions.updateNoteInList({
               id: fresh.id,
@@ -1168,13 +1087,7 @@ export default function EditorPane() {
               });
             } catch { /* ignore */ }
           }
-          setRemoteUpdate({
-            actorUserId: latestMeta?.userId,
-            version: latestVersion ?? currentNote.version + 1,
-            conflict: true,
-          });
           actions.setSyncStatus("error");
-          toast.warning("远端已有新版本，本机修改已暂存，请选择重新加载或覆盖远端", 5000);
           return;
         }
       } else {
@@ -1763,6 +1676,17 @@ export default function EditorPane() {
               {activeNote.title || t('editor.untitled')}
             </span>
           </div>
+          {/* 锁定 / 解锁：移动端固定在搜索按钮左侧，保持常用入口稳定可见。 */}
+          <Button
+            variant="ghost" size="icon" className="h-8 w-8 shrink-0"
+            onClick={toggleLock}
+            aria-label={effectiveLocked ? t('editor.unlockTooltip') : t('editor.lockTooltip')}
+            title={effectiveLocked ? t('editor.unlockTooltip') : t('editor.lockTooltip')}
+          >
+            {effectiveLocked
+              ? <Lock size={17} className="text-orange-500" />
+              : <Unlock size={17} className="text-tx-tertiary" />}
+          </Button>
           {/* 搜索（查找替换）：移动端高频操作上提到顶部，方便点击；
               通过自定义事件 'nowen:open-search' 触发 TiptapEditor 内部的 SearchReplacePanel，
               避免把 TiptapEditor 的内部 state 提升到外部、保持组件接口干净。 */}
@@ -1792,16 +1716,6 @@ export default function EditorPane() {
                   transition={{ duration: 0.12 }}
                   className="absolute top-full right-0 mt-1 w-56 bg-app-elevated border border-app-border rounded-lg shadow-xl z-50 py-1 overflow-hidden"
                 >
-                  {/* 锁定 / 解锁 —— 原顶栏外露按钮，移入菜单避免拥挤 */}
-                  <button
-                    onClick={() => { toggleLock(); setShowMobileMenu(false); }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-tx-secondary active:bg-app-hover transition-colors"
-                  >
-                    {effectiveLocked
-                      ? <Lock size={15} className="text-orange-500" />
-                      : <Unlock size={15} className="text-tx-tertiary" />}
-                    <span>{effectiveLocked ? t('editor.unlockTooltip') : t('editor.lockTooltip')}</span>
-                  </button>
                   {/* 置顶 / 取消置顶 */}
                   <button
                     onClick={() => { togglePin(); setShowMobileMenu(false); }}
@@ -2091,7 +2005,7 @@ export default function EditorPane() {
               <div className="fixed inset-0 z-40" onClick={() => setShowMoveDropdown(false)} />
               <div
                 ref={moveDropdownRef}
-                className="absolute top-full left-0 mt-1 w-72 bg-app-elevated border border-app-border rounded-lg shadow-xl z-50 py-1 max-h-96 overflow-auto"
+                        className="absolute top-full left-0 mt-1 w-72 bg-white dark:bg-zinc-950 border border-app-border rounded-lg shadow-xl z-50 py-1 max-h-96 overflow-auto"
                 style={{ animation: "contextMenuIn 0.12s ease-out" }}
               >
                 {/* ── P3：AI 建议归类 ──
@@ -2378,24 +2292,7 @@ export default function EditorPane() {
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 overflow-hidden relative">
           {/* Phase 2: 实时协作横幅（软锁 / 远程更新 / 远程删除）—— absolute 浮层，不占文档流，避免页面抖动 */}
-          <EditingLockBanner users={presenceUsers} />
-          {remoteUpdate && (
-            <RemoteUpdateBanner
-              actorName={findUsername(remoteUpdate.actorUserId)}
-              conflict={remoteUpdate.conflict}
-              onReload={handleReloadRemote}
-              onOverwrite={remoteUpdate.conflict ? handleOverwriteRemote : undefined}
-              onDismiss={() => setRemoteUpdate(null)}
-            />
-          )}
-          {remoteDelete && (
-            <RemoteDeleteBanner
-              actorName={findUsername(remoteDelete.actorUserId)}
-              trashed={remoteDelete.trashed}
-              onDismiss={handleAckRemoteDelete}
-            />
-          )}
-          {pendingDraft && (
+          {false && pendingDraft ? (
             <div
               className="absolute top-2 left-2 right-2 z-30 px-3 py-2 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-100 shadow-sm flex items-center justify-between gap-2"
               role="alert"
@@ -2403,7 +2300,7 @@ export default function EditorPane() {
               <div className="text-sm leading-snug">
                 {t("editor.draftFound") || "检测到未保存的修改"}
                 <span className="ml-2 opacity-70">
-                  ({new Date(pendingDraft.savedAt).toLocaleString()})
+                  ({new Date(pendingDraft?.savedAt ?? Date.now()).toLocaleString()})
                 </span>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -2425,7 +2322,7 @@ export default function EditorPane() {
                 </Button>
               </div>
             </div>
-          )}
+          ) : null}
           {/* ErrorBoundary 包裹三种编辑器：切笔记为 key，崩溃后自动重置；
               底层还能打到 console 的 [EditorErrorBoundary] 日志与 window.__lastDirtyDoc */}
           <EditorErrorBoundary resetKey={activeNote.id}>

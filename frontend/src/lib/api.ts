@@ -261,6 +261,12 @@ function extractContentChunks(
   onArray?: (arr: any[]) => void,
 ): string[] {
   if (data === "[DONE]") return [];
+  const isControlObject = (value: unknown) =>
+    !!value
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && typeof (value as { mode?: unknown }).mode === "string"
+    && typeof (value as { t?: unknown }).t !== "string";
 
   // 直接试一次 JSON.parse；最常见的"一个 data: 一个对象"情况这里就直接搞定
   try {
@@ -271,6 +277,9 @@ function extractContentChunks(
     }
     if (parsed && typeof parsed === "object" && typeof parsed.t === "string") {
       return [parsed.t];
+    }
+    if (isControlObject(parsed)) {
+      return [];
     }
   } catch {
     /* 落到下面继续尝试拆分 */
@@ -289,6 +298,9 @@ function extractContentChunks(
         }
         if (obj && typeof obj === "object" && typeof obj.t === "string") {
           out.push(obj.t);
+          continue;
+        }
+        if (isControlObject(obj)) {
           continue;
         }
         // 解析成功但不是预期结构，按文本兜底

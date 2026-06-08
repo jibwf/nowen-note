@@ -26,6 +26,7 @@ import { ConfirmProvider } from "@/components/ui/confirm";
 import Toaster from "@/components/Toaster";
 import { User } from "@/types";
 import { getServerUrl, clearServerUrl, broadcastLogout } from "@/lib/api";
+import { TASK_VIEW_SHELL_CLASS } from "@/lib/taskLayout";
 import { bootstrap as syncBootstrap, teardown as syncTeardown, syncNow } from "@/lib/syncEngine";
 import { realtime } from "@/lib/realtime";
 import { useBackButton, hideSplashScreen, useStatusBarSync, useKeyboardLayout, isNativePlatform } from "@/hooks/useCapacitor";
@@ -582,7 +583,7 @@ function AppLayout() {
 
       {/* ===== 主内容区 ===== */}
       {isTaskView ? (
-        <div className="flex-1 flex flex-col">
+        <div className={TASK_VIEW_SHELL_CLASS}>
           {/* 移动端顶栏 */}
           <MobileTopBar />
           <TaskCenter />

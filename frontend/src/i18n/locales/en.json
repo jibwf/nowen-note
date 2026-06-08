@@ -333,7 +333,7 @@
     "attachmentUploading": "Uploading attachment...",
     "attachmentUploaded": "Attachment uploaded",
     "attachmentUploadFailed": "Attachment upload failed",
-    "attachmentTooLarge": "File too large (max 200MB)",
+    "attachmentTooLarge": "File too large (max 1024MB)",
     "insertTable": "Insert Table",
     "insertMermaid": "Insert Mermaid Diagram",
     "insertMath": "Insert Math Formula (LaTeX)",

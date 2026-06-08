@@ -13,6 +13,11 @@ import { api, getCurrentWorkspace } from "@/lib/api";
 import { Task, TaskFilter, TaskPriority, TaskStats } from "@/types";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import {
+  TASK_CENTER_MAIN_CLASS,
+  TASK_CENTER_ROOT_CLASS,
+  TASK_MOBILE_FILTER_BAR_CLASS,
+} from "@/lib/taskLayout";
 
 /* ===========================================================================
  * 任务标题富文本协议
@@ -853,7 +858,7 @@ export default function TaskCenter() {
   };
 
   return (
-    <div className="flex h-full w-full overflow-hidden relative">
+    <div className={TASK_CENTER_ROOT_CLASS}>
       {/* Left: Filter Panel — 桌面端显示 */}
       <div className="hidden md:flex w-[220px] min-w-[220px] shrink-0 border-r border-app-border bg-app-surface flex-col transition-colors">
         <div className="px-4 py-4 border-b border-app-border">
@@ -896,9 +901,9 @@ export default function TaskCenter() {
       </div>
 
       {/* Center: Task List */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-app-bg transition-colors">
+      <div className={TASK_CENTER_MAIN_CLASS}>
         {/* 移动端：水平筛选标签 */}
-        <div className="md:hidden flex items-center gap-1 px-3 py-2 border-b border-app-border overflow-x-auto no-scrollbar">
+        <div className={TASK_MOBILE_FILTER_BAR_CLASS}>
           {FILTERS.map((f) => (
             <button
               key={f.key}

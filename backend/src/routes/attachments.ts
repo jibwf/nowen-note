@@ -262,9 +262,9 @@ function toResponseBody(buf: Buffer): Uint8Array<ArrayBuffer> {
   return out as Uint8Array<ArrayBuffer>;
 }
 
-// 单个附件最大 200MB。反向代理侧还会再设 body limit。
+// 单个附件最大 1GB。反向代理侧还会再设 body limit。
 // 之前是 50MB（按"图片"设计），放开到任意格式后上调一档，方便传 PDF / 安装包零件 / 压缩包。
-const MAX_ATTACHMENT_SIZE = 200 * 1024 * 1024;
+const MAX_ATTACHMENT_SIZE = 1024 * 1024 * 1024;
 
 export interface ExistingAttachmentForDedup {
   id?: string;

@@ -257,6 +257,13 @@ export class NowenApiClient {
             references = parsed;
             continue;
           }
+          if (parsed && typeof parsed === "object" && typeof parsed.t === "string") {
+            answer += parsed.t;
+            continue;
+          }
+          if (parsed && typeof parsed === "object" && typeof parsed.mode === "string") {
+            continue;
+          }
         } catch {
           // 不是 JSON，是普通文本内容
         }

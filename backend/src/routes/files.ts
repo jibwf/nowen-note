@@ -1058,8 +1058,8 @@ app.post("/batch-delete", async (c) => {
 // URL 不变、已有引用照常工作）；只是"首次归属"记在这条 holder note 下。
 // ---------------------------------------------------------------------------
 
-/** 200MB —— 与 attachments.ts 上传上限对齐。 */
-const MAX_UPLOAD_SIZE = 200 * 1024 * 1024;
+/** 1GB —— 与 attachments.ts 上传上限对齐。 */
+const MAX_UPLOAD_SIZE = 1024 * 1024 * 1024;
 
 /** 与 attachments.ts 同款黑名单；其余任意 MIME 放行。 */
 const BLOCKED_MIMES = new Set([

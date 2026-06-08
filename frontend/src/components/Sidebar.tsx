@@ -700,7 +700,7 @@ function NotebookItem({
           <>
             <span className="flex-1 min-w-0 truncate">{notebook.name}</span>
             {notebook.noteCount !== undefined && notebook.noteCount > 0 && (
-              <span className="text-[10px] text-tx-tertiary tabular-nums shrink-0">{notebook.noteCount}</span>
+              <span className="w-9 text-right text-[10px] text-tx-tertiary tabular-nums shrink-0">{notebook.noteCount}</span>
             )}
             {showNotes && onCreateNote && (
               <button

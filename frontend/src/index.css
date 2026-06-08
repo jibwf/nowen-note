@@ -234,8 +234,8 @@ body {
 }
 
 .ProseMirror p {
-  margin: var(--pm-p-margin, 0.625rem) 0;
-  line-height: var(--pm-p-line-height, 1.8);
+  margin: var(--pm-p-margin, 0) 0;
+  line-height: var(--pm-p-line-height, 1.6);
   color: var(--pm-text);
 }
 
@@ -775,8 +775,8 @@ html[data-code-theme="solarized-light"] {
  * 鍙姩 p / li 鏄湁鎰忎负涔嬶細鏍囬銆佷唬鐮佸潡銆佽〃鏍肩殑杈硅窛鏋勬垚瑙嗚閿氱偣锛屾敼浜嗗弽鑰屾樉寰椾贡銆?
  */
 body.density-compact {
-  --pm-p-margin: 0.3rem;
-  --pm-p-line-height: 1.6;
+  --pm-p-margin: 0;
+  --pm-p-line-height: 1.5;
   --pm-li-margin: 0.2rem;
 }
 

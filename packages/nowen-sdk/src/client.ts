@@ -151,6 +151,13 @@ export class NowenClient {
             metadata = parsed;
             continue;
           }
+          if (parsed && typeof parsed === "object" && typeof parsed.t === "string") {
+            result += parsed.t;
+            continue;
+          }
+          if (parsed && typeof parsed === "object" && typeof parsed.mode === "string") {
+            continue;
+          }
         } catch { /* 普通文本 */ }
         result += data;
       }

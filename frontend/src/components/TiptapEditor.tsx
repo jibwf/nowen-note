@@ -69,6 +69,13 @@ import CodeBlockView from "@/components/CodeBlockView";
 import { SearchReplacePanel, createSearchReplaceExtension } from "@/components/SearchReplacePanel";
 import { Video as VideoExtension } from "@/components/VideoExtension";
 import { serializeProseMirrorPlainText } from "@/lib/proseMirrorPlainText";
+import {
+  insertPlainTextPreservingParagraphs,
+  isAllowedRemoteImageUrl,
+  normalizeAdjacentLists,
+  toggleBulletListSmart,
+  toggleOrderedListSmart,
+} from "@/lib/tiptapEditorCommands";
 
 import { useTranslation } from "react-i18next";
 
@@ -693,7 +700,10 @@ function createKeyboardExtension(flushSaveRef: React.MutableRefObject<() => void
           const ok = delta === 1
             ? editor.chain().focus().sinkListItem("listItem").run()
             : editor.chain().focus().liftListItem("listItem").run();
-          if (ok) return true;
+          if (ok) {
+            normalizeAdjacentLists(editor);
+            return true;
+          }
         }
 
         // 其余：调整块级 indent 属性
@@ -1159,6 +1169,14 @@ function extractHeadings(editor: any): HeadingItem[] {
     }
   });
   return headings;
+}
+
+function getEditorPlainText(editor: any): string {
+  try {
+    return serializeProseMirrorPlainText(editor.state.doc.content);
+  } catch {
+    return editor.getText();
+  }
 }
 
 export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEditor(
@@ -1898,11 +1916,10 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
           //    用户点击"立即转换样式"时再用原始文本替换刚插入的那段范围。
           if (text && looksLikeMarkdown(text)) {
             console.log("[paste-diag] PATH=markdown (insertText + confirm toast)");
-            const { state, dispatch } = view;
+            const { state } = view;
             // 记录插入起点，用于后续按 from..to 范围替换
             const insertFrom = state.selection.from;
-            const tr = state.tr.insertText(text);
-            dispatch(tr);
+            insertPlainTextPreservingParagraphs(view, text);
             // 注意：不能用 insertFrom + text.length，因为 ProseMirror 把 \n 转成段落节点，
             // 每个节点边界占 2 个位置，实际偏移远大于字符数。
             // insertText 后光标移到末尾，直接读 view.state.selection.to 即为真实终点。
@@ -2009,9 +2026,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
 
           // 6) 单行纯文本或其他：直接插入
           if (text) {
-            const { state: st, dispatch: dp } = view;
-            const tr = st.tr.insertText(text);
-            dp(tr);
+            insertPlainTextPreservingParagraphs(view, text);
           }
           return true;
         } catch (err) {
@@ -2020,9 +2035,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
           try {
             const fallbackText = event.clipboardData?.getData("text/plain") || "";
             if (fallbackText) {
-              const { state: fst, dispatch: fdp } = view;
-              const tr = fst.tr.insertText(fallbackText);
-              fdp(tr);
+              insertPlainTextPreservingParagraphs(view, fallbackText);
             }
           } catch {}
           return true;
@@ -2095,7 +2108,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
       // setContent 触发的 onUpdate 不应该保存（防止死循环）
       if (isSettingContent.current) return;
 
-      const text = editor.getText();
+      const text = getEditorPlainText(editor);
       setWordStats(computeStats(text));
       onHeadingsChange?.(extractHeadings(editor));
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
@@ -2116,7 +2129,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
       debounceTimer.current = null;
     }
     const json = JSON.stringify(editor.getJSON());
-    const text = editor.getText();
+    const text = getEditorPlainText(editor);
     const title = titleRef.current?.value || noteRef.current.title;
     lastEmittedContentRef.current = json;
     onUpdateRef.current({ content: json, contentText: text, title });
@@ -2146,7 +2159,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         clearTimeout(debounceTimer.current);
         debounceTimer.current = null;
         const json = JSON.stringify(editor.getJSON());
-        const text = editor.getText();
+        const text = getEditorPlainText(editor);
         const title = titleRef.current?.value || noteRef.current.title;
         lastEmittedContentRef.current = json;
         onUpdateRef.current({ content: json, contentText: text, title });
@@ -2162,7 +2175,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         if (!editor) return null;
         return {
           content: JSON.stringify(editor.getJSON()),
-          contentText: editor.getText(),
+          contentText: getEditorPlainText(editor),
         };
       },
       isReady: () => !!editor && !editor.isDestroyed,
@@ -2185,7 +2198,8 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
 
     if (editor && note) {
       // 笔记切换时重置 lastEmitted 守卫（新笔记的 content 肯定要真正 setContent）
-      if (lastSyncedNoteIdRef.current !== note.id) {
+      const noteChanged = lastSyncedNoteIdRef.current !== note.id;
+      if (noteChanged) {
         lastEmittedContentRef.current = null;
         lastSyncedNoteIdRef.current = note.id;
       }
@@ -2198,7 +2212,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         note.content === lastEmittedContentRef.current
       ) {
         // 仍然刷新字数/大纲，保证状态栏和大纲与实际内容同步
-        setWordStats(computeStats(editor.getText()));
+        setWordStats(computeStats(getEditorPlainText(editor)));
         onHeadingsChange?.(extractHeadings(editor));
         if (titleRef.current && titleRef.current.value !== note.title) {
           titleRef.current.value = note.title;
@@ -2210,9 +2224,25 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
       const currentJson = JSON.stringify(editor.getJSON());
       const newJson = JSON.stringify(parsed);
       if (currentJson !== newJson) {
+        if (!noteChanged && editor.view.composing) {
+          return;
+        }
+        const previousSelection = editor.state.selection;
         // 标记正在设置内容，阻止 onUpdate 触发保存
         isSettingContent.current = true;
         editor.commands.setContent(parsed, { emitUpdate: false });
+        try {
+          const docSize = editor.state.doc.content.size;
+          const from = Math.max(0, Math.min(previousSelection.from, docSize));
+          const to = Math.max(0, Math.min(previousSelection.to, docSize));
+          const selection = TextSelection.between(
+            editor.state.doc.resolve(from),
+            editor.state.doc.resolve(to),
+          );
+          editor.view.dispatch(editor.state.tr.setSelection(selection));
+        } catch {
+          /* Keep Tiptap's fallback selection if the old text position no longer maps cleanly. */
+        }
         // 等浏览器提交当前帧后再解锁，避免 setContent 的事务被当成用户编辑保存。
         const unlockSettingContent = () => {
           isSettingContent.current = false;
@@ -2227,7 +2257,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         // 把 lastEmitted 清掉，避免后续误判为"自写"。
         lastEmittedContentRef.current = null;
       }
-      setWordStats(computeStats(editor.getText()));
+      setWordStats(computeStats(getEditorPlainText(editor)));
       onHeadingsChange?.(extractHeadings(editor));
     }
     if (titleRef.current) {
@@ -2940,6 +2970,27 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
     input.click();
   }, [editor, t]);
 
+  const handleImageUrlInsert = useCallback(async () => {
+    if (!editor) return;
+    const url = await promptDialog({
+      title: t("tiptap.insertImageUrl") || "Insert image URL",
+      placeholder: t("tiptap.imageUrlPlaceholder") || "https://example.com/image.png",
+      defaultValue: "",
+      confirmText: t("common.confirm"),
+      cancelText: t("common.cancel"),
+      allowEmpty: false,
+    });
+    if (!url) return;
+
+    const src = url.trim();
+    if (!isAllowedRemoteImageUrl(src)) {
+      toast.error(t("tiptap.invalidImageUrl") || "Only http and https image URLs are allowed");
+      return;
+    }
+
+    editor.chain().focus().setImage({ src }).run();
+  }, [editor, t]);
+
   /**
    * 任意格式附件上传 → 在编辑器当前位置插入：
    *   - 图片（image/*）：当作 <img> 插入，与 handleImageUpload 一致路径
@@ -3336,14 +3387,14 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         <ToolbarDivider />
 
         <ToolbarButton
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
+          onClick={() => toggleBulletListSmart(editor)}
           isActive={editor.isActive("bulletList")}
           title={t('tiptap.bulletList')}
         >
           <List size={iconSize} />
         </ToolbarButton>
         <ToolbarButton
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
+          onClick={() => toggleOrderedListSmart(editor)}
           isActive={editor.isActive("orderedList")}
           title={t('tiptap.orderedList')}
         >
@@ -3381,6 +3432,9 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         </ToolbarButton>
         <ToolbarButton onClick={handleImageUpload} title={t('tiptap.insertImage')}>
           <ImagePlus size={iconSize} />
+        </ToolbarButton>
+        <ToolbarButton onClick={handleImageUrlInsert} title={t('tiptap.insertImageUrl')}>
+          <ExternalLink size={iconSize} />
         </ToolbarButton>
         <ToolbarButton
           onClick={async () => {
@@ -3522,7 +3576,10 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
             if (editor.isActive("taskList")) {
               if (editor.chain().focus().sinkListItem("taskItem").run()) return;
             } else if (editor.isActive("bulletList") || editor.isActive("orderedList")) {
-              if (editor.chain().focus().sinkListItem("listItem").run()) return;
+              if (editor.chain().focus().sinkListItem("listItem").run()) {
+                normalizeAdjacentLists(editor);
+                return;
+              }
             }
             (editor.chain().focus() as any).changeIndent(1).run();
           }}
@@ -3535,7 +3592,10 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
             if (editor.isActive("taskList")) {
               if (editor.chain().focus().liftListItem("taskItem").run()) return;
             } else if (editor.isActive("bulletList") || editor.isActive("orderedList")) {
-              if (editor.chain().focus().liftListItem("listItem").run()) return;
+              if (editor.chain().focus().liftListItem("listItem").run()) {
+                normalizeAdjacentLists(editor);
+                return;
+              }
             }
             (editor.chain().focus() as any).changeIndent(-1).run();
           }}

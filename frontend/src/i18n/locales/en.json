@@ -1,4 +1,4 @@
-{
+﻿{
   "common": {
     "cancel": "Cancel",
     "chars": "chars",
@@ -245,6 +245,20 @@
     "aiTitleApplied": "AI title applied",
     "aiTitleFailed": "AI title generation failed",
     "aiSuggestTags": "AI Suggest Tags",
+    "aiTagsFailed": "AI tag suggestion failed",
+    "aiSummary": "AI Summary",
+    "aiGenMindMap": "AI Mind Map",
+    "aiGenFlowchart": "AI Flowchart",
+    "aiSummaryGenerating": "Summarizing...",
+    "aiSummaryTitle": "Note Summary",
+    "aiSummaryEmptyContent": "Note content is empty, cannot summarize",
+    "aiSummaryEmptyResult": "AI did not return a valid summary",
+    "aiSummaryCopy": "Copy",
+    "aiSummaryCopied": "Copied",
+    "aiSummaryAppend": "Append to end",
+    "aiSummaryAppended": "Appended to note",
+    "aiSummaryRegenerate": "Regenerate",
+    "aiSummaryClose": "Close",
     "outline": "Outline",
     "noHeadings": "No headings",
     "noHeadingsHint": "Use H1-H3 headings to generate an outline",
@@ -338,7 +352,8 @@
     "attachmentUploadFailed": "Attachment upload failed",
     "attachmentTooLarge": "File too large (max 1024MB)",
     "insertTable": "Insert Table",
-    "insertMermaid": "Insert Mermaid Diagram",
+    "insertMermaid": "Insert Mermaid Flowchart",
+    "insertMindMap": "Insert Mind Map",
     "insertMath": "Insert Math Formula (LaTeX)",
     "insertFootnote": "Insert Footnote",
     "addRowAfter": "Add Row After",
@@ -1640,3 +1655,8 @@
     }
   }
 }
+
+
+
+
+

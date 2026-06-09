@@ -1,4 +1,4 @@
-import { Notebook, Note, NoteListItem, Tag, SearchResult, User, UserPublicInfo, Task, TaskStats, TaskFilter, CustomFont, MindMap, MindMapListItem, Diary, DiaryTimeline, DiaryStats, Share, ShareInfo, SharedNoteContent, NoteVersion, ShareComment, Workspace, WorkspaceAdminItem, WorkspaceMember, WorkspaceInvite, WorkspaceRole, WorkspaceFeatures, FileItem, FileDetail, FileListResponse, FileStats, FileSortKey, FileCategory, FileFilter, FileMyUploadsRef } from "@/types";
+﻿import { Notebook, Note, NoteListItem, Tag, SearchResult, User, UserPublicInfo, Task, TaskStats, TaskFilter, CustomFont, MindMap, MindMapListItem, Diary, DiaryTimeline, DiaryStats, Share, ShareInfo, SharedNoteContent, NoteVersion, ShareComment, Workspace, WorkspaceAdminItem, WorkspaceMember, WorkspaceInvite, WorkspaceRole, WorkspaceFeatures, FileItem, FileDetail, FileListResponse, FileStats, FileSortKey, FileCategory, FileFilter, FileMyUploadsRef } from "@/types";
 import {
   shouldEnqueue as _shouldEnqueue,
   enqueue as _enqueue,
@@ -1899,7 +1899,8 @@ export const api = {
       kind?: "note" | "attachment";
       attachmentId?: string;
       attachmentFilename?: string;
-    }[]) => void
+    }[]) => void,
+    options?: { notebookId?: string; includeChildren?: boolean }
   ): Promise<string> => {
     const token = getToken();
     // v7 RAG 隔离：把当前 scope 透传给后端
@@ -1913,7 +1914,7 @@ export const api = {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ question, history }),
+      body: JSON.stringify({ question, history, notebookId: options?.notebookId, includeChildren: options?.includeChildren }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -1992,6 +1993,31 @@ export const api = {
   },
 
   // AI 聊天记录：跨会话持久化到后端（v10 起支持多会话）
+  notebookSummary: async (notebookId: string, includeChildren = true): Promise<{ summary: string; noteCount: number }> => {
+    const token = getToken();
+    const ws = getCurrentWorkspace();
+    const qs = ws && ws !== "personal" ? `?workspaceId=${encodeURIComponent(ws)}` : "";
+    const res = await fetch(`${getBaseUrl()}/ai/notebook-summary${qs}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ notebookId, includeChildren }),
+    });
+    if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `请求失败: ${res.status}`); }
+    return res.json();
+  },
+  notebookMermaid: async (notebookId: string, includeChildren = true, diagramType: "mindmap" | "flowchart" = "mindmap"): Promise<{ mermaid: string; diagramType: string; noteCount: number }> => {
+    const token = getToken();
+    const ws = getCurrentWorkspace();
+    const qs = ws && ws !== "personal" ? `?workspaceId=${encodeURIComponent(ws)}` : "";
+    const res = await fetch(`${getBaseUrl()}/ai/notebook-mermaid${qs}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ notebookId, includeChildren, diagramType }),
+    });
+    if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `请求失败: ${res.status}`); }
+    return res.json();
+  },
+
   // 这些方法失败时抛错由调用方决定如何容错（通常面板加载失败就退回空列表即可）。
   getAiChatHistory: async (
     limit = 100,

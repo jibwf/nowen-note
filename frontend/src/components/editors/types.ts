@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 笔记编辑器统一契约（Tiptap / Markdown 两个引擎共用）
  * ----------------------------------------------------
  * 任何新编辑器引擎都应实现 `NoteEditorProps` 和可选的 `NoteEditorHandle`，
@@ -95,4 +95,10 @@ export interface NoteEditorHandle {
    * 可选：不实现的旧适配返回 undefined，调用方应视为"假定就绪"。
    */
   isReady?: () => boolean;
+  /**
+   * 向编辑器末尾追加 Markdown 文本。
+   * 编辑器内部负责将 Markdown 转为自身格式并插入，调用方不直接操作 content JSON。
+   * 未实现时返回 false，调用方应 fallback 到复制。
+   */
+  appendMarkdown?: (markdown: string) => boolean;
 }

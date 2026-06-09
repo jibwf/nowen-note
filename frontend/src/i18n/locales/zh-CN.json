@@ -1,4 +1,4 @@
-{
+﻿{
   "common": {
     "cancel": "取消",
     "chars": "字符",
@@ -252,6 +252,20 @@
     "aiTitleApplied": "已应用 AI 生成的标题",
     "aiTitleFailed": "AI 生成标题失败",
     "aiSuggestTags": "AI 推荐标签",
+    "aiTagsFailed": "AI 推荐标签失败",
+    "aiSummary": "AI 总结",
+    "aiGenMindMap": "AI 生成思维导图",
+    "aiGenFlowchart": "AI 生成流程图",
+    "aiSummaryGenerating": "正在总结...",
+    "aiSummaryTitle": "单篇笔记总结",
+    "aiSummaryEmptyContent": "当前笔记内容为空，无法总结",
+    "aiSummaryEmptyResult": "AI 未返回有效总结",
+    "aiSummaryCopy": "复制",
+    "aiSummaryCopied": "已复制",
+    "aiSummaryAppend": "追加到文末",
+    "aiSummaryAppended": "已追加到笔记末尾",
+    "aiSummaryRegenerate": "重新生成",
+    "aiSummaryClose": "关闭",
     "outline": "大纲",
     "noHeadings": "暂无标题",
     "noHeadingsHint": "使用 H1-H3 标题来生成大纲",
@@ -345,7 +359,8 @@
     "attachmentUploadFailed": "附件上传失败",
     "attachmentTooLarge": "文件过大（最大 1024MB）",
     "insertTable": "插入表格",
-    "insertMermaid": "插入 Mermaid 图表",
+    "insertMermaid": "插入 Mermaid 流程图",
+    "insertMindMap": "插入思维导图",
     "insertMath": "插入数学公式（LaTeX）",
     "insertFootnote": "插入脚注",
     "addRowAfter": "在下方添加行",
@@ -438,6 +453,11 @@
     "codeBlockDesc": "插入代码块",
     "mermaid": "流程图",
     "mermaidDesc": "插入 Mermaid 流程图",
+    "mermaidCopySource": "复制源码",
+    "mermaidCopySvg": "复制 SVG",
+    "mermaidDownloadSvg": "下载 SVG",
+    "mermaidSyntaxError": "Mermaid 语法错误",
+    "mermaidCopySourceOnError": "复制源码",
     "math": "数学公式",
     "mathDesc": "插入 LaTeX 公式（$$...$$）",
     "footnote": "脚注",
@@ -1397,6 +1417,9 @@
     "importFailed": "导入失败",
     "toolsSection": "AI 工具",
     "closePreview": "关闭预览",
+    "knowledgeScope": "知识库范围",
+    "scopeAll": "当前空间",
+    "includeChildren": "含子笔记本",
     "copyMarkdown": "复制 Markdown"
   },
   "server": {
@@ -1649,3 +1672,8 @@
     }
   }
 }
+
+
+
+
+

@@ -171,10 +171,7 @@ export default function NavRail({ variant = "desktop" }: { variant?: "desktop" |
   const handleClick = useCallback((mode: ViewMode) => {
     actions.setViewMode(mode);
     actions.setSelectedNotebook(null);
-    // mobile 变体：点击导航项后顺手关掉抽屉，符合"我已经选定要去哪"的预期。
-    // 与 Sidebar 内笔记本/标签点击关闭抽屉的行为保持一致。
-    if (isMobile) actions.setMobileSidebar(false);
-  }, [actions, isMobile]);
+  }, [actions]);
 
   const handleDesktopCloudButton = useCallback(async () => {
     if (!canSwitchBackToLocal) {

@@ -480,15 +480,24 @@ export default function MindMapCenter() {
     }
   }, []);
 
-  // 监听来自笔记编辑器的“保存为思维导图”事件
+  // 监听来自笔记编辑器的"保存为思维导图"事件 + sessionStorage 持久化
   useEffect(() => {
     const handler = (e: Event) => {
       const id = (e as CustomEvent).detail?.id;
       if (id) {
+        sessionStorage.setItem("pendingOpenMindMapId", id);
         loadMaps().then(() => handleSelect(id));
       }
     };
     window.addEventListener("nowen:open-mindmap", handler);
+
+    // 组件挂载时检查是否有待打开的导图（从笔记编辑器保存后切换过来的）
+    const pendingId = sessionStorage.getItem("pendingOpenMindMapId");
+    if (pendingId) {
+      sessionStorage.removeItem("pendingOpenMindMapId");
+      loadMaps().then(() => handleSelect(pendingId));
+    }
+
     return () => window.removeEventListener("nowen:open-mindmap", handler);
   }, [loadMaps, handleSelect]);
 

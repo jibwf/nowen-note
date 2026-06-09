@@ -9,6 +9,7 @@ import HtmlPreviewPane, { isFullHtmlDocument } from "@/components/HtmlPreviewPan
 import type { NoteEditorHandle } from "@/components/editors/types";
 import { useApp, useAppActions, SyncStatus } from "@/store/AppContext";
 import { api } from "@/lib/api";
+import { parseMermaidMindmap, normalizeMindMapData } from "@/lib/mindmapTransform";
 import { cn } from "@/lib/utils";
 import { Tag, Notebook, MindMapData, MindMapNode } from "@/types";
 import { useTranslation } from "react-i18next";
@@ -69,7 +70,7 @@ export default function EditorPane() {
   const { state } = useApp();
   const actions = useAppActions();
   const { activeNote, syncStatus, lastSyncedAt, noteLoading } = state;
-  const savedTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showMoveDropdown, setShowMoveDropdown] = useState(false);
   const moveDropdownRef = useRef<HTMLDivElement | null>(null);
   // ������Ĭ�Ͽ�/�����û�ƫ�þ��������� �� ��� �� "Ĭ����ʾ���"����
@@ -1497,6 +1498,10 @@ export default function EditorPane() {
       let result = await api.aiChat(type, text.slice(0, 5000));
       // ��ϴ��ȥ��Χ��
       result = result.replace(/^```mermaid\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```\s*$/, "").trim();
+      // Sanitize: strip chars that break Mermaid mindmap parsing
+      result = result.replace(/^(\s*\S+\s+)(.*?)(\s*)$/gm, (_m: string, prefix: string, body: string, tail: string) => {
+        return prefix + body.replace(/[[\]{}:|]/g, " ") + tail;
+      });
       if (!result) {
       toast.error(t("editor.aiSummaryEmptyResult") || "AI 未返回有效思维导图");
         setShowMermaidDialog(false);
@@ -1529,45 +1534,12 @@ export default function EditorPane() {
   }, [activeNote, aiMermaidResult, t]);
   /** 将 Mermaid mindmap 源码解析为 MindMapData */
   const parseMermaidToMindMap = useCallback((source: string): MindMapData | null => {
-    const lines = source.split("\n").filter(l => l.trim());
-    if (lines.length === 0 || !lines[0].trim().startsWith("mindmap")) return null;
-
-    let idCounter = 0;
-    const newId = () => "node-" + (++idCounter);
-
-    // 解析 root 行: "  root((text))" 或 "  root(text)"
-    const rootIdx = lines.findIndex(l => l.trim().startsWith("root"));
-    if (rootIdx < 0) return null;
-    const rootText = lines[rootIdx].trim()
-      .replace(/^root\(\(/, "").replace(/\)\)$/, "")
-      .replace(/^root\(/, "").replace(/\)$/, "")
-      .trim();
-    const root: MindMapNode = { id: newId(), text: rootText || "中心主题", children: [] };
-
-    // 基于缩进层级构建树
-    const stack: { node: MindMapNode; indent: number }[] = [{ node: root, indent: -1 }];
-
-    for (let i = rootIdx + 1; i < lines.length; i++) {
-      const line = lines[i];
-      const indent = line.search(/\S/);
-      if (indent < 0) continue;
-      const text = line.trim()
-        .replace(/^\(\(/, "").replace(/\)\)$/, "")
-        .replace(/^\(/, "").replace(/\)$/, "")
-        .trim();
-      if (!text) continue;
-
-      const node: MindMapNode = { id: newId(), text, children: [] };
-
-      // 找到父节点：栈中缩进 < 当前行缩进的最近祖先
-      while (stack.length > 1 && stack[stack.length - 1].indent >= indent) {
-        stack.pop();
-      }
-      stack[stack.length - 1].node.children.push(node);
-      stack.push({ node, indent });
+    try {
+      const data = parseMermaidMindmap(source);
+      return normalizeMindMapData(data);
+    } catch {
+      return null;
     }
-
-    return { root };
   }, []);
 
   const [mermaidSavingMindMap, setMermaidSavingMindMap] = useState(false);
@@ -1585,7 +1557,10 @@ export default function EditorPane() {
       toast.success("已保存为思维导图");
       setShowMermaidDialog(false);
       // 通知 MindMapEditor 打开新图
-      window.dispatchEvent(new CustomEvent("nowen:open-mindmap", { detail: { id: created.id } }));
+      // 切换到思维导图视图
+      // 保存 pending ID 到 sessionStorage 并切换到思维导图视图
+      sessionStorage.setItem("pendingOpenMindMapId", created.id);
+      actions.setViewMode("mindmaps");
     } catch (e: any) {
       console.error("Save mindmap error:", e);
       toast.error(e?.message || "保存失败");

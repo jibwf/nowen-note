@@ -350,6 +350,28 @@ function AppLayout() {
   const isFilesView = state.viewMode === "files";
   const isRegularNoteBrowser = state.viewMode === "all" || state.viewMode === "notebook";
   const showDesktopNoteList = !state.noteListCollapsed && !(userPrefs.showNotesInNotebookTree && isRegularNoteBrowser);
+  const sidebarBackdropPointerStart = useRef<{ x: number; y: number } | null>(null);
+
+  const handleSidebarBackdropPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return;
+    sidebarBackdropPointerStart.current = { x: e.clientX, y: e.clientY };
+  }, []);
+
+  const handleSidebarBackdropPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const start = sidebarBackdropPointerStart.current;
+    sidebarBackdropPointerStart.current = null;
+    if (!start || e.target !== e.currentTarget) return;
+
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (dx * dx + dy * dy <= 64) {
+      actions.setMobileSidebar(false);
+    }
+  }, [actions]);
+
+  const handleSidebarBackdropPointerCancel = useCallback(() => {
+    sidebarBackdropPointerStart.current = null;
+  }, []);
 
   /**
    * Cmd-K 全局搜索面板开关
@@ -388,15 +410,13 @@ function AppLayout() {
   const handleBackToList = useCallback(() => {
     actions.setMobileView("list");
   }, [actions]);
-  const handleCloseSidebar = useCallback(() => {
-    actions.setMobileSidebar(false);
-  }, [actions]);
+  const ignoreSidebarBack = useCallback(() => {}, []);
 
   useBackButton({
     mobileView: state.mobileView,
-    mobileSidebarOpen: state.mobileSidebarOpen,
+    mobileSidebarOpen: false,
     onBackToList: handleBackToList,
-    onCloseSidebar: handleCloseSidebar,
+    onCloseSidebar: ignoreSidebarBack,
   });
 
   // P2: 状态栏与主题同步
@@ -427,10 +447,11 @@ function AppLayout() {
   const handleSwipeOpen = useCallback(() => {
     actions.setMobileSidebar(true);
   }, [actions]);
+  const ignoreSwipeClose = useCallback(() => {}, []);
 
   useSwipeGesture({
     onSwipeRight: handleSwipeOpen,
-    onSwipeLeft: handleCloseSidebar,
+    onSwipeLeft: ignoreSwipeClose,
     mobileSidebarOpen: state.mobileSidebarOpen,
   });
 
@@ -540,7 +561,9 @@ function AppLayout() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => actions.setMobileSidebar(false)}
+              onPointerDown={handleSidebarBackdropPointerDown}
+              onPointerUp={handleSidebarBackdropPointerUp}
+              onPointerCancel={handleSidebarBackdropPointerCancel}
               className="fixed inset-0 z-40 bg-zinc-900/60 backdrop-blur-sm md:hidden"
             />
             <motion.div
@@ -548,7 +571,7 @@ function AppLayout() {
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
               transition={{ type: "spring", bounce: 0, duration: 0.35 }}
-              className="fixed inset-y-0 left-0 z-50 w-[88%] max-w-[380px] md:hidden shadow-2xl flex"
+              className="fixed inset-y-0 left-0 z-50 w-[88%] max-w-[380px] md:hidden shadow-2xl flex overflow-hidden"
               // 底部避让 home indicator / 手势栏：抽屉容器统一处理，
               // 内部 NavRail / Sidebar 不再各自加 safe-area-bottom，避免重复 padding。
               // 顶部状态栏避让仍由 NavRail / Sidebar Header 各自的 paddingTop 处理
@@ -556,7 +579,7 @@ function AppLayout() {
               style={{ paddingBottom: 'var(--safe-area-bottom)' }}
             >
               <NavRail variant="mobile" />
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 overflow-hidden">
                 <Sidebar />
               </div>
             </motion.div>

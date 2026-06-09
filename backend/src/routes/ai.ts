@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+﻿import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { getDb } from "../db/schema";
 import {
@@ -12,6 +12,7 @@ import {
   reindexAllVectors,
 } from "../services/vec-store";
 import { getUserWorkspaceRole } from "../middleware/acl";
+import { callAIChat, callAIChatStream, extractTextFromChatCompletion } from "../services/ai-client";
 
 const ai = new Hono();
 
@@ -49,8 +50,81 @@ function resolveScope(
       };
     }
   }
-
   return { userId, workspaceId: ws };
+}
+
+
+// ===== 笔记本级知识库 scope =====
+//
+// 扩展 resolveScope：支持 notebookId 过滤 + 子笔记本递归。
+// 返回 notebookIds（null = 不过滤，整个 workspace/个人空间）。
+interface KnowledgeScope {
+  userId: string;
+  workspaceId: string | null;
+  notebookIds: string[] | null; // null = 全空间
+}
+
+/**
+ * 递归获取所有子孙笔记本 ID（含自身）。
+ */
+function getDescendantNotebookIds(db: any, rootIds: string[]): string[] {
+  const result = [...rootIds];
+  const queue = [...rootIds];
+  while (queue.length > 0) {
+    const batch = queue.splice(0);
+    const ph = batch.map(() => "?").join(",");
+    const rows = db.prepare(`SELECT id FROM notebooks WHERE parentId IN (${ph}) AND isDeleted = 0`).all(...batch) as { id: string }[];
+    for (const r of rows) {
+      result.push(r.id);
+      queue.push(r.id);
+    }
+  }
+  return result;
+}
+
+/**
+ * 解析带笔记本范围的知识库 scope。
+ * body.notebookId + body.includeChildren。
+ * 权限校验：notebook 必须属于当前用户的当前 scope。
+ */
+function resolveKnowledgeScope(
+  c: any,
+  body: { notebookId?: string; includeChildren?: boolean },
+): KnowledgeScope | { error: Response } {
+  const base = resolveScope(c);
+  if ("error" in base) return base;
+  const { userId, workspaceId } = base;
+
+  if (!body.notebookId) {
+    return { userId, workspaceId, notebookIds: null };
+  }
+
+  const db = getDb();
+  const nb = db.prepare("SELECT id, userId, workspaceId FROM notebooks WHERE id = ? AND isDeleted = 0").get(body.notebookId) as
+    | { id: string; userId: string; workspaceId: string | null }
+    | undefined;
+  if (!nb) {
+    return { error: c.json({ error: "笔记本不存在" }, 404) as Response };
+  }
+
+  // 权限校验：
+  //   personal scope (workspaceId === null): notebook 必须是自己的 + workspaceId IS NULL
+  //   workspace scope: notebook.workspaceId 必须匹配
+  if (workspaceId === null) {
+    if (nb.userId !== userId || nb.workspaceId !== null) {
+      return { error: c.json({ error: "无权访问该笔记本" }, 403) as Response };
+    }
+  } else {
+    if ((nb.workspaceId || null) !== workspaceId) {
+      return { error: c.json({ error: "该笔记本不属于当前工作区" }, 403) as Response };
+    }
+  }
+
+  let notebookIds = [nb.id];
+  if (body.includeChildren) {
+    notebookIds = getDescendantNotebookIds(db, notebookIds);
+  }
+  return { userId, workspaceId, notebookIds };
 }
 
 // ===== AI 设置管理 =====
@@ -169,52 +243,44 @@ ai.post("/test", async (c) => {
     return c.json({ success: false, error: "未配置 API Key" }, 400);
   }
 
-  // 规范化 URL：去除末尾斜杠，避免拼接出双斜杠
-  const baseUrl = settings.ai_api_url.replace(/\/+$/, "");
-
   try {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (settings.ai_api_key) {
-      headers["Authorization"] = `Bearer ${settings.ai_api_key}`;
-    }
-
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        model: settings.ai_model,
-        messages: [{ role: "user", content: "Hi" }],
-        max_tokens: 5,
-      }),
-      signal: AbortSignal.timeout(15000),
+    const text = await callAIChat(settings, [{ role: "user", content: "Hi" }], {
+      max_tokens: 10,
+      timeout_ms: 15000,
     });
 
-    if (!res.ok) {
-      // 如果是 Ollama 且返回 405，尝试回退到 Ollama 原生 API 进行连接测试
-      if (settings.ai_provider === "ollama" && res.status === 405) {
-        // 从 URL 中提取 Ollama 基础地址（去掉 /v1 后缀）
-        const ollamaBase = baseUrl.replace(/\/v1$/, "");
-        try {
-          const fallbackRes = await fetch(`${ollamaBase}/api/tags`, {
-            method: "GET",
-            signal: AbortSignal.timeout(10000),
-          });
-          if (fallbackRes.ok) {
-            return c.json({
-              success: true,
-              message: "连接成功（Ollama 原生 API）。注意：当前 Ollama 版本可能不支持 OpenAI 兼容接口（/v1/chat/completions），请升级 Ollama 至 v0.1.14 或更高版本以获得完整功能支持。",
-            });
-          }
-        } catch { /* 回退也失败，返回原始错误 */ }
-      }
-
-      const err = await res.text();
-      return c.json({ success: false, error: `API 返回 ${res.status}: ${err.slice(0, 200)}` }, 400);
+    if (!text) {
+      return c.json({
+        success: false,
+        error: `连接成功但 AI 未返回文本（provider: ${settings.ai_provider}, model: ${settings.ai_model}）。请检查模型名称和接口格式是否正确。`,
+      }, 400);
     }
 
-    return c.json({ success: true, message: "连接成功" });
+    return c.json({
+      success: true,
+      message: "连接成功",
+      preview: text.slice(0, 100),
+    });
   } catch (err: any) {
-    return c.json({ success: false, error: err.message || "连接失败" }, 500);
+    const msg = err?.message || "连接失败";
+    // 补充 Ollama 原生 API 回退
+    if (settings.ai_provider === "ollama" && /405|Method Not Allowed/i.test(msg)) {
+      const ollamaBase = settings.ai_api_url.replace(/\/+$/, "").replace(/\/v1$/, "");
+      try {
+        const fallbackRes = await fetch(`${ollamaBase}/api/tags`, {
+          method: "GET",
+          signal: AbortSignal.timeout(10000),
+        });
+        if (fallbackRes.ok) {
+          return c.json({
+            success: true,
+            message: "连接成功（Ollama 原生 API）。注意：当前 Ollama 版本可能不支持 OpenAI 兼容接口（/v1/chat/completions），请升级 Ollama 至 v0.1.14 或更高版本以获得完整功能支持。",
+          });
+        }
+      } catch { /* 回退也失败，返回原始错误 */ }
+    }
+
+    return c.json({ success: false, error: msg }, 500);
   }
 });
 
@@ -253,7 +319,7 @@ ai.get("/models", async (c) => {
 
 // ===== AI 写作助手（流式 SSE） =====
 
-type AIAction = "continue" | "rewrite" | "polish" | "shorten" | "expand" | "translate_en" | "translate_zh" | "summarize" | "explain" | "fix_grammar" | "title" | "tags" | "format_markdown" | "format_code" | "custom";
+type AIAction = "continue" | "rewrite" | "polish" | "shorten" | "expand" | "translate_en" | "translate_zh" | "summarize" | "explain" | "fix_grammar" | "title" | "tags" | "format_markdown" | "format_code" | "custom" | "mermaid_mindmap" | "mermaid_flowchart";
 
 const ACTION_PROMPTS: Record<AIAction, string> = {
   continue: "请根据上下文，自然流畅地续写以下内容。不要重复已有内容，直接输出续写部分：",
@@ -263,7 +329,7 @@ const ACTION_PROMPTS: Record<AIAction, string> = {
   expand: "请对以下内容进行扩展，增加更多细节和解释，使其更充实：",
   translate_en: "请将以下内容翻译为英文，保持原意和风格：",
   translate_zh: "请将以下内容翻译为中文，保持原意和风格：",
-  summarize: "请为以下内容生成一个简洁的摘要（100字以内）：",
+  summarize: "请总结以下笔记内容，要求：\n1. 先给出 3-5 条要点\n2. 再给出一段简洁总结\n3. 不要编造原文没有的信息\n4. 保持结构清晰\n5. 用中文输出：",
   explain: "请用通俗易懂的语言解释以下内容：",
   fix_grammar: "请修正以下内容中的语法和拼写错误，只返回修正后的文本：",
   format_markdown: "请将以下内容按照规范的 Markdown 格式重新排版，合理使用标题、列表、代码块、表格、加粗、引用等格式元素，保持原意不变，使内容结构更清晰：",
@@ -271,6 +337,8 @@ const ACTION_PROMPTS: Record<AIAction, string> = {
   custom: "",
   title: "请根据以下笔记内容，生成一个简洁准确的标题（10字以内），只返回标题文本，不要加引号或其他标点：",
   tags: "请根据以下笔记内容，推荐3-5个标签关键词。每个标签用逗号分隔，只返回标签文本，不要加#号：",
+  mermaid_mindmap: "请根据以下笔记内容，生成一个 Mermaid mindmap 思维导图。要求：只输出 Mermaid 源码，不要 Markdown 代码围栏，不要解释，第一行必须是 mindmap，节点不超过 50 个，层级不超过 4 层，不要编造原文没有的信息：",
+  mermaid_flowchart: "请根据以下笔记内容，生成一个 Mermaid 流程图。要求：只输出 Mermaid 源码，不要 Markdown 代码围栏，不要解释，第一行必须是 flowchart TD，节点不超过 50 个，层级不超过 4 层，不要编造原文没有的信息：",
 };
 
 ai.post("/chat", async (c) => {
@@ -316,72 +384,49 @@ ai.post("/chat", async (c) => {
   }
 
   messages.push({ role: "user", content: `${systemPrompt}\n\n${text}` });
+  const temperature = action === "fix_grammar" ? 0.1 : action === "format_code" ? 0.2 : 0.7;
+  const max_tokens = action === "title" ? 200 : action === "tags" ? 300 : action === "summarize" ? 800 : action === "mermaid_mindmap" ? 1500 : action === "mermaid_flowchart" ? 1500 : action === "custom" ? 4000 : 2000;
 
-  // 规范化 URL：去除末尾斜杠，避免拼接出双斜杠
-  const baseUrl = settings.ai_api_url.replace(/\/+$/, "");
-
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (settings.ai_api_key) {
-    headers["Authorization"] = `Bearer ${settings.ai_api_key}`;
-  }
+  // title / tags / summarize 短任务 → non-stream，更稳定
+  const isShortAction = action === "title" || action === "tags" || action === "summarize" || action === "mermaid_mindmap" || action === "mermaid_flowchart";
 
   try {
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        model: settings.ai_model,
-        messages,
-        stream: true,
-        temperature: action === "fix_grammar" ? 0.1 : action === "format_code" ? 0.2 : 0.7,
-        max_tokens: action === "title" ? 50 : action === "tags" ? 100 : action === "summarize" ? 300 : action === "custom" ? 4000 : 2000,
-      }),
-    });
-
-    if (!res.ok) {
-      const err = await res.text();
-      return c.json({ error: `AI 服务错误: ${res.status} ${err.slice(0, 200)}` }, 502);
-    }
-
-    // SSE streaming
-    return streamSSE(c, async (stream) => {
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || !trimmed.startsWith("data: ")) continue;
-            const data = trimmed.slice(6);
-            if (data === "[DONE]") {
-              await stream.writeSSE({ data: "[DONE]", event: "done" });
-              return;
-            }
-            try {
-              const json = JSON.parse(data);
-              const content = json.choices?.[0]?.delta?.content;
-              if (content) {
-                // 同 /ask：用 JSON 包裹，避免换行被 SSE 行分隔符吞掉。
-                await stream.writeSSE({ data: JSON.stringify({ t: content }), event: "message" });
-              }
-            } catch {
-              // skip malformed JSON
-            }
-          }
+    if (isShortAction) {
+      // ---- non-stream 路径 ----
+      const text = await callAIChat(settings, messages, { temperature, max_tokens });
+      return streamSSE(c, async (stream) => {
+        if (text) {
+          await stream.writeSSE({ data: JSON.stringify({ t: text }), event: "message" });
         }
         await stream.writeSSE({ data: "[DONE]", event: "done" });
-      } catch (err) {
-        await stream.writeSSE({ data: "流式传输中断", event: "error" });
+      });
+    }
+    // ---- stream 路径（写作助手等长文本 action） ----
+    return streamSSE(c, async (stream) => {
+      let hasContent = false;
+      try {
+        for await (const chunk of callAIChatStream(settings, messages, { temperature, max_tokens })) {
+          hasContent = true;
+          await stream.writeSSE({ data: JSON.stringify({ t: chunk }), event: "message" });
+        }
+      } catch (streamErr) {
+        console.error("[AI] stream fallback to non-stream:", streamErr);
       }
+
+      // fallback：stream 没有解析到任何内容，尝试 non-stream
+      if (!hasContent) {
+        try {
+          const text = await callAIChat(settings, messages, { temperature, max_tokens });
+          if (text) {
+            await stream.writeSSE({ data: JSON.stringify({ t: text }), event: "message" });
+          }
+        } catch (nonStreamErr) {
+          console.error("[AI] non-stream fallback failed:", nonStreamErr);
+          await stream.writeSSE({ data: "AI 请求失败", event: "error" });
+        }
+      }
+
+      await stream.writeSSE({ data: "[DONE]", event: "done" });
     });
   } catch (err: any) {
     return c.json({ error: err.message || "AI 请求失败" }, 500);
@@ -461,9 +506,8 @@ ai.post("/ask", async (c) => {
     return c.json({ error: "未配置 API Key" }, 400);
   }
 
-  const { question, history } = await c.req.json() as {
-    question: string;
-    history?: { role: string; content: string }[];
+  const { question, history, notebookId, includeChildren } = await c.req.json() as {
+    question: string; history?: { role: string; content: string }[]; notebookId?: string; includeChildren?: boolean;
   };
 
   if (!question) {
@@ -485,14 +529,18 @@ ai.post("/ask", async (c) => {
   //     - 工作区  ：仅命中该工作区下的笔记（不限作者，工作区成员共享）
   //   未通过 resolveScope 的成员校验直接 403，杜绝"用 query 偷看其他工作区"。
   const db = getDb();
-  const scope = resolveScope(c);
+  const scope = resolveKnowledgeScope(c, { notebookId, includeChildren });
   if ("error" in scope) return scope.error;
-  const { userId, workspaceId } = scope;
+  const { userId, workspaceId, notebookIds } = scope;
 
   // 共享的 scope SQL 片段：notes 表与 ai 路由用相同列名
   // workspaceId 为 null 时用 IS NULL（不能用 = ?），所以分两套
   const wsClause = workspaceId === null ? "workspaceId IS NULL" : "workspaceId = ?";
   const wsParams: any[] = workspaceId === null ? [] : [workspaceId];
+
+  // 笔记本范围 SQL 片段
+  const nbClause = notebookIds ? `notebookId IN (${notebookIds.map(() => "?").join(",")})` : "";
+  const nbParams: any[] = notebookIds ? [...notebookIds] : [];
 
   // relatedNotes 的 kind：
   //   - 'note'       普通笔记命中
@@ -563,10 +611,10 @@ ai.post("/ask", async (c) => {
         const userParams = workspaceId === null ? [userId] : [];
         const notes = db.prepare(`
           SELECT id, title, contentText FROM notes
-          WHERE rowid IN (${placeholders}) AND ${userClause}${wsClause} AND isTrashed = 0
+          WHERE rowid IN (${placeholders}) AND ${userClause}${wsClause} AND isTrashed = 0 ${nbClause ? `AND ${nbClause}` : ``}
           ORDER BY updatedAt DESC
           LIMIT 5
-        `).all(...rowids, ...userParams, ...wsParams) as { id: string; title: string; contentText: string }[];
+        `).all(...rowids, ...userParams, ...wsParams, ...nbParams) as { id: string; title: string; contentText: string }[];
 
         relatedNotes = notes.map(n => ({
           id: n.id,
@@ -595,10 +643,10 @@ ai.post("/ask", async (c) => {
       const userParams = workspaceId === null ? [userId] : [];
       const notes = db.prepare(`
         SELECT id, title, contentText FROM notes
-        WHERE ${userClause}${wsClause} AND isTrashed = 0 AND (${likeClauses})
+        WHERE ${userClause}${wsClause} AND isTrashed = 0 ${nbClause ? `AND ${nbClause}` : ``} AND (${likeClauses})
         ORDER BY updatedAt DESC
         LIMIT 5
-      `).all(...userParams, ...wsParams, ...likeParams) as { id: string; title: string; contentText: string }[];
+      `).all(...userParams, ...wsParams, ...nbParams, ...likeParams) as { id: string; title: string; contentText: string }[];
 
       relatedNotes = notes.map(n => ({
         id: n.id,
@@ -621,10 +669,10 @@ ai.post("/ask", async (c) => {
       const userParams = workspaceId === null ? [userId] : [];
       const notes = db.prepare(`
         SELECT id, title, contentText FROM notes
-        WHERE ${userClause}${wsClause} AND isTrashed = 0
+        WHERE ${userClause}${wsClause} AND isTrashed = 0 ${nbClause ? `AND ${nbClause}` : ``}
         ORDER BY updatedAt DESC
         LIMIT 5
-      `).all(...userParams, ...wsParams) as { id: string; title: string; contentText: string }[];
+      `).all(...userParams, ...wsParams, ...nbParams) as { id: string; title: string; contentText: string }[];
 
       relatedNotes = notes.map(n => ({
         id: n.id,
@@ -2448,4 +2496,106 @@ ai.post("/classify", async (c) => {
   }
 });
 
+
+// ===== 笔记本级 AI 总结 / Mermaid 生成 =====
+
+/**
+ * 从指定笔记本（可含子笔记本）收集笔记摘要文本。
+ * 超过 maxNotes 篇时只取标题 + 前 200 字。
+ */
+function collectNotebookTexts(
+  db: any,
+  userId: string,
+  workspaceId: string | null,
+  notebookIds: string[],
+  maxNotes = 50,
+): { title: string; snippet: string }[] {
+  const wsClause = workspaceId === null ? "workspaceId IS NULL" : "workspaceId = ?";
+  const wsParams = workspaceId === null ? [] : [workspaceId];
+  const userClause = workspaceId === null ? "userId = ? AND " : "";
+  const userParams = workspaceId === null ? [userId] : [];
+  const nbPh = notebookIds.map(() => "?").join(",");
+  const rows = db.prepare(`
+    SELECT title, contentText FROM notes
+    WHERE ${userClause}${wsClause} AND isTrashed = 0 AND notebookId IN (${nbPh})
+    ORDER BY updatedAt DESC
+    LIMIT ?
+  `).all(...userParams, ...wsParams, ...notebookIds, maxNotes) as { title: string; contentText: string }[];
+  return rows.map(r => ({
+    title: r.title || "(未命名)",
+    snippet: (r.contentText || "").slice(0, 200),
+  }));
+}
+
+ai.post("/notebook-summary", async (c) => {
+  const body = await c.req.json() as { notebookId: string; includeChildren?: boolean };
+  if (!body.notebookId) return c.json({ error: "请指定笔记本" }, 400);
+
+  const scope = resolveKnowledgeScope(c, body);
+  if ("error" in scope) return scope.error;
+  const { userId, workspaceId, notebookIds } = scope;
+  if (!notebookIds) return c.json({ error: "请指定笔记本" }, 400);
+
+  const db = getDb();
+  const notes = collectNotebookTexts(db, userId, workspaceId, notebookIds);
+  if (notes.length === 0) return c.json({ error: "该笔记本没有笔记" }, 400);
+
+  const noteBlock = notes.map((n, i) => `${i + 1}. ${n.title}\n${n.snippet}`).join("\n\n");
+  const prompt = "请总结以下笔记本中的笔记内容，要求：\n1. 先给出笔记本整体主题\n2. 列出 5-10 条核心要点\n3. 给出一段简洁总结\n4. 不要编造原文没有的信息\n5. 用中文输出\n\n笔记列表：\n" + noteBlock;
+
+  try {
+    const settings = getAISettings();
+    const text = await callAIChat(settings, [
+      { role: "system", content: "你是一个知识库分析助手。" },
+      { role: "user", content: prompt },
+    ], { max_tokens: 1500 });
+    return c.json({ summary: text, noteCount: notes.length });
+  } catch (err: any) {
+    return c.json({ error: err.message || "AI 请求失败" }, 500);
+  }
+});
+
+ai.post("/notebook-mermaid", async (c) => {
+  const body = await c.req.json() as { notebookId: string; includeChildren?: boolean; diagramType?: "mindmap" | "flowchart" };
+  if (!body.notebookId) return c.json({ error: "请指定笔记本" }, 400);
+
+  const scope = resolveKnowledgeScope(c, body);
+  if ("error" in scope) return scope.error;
+  const { userId, workspaceId, notebookIds } = scope;
+  if (!notebookIds) return c.json({ error: "请指定笔记本" }, 400);
+
+  const db = getDb();
+  const notes = collectNotebookTexts(db, userId, workspaceId, notebookIds);
+  if (notes.length === 0) return c.json({ error: "该笔记本没有笔记" }, 400);
+
+  const diagramType = body.diagramType || "mindmap";
+  const noteBlock = notes.map((n, i) => `${i + 1}. ${n.title}\n${n.snippet}`).join("\n\n");
+  const prompt = diagramType === "mindmap"
+    ? "请根据以下笔记列表生成一个 Mermaid mindmap 思维导图，展示笔记本的知识结构。要求：只输出 Mermaid 源码，不要代码围栏，不要解释，第一行必须是 mindmap，节点不超过 50 个，层级不超过 4 层。\n\n笔记列表：\n" + noteBlock
+    : "请根据以下笔记列表生成一个 Mermaid flowchart 流程图，展示笔记本的知识结构和笔记间关系。要求：只输出 Mermaid 源码，不要代码围栏，不要解释，第一行必须是 flowchart TD，节点不超过 50 个。\n\n笔记列表：\n" + noteBlock;
+
+  try {
+    const settings = getAISettings();
+    let mermaid = await callAIChat(settings, [
+      { role: "system", content: "你是一个知识库可视化助手。只输出合法的 Mermaid 源码。" },
+      { role: "user", content: prompt },
+    ], { max_tokens: 2000 });
+
+    // 清洗：去掉围栏、多余空白
+    mermaid = mermaid.replace(/^```mermaid\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```\s*$/, "").trim();
+    // 校验开头
+    if (diagramType === "mindmap" && !mermaid.startsWith("mindmap")) {
+      return c.json({ error: "AI 未返回合法的 mindmap 源码", raw: mermaid.slice(0, 300) }, 502);
+    }
+    if (diagramType === "flowchart" && !mermaid.startsWith("flowchart") && !mermaid.startsWith("graph")) {
+      return c.json({ error: "AI 未返回合法的 flowchart 源码", raw: mermaid.slice(0, 300) }, 502);
+    }
+
+    return c.json({ mermaid, diagramType, noteCount: notes.length });
+  } catch (err: any) {
+    return c.json({ error: err.message || "AI 请求失败" }, 500);
+  }
+});
 export default ai;
+
+

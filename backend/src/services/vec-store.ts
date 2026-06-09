@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Vector Store — RAG Phase 2
  *
  * 在 better-sqlite3 上加载 sqlite-vec 扩展，维护一个 vec0 虚表
@@ -276,13 +276,14 @@ export function knnSearch(
   workspaceId: string | null,
   k = 20,
   maxNotes = 5,
+  notebookIds?: string[] | null,
 ): VecHit[] {
-  if (!isVecAvailable()) return [];
-  if (currentDim === null || queryVec.length !== currentDim) return [];
 
   const db = getDb();
   const buf = Buffer.from(new Float32Array(queryVec).buffer);
 
+  // 有 notebookId 过滤时提高 k，避免小范围笔记本被全库稀释
+  const effectiveK = notebookIds && notebookIds.length > 0 ? Math.max(k, 300) : k;
   // sqlite-vec KNN 语法：MATCH 给查询向量，k=? 控制返回数
   // 注意：vec0 的 MATCH 只支持单一查询向量；不支持 WHERE 复合条件
   // 所以我们多取一些（k 个），再在外层用 note_embeddings.userId/workspaceId 过滤
@@ -294,7 +295,7 @@ export function knnSearch(
       WHERE embedding MATCH ?
       ORDER BY distance
       LIMIT ?
-    `).all(buf, k) as { rowid: number; distance: number }[];
+    `).all(buf, effectiveK) as { rowid: number; distance: number }[];
   } catch (e: any) {
     console.warn("[vec-store] knnSearch failed:", e?.message || e);
     return [];
@@ -316,6 +317,7 @@ export function knnSearch(
       e.chunkIndex AS chunkIndex,
       e.entityType AS entityType,
       e.attachmentId AS attachmentId,
+      n.notebookId AS notebookId,
       n.title      AS title,
       n.isTrashed  AS isTrashed,
       a.filename   AS attachmentFilename
@@ -332,6 +334,7 @@ export function knnSearch(
     chunkIndex: number;
     entityType: string;
     attachmentId: string | null;
+    notebookId: string;
     title: string;
     isTrashed: number;
     attachmentFilename: string | null;
@@ -376,6 +379,7 @@ export function knnSearch(
       if (mWs !== wantWs) continue;
     }
     if (m.isTrashed) continue;
+    if (notebookIds && !notebookIds.includes(m.notebookId)) continue;
 
     const entityType = (m.entityType === "attachment" ? "attachment" : "note") as
       | "note"

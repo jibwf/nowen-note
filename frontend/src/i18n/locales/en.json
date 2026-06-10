@@ -1334,7 +1334,9 @@
     "templateMeeting": "Meeting Notes",
     "templateReading": "Reading Notes",
     "templateAnalysis": "Problem Analysis",
-    "chooseTemplate": "Choose Template"
+    "chooseTemplate": "Choose Template",
+    "renameFolder": "Rename folder",
+    "deleteFolder": "Delete folder"
   },
   "ai": {
     "title": "AI Configuration",

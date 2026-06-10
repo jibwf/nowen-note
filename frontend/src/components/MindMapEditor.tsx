@@ -1639,6 +1639,9 @@ export default function MindMapCenter() {
   const [showMiniMap, setShowMiniMap] = useState(!isMobile);
 
   // 列表右键菜单
+  const [folderContextMenu, setFolderContextMenu] = useState<{ x: number; y: number; folderId: string; folderName: string } | null>(null);
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  const [renamingFolderName, setRenamingFolderName] = useState("");
   const [listContextMenu, setListContextMenu] = useState<{ x: number; y: number; mapId: string; title: string } | null>(null);
 
   const handleListContextMenu = useCallback((e: React.MouseEvent, item: MindMapListItem) => {
@@ -2012,10 +2015,34 @@ export default function MindMapCenter() {
                     onDragOver={(e) => { if (dragMapId) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDropFolderId(folder.id); } }}
                     onDragLeave={() => { if (dropFolderId === folder.id) setDropFolderId(null); }}
                     onDrop={(e) => { e.preventDefault(); if (dragMapId) { api.moveMindMap(dragMapId, folder.id).then(() => { loadMaps(); loadFolders(); }); setDragMapId(null); setDropFolderId(null); } }}
+                    onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setFolderContextMenu({ x: e.clientX, y: e.clientY, folderId: folder.id, folderName: folder.name }); }}
                   >
                     <ChevronRight size={12} className={cn("text-tx-tertiary transition-transform flex-shrink-0", isExpanded && "rotate-90")} />
                     <FolderIcon size={14} className={cn("flex-shrink-0", isExpanded ? "text-amber-500" : "text-tx-tertiary")} />
-                    <span className="flex-1 truncate text-tx-primary">{folder.name}</span>
+                    {renamingFolderId === folder.id ? (
+                      <input
+                        type="text"
+                        value={renamingFolderName}
+                        onChange={(e) => setRenamingFolderName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && renamingFolderName.trim()) {
+                            api.updateMindMapFolder(folder.id, { name: renamingFolderName.trim() }).then(() => { loadFolders(); setRenamingFolderId(null); });
+                          }
+                          if (e.key === "Escape") { setRenamingFolderId(null); }
+                        }}
+                        onBlur={() => {
+                          if (renamingFolderName.trim() && renamingFolderName !== folder.name) {
+                            api.updateMindMapFolder(folder.id, { name: renamingFolderName.trim() }).then(() => { loadFolders(); });
+                          }
+                          setRenamingFolderId(null);
+                        }}
+                        className="flex-1 bg-transparent text-sm text-tx-primary outline-none border-b border-indigo-400"
+                        autoFocus
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span className="flex-1 truncate text-tx-primary">{folder.name}</span>
+                    )}
                     <span className="text-[10px] text-tx-tertiary">{folder.mindmapCount ?? 0}</span>
                     <button onClick={(e) => { e.stopPropagation(); if (confirm(t("mindMap.confirmDeleteFolder"))) { api.deleteMindMapFolder(folder.id).then(() => { loadFolders(); loadMaps(); }); } }} className="opacity-0 group-hover:opacity-100 text-tx-tertiary hover:text-accent-danger transition-all"><Trash2 size={12} /></button>
                   </div>
@@ -2583,6 +2610,41 @@ export default function MindMapCenter() {
       </div>
 
       {/* 列表右键菜单 */}
+      {/* Folder context menu */}
+      {folderContextMenu && (() => {
+        const close = () => setFolderContextMenu(null);
+        return (
+          <div className="fixed inset-0 z-50" onClick={close} onContextMenu={(e) => { e.preventDefault(); close(); }}>
+            <div
+              className="fixed z-50 min-w-[160px] py-1 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800"
+              style={{ left: Math.min(folderContextMenu.x, window.innerWidth - 180), top: Math.min(folderContextMenu.y, window.innerHeight - 120) }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-tx-primary hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+                onClick={() => { setRenamingFolderId(folderContextMenu.folderId); setRenamingFolderName(folderContextMenu.folderName); close(); }}
+              >
+                <Edit2 size={15} className="text-indigo-500" />
+                {t("mindMap.renameFolder")}
+              </button>
+              <div className="h-px bg-zinc-200 dark:bg-zinc-700 my-1" />
+              <button
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-500 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+                onClick={() => {
+                  if (confirm(t("mindMap.confirmDeleteFolder"))) {
+                    api.deleteMindMapFolder(folderContextMenu.folderId).then(() => { loadFolders(); loadMaps(); });
+                  }
+                  close();
+                }}
+              >
+                <Trash2 size={15} />
+                {t("mindMap.deleteFolder")}
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
       {listContextMenu && (
         <MindMapContextMenuOverlay
           menu={listContextMenu}

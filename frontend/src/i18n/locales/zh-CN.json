@@ -1348,7 +1348,9 @@
     "templateMeeting": "会议纪要",
     "templateReading": "读书笔记",
     "templateAnalysis": "问题分析",
-    "chooseTemplate": "选择模板"
+    "chooseTemplate": "选择模板",
+    "renameFolder": "??????",
+    "deleteFolder": "?????"
   },
   "ai": {
     "title": "AI 智能配置",

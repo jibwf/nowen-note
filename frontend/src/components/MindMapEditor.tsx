@@ -392,12 +392,10 @@ function NodeBox({
 
 /* ===== Floating toolbar: HTML absolute overlay ===== */
 function FloatingToolbar({
-  node, zoom, pan, isRoot, isMobile,
+  position, isRoot, isMobile,
   onAddChild, onAddSibling, onEdit, onDelete, onAddMarker, onSetLink, onSetNote, onSetColor, currentStyle, onApplyTheme, onStartRelation, onCreateBoundary, t,
 }: {
-  node: LayoutNode;
-  zoom: number;
-  pan: { x: number; y: number };
+  position: { x: number; y: number };
   isRoot: boolean;
   isMobile: boolean;
   onAddChild: () => void;
@@ -417,9 +415,7 @@ function FloatingToolbar({
   const [showMore, setShowMore] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
 
-  const screenX = node.x * zoom + pan.x + (node.width * zoom) / 2;
-  const screenY = (node.y + node.height + 4) * zoom + pan.y;
-
+  
   useEffect(() => {
     if (!showMore) return;
     const close = (e: MouseEvent) => {
@@ -431,7 +427,7 @@ function FloatingToolbar({
 
   return (
     <div className="absolute z-40 flex items-center gap-1"
-      style={{ left: screenX, top: screenY, transform: "translateX(-50%)" }}>
+      style={{ left: position.x, top: position.y, transform: "translateX(-50%)" }}>
       <button className={cn("flex items-center gap-1 rounded-md bg-indigo-500 text-white hover:bg-indigo-600 transition-colors shadow-md", isMobile ? "px-3 py-2 text-xs" : "px-2 py-1 text-[11px]")}
         onClick={(e) => { e.stopPropagation(); onAddChild(); }}>
         <Plus size={isMobile ? 14 : 10} />
@@ -699,6 +695,7 @@ export default function MindMapCenter() {
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 
@@ -1172,7 +1169,7 @@ export default function MindMapCenter() {
 
   // 平移（鼠标）
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button === 1 || (e.button === 0 && e.target === svgRef.current)) {
+    if (e.button === 1 || (e.button === 0 && e.target === canvasRef.current) || (e.button === 0 && e.target === svgRef.current)) {
       setIsPanning(true);
       setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
     }
@@ -1852,11 +1849,15 @@ export default function MindMapCenter() {
               className="flex-1 overflow-hidden cursor-grab active:cursor-grabbing relative"
               style={{ userSelect: "none" }}
             >
-              <svg
-                ref={svgRef}
-                width="100%"
-                height="100%"
-                viewBox={viewBox}
+              <div
+                ref={canvasRef}
+                className="absolute inset-0"
+                style={{
+                  transform: `translate(${pan.x}px, ${pan.y}px)`,
+                  userSelect: "none",
+                  touchAction: "none",
+                  cursor: "inherit",
+                }}
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
@@ -1866,12 +1867,17 @@ export default function MindMapCenter() {
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
                 onClick={() => { setSelectedNodeId(null); setEditingNodeId(null); }}
-                style={{
-                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-                  transformOrigin: "0 0",
-                  touchAction: "none",
-                }}
               >
+                <svg
+                  ref={svgRef}
+                  width="100%"
+                  height="100%"
+                  viewBox={viewBox}
+                  style={{
+                    transform: `scale(${zoom})`,
+                    transformOrigin: "0 0",
+                  }}
+                >
                 {/* Edges */}
                 {edges.map((e, i) => (
                   <Edge key={`${e.from.id}-${e.to.id}-${i}`} from={e.from} to={e.to} />
@@ -1963,11 +1969,28 @@ export default function MindMapCenter() {
                   if (!selectedNodeId || editingNodeId === selectedNodeId) return null;
                   const node = layoutNodes.find(n => n.id === selectedNodeId);
                   if (!node) return null;
-                  const screenX = node.x * zoom + pan.x + (node.width * zoom) / 2;
-                  const screenY = (node.y + node.height + 4) * zoom + pan.y;
                   return (
                     <FloatingToolbar
-                      node={node} zoom={zoom} pan={pan}
+                      position={(() => {
+                        const svg = svgRef.current;
+                        const container = canvasRef.current;
+                        if (!svg || !container) return { x: 0, y: 0 };
+                        const point = svg.createSVGPoint();
+                        point.x = node.x + node.width / 2;
+                        point.y = node.y + node.height + 4;
+                        const ctm = svg.getScreenCTM();
+                        if (!ctm) return { x: 0, y: 0 };
+                        const screen = point.matrixTransform(ctm);
+                        const rect = container.getBoundingClientRect();
+                        let x = screen.x - rect.left;
+                        let y = screen.y - rect.top;
+                        const toolbarWidth = 320;
+                        const toolbarHeight = 36;
+                        const pad = 8;
+                        x = Math.max(pad, Math.min(x, rect.width - toolbarWidth - pad));
+                        y = Math.max(pad, Math.min(y, rect.height - toolbarHeight - pad));
+                        return { x, y };
+                      })()}
                       isRoot={node.depth === 0} isMobile={isMobile}
                       onAddChild={() => handleAddChild(node.id)}
                       onAddSibling={() => handleAddSibling(node.id)}
@@ -2064,7 +2087,7 @@ export default function MindMapCenter() {
                   </svg>
                 </div>
               )}
-
+            </div>
             </div>
             </div>
             {!isMobile && (
@@ -2186,3 +2209,4 @@ function MindMapContextMenuOverlay({
     </div>
   );
 }
+

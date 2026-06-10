@@ -1684,6 +1684,50 @@ export default function NoteList() {
     }
   };
 
+  // 一键清空回收站：查询可删除数量 → confirm 确认 → 调用 api.emptyTrash → 刷新列表。
+  // 移动端 Sidebar 未挂载，自定义事件无人监听，因此 NoteList 直接实现完整逻辑。
+  const handleEmptyTrash = async () => {
+    haptic.medium();
+    try {
+      const notes = await api.getNotes({ isTrashed: "1" });
+      const removable = (notes as any[]).filter((n: any) => !n.isLocked).length;
+      if (removable === 0) {
+        toast.info(t('sidebar.emptyTrashEmpty'));
+        return;
+      }
+      const ok = await confirm({
+        title: t('sidebar.emptyTrashConfirmTitle'),
+        description: t('sidebar.emptyTrashConfirm', { count: removable }),
+        confirmText: t('sidebar.emptyTrash'),
+        danger: true,
+      });
+      if (!ok) return;
+      haptic.heavy();
+      const res = await api.emptyTrash();
+      if (res.skipped && res.skipped > 0) {
+        toast.warning(t('sidebar.emptyTrashSkipped', { count: res.count, skipped: res.skipped }));
+      } else {
+        toast.success(t('sidebar.emptyTrashSuccess', { count: res.count }));
+      }
+      if (!res.vacuumed && (res.freedBytesEstimate || 0) >= 10 * 1024 * 1024) {
+        toast.info(
+          "占用较大但数据库未自动压缩。可在「数据管理」里点击「压缩数据库」进一步回收磁盘空间。",
+        );
+      }
+      try {
+        window.dispatchEvent(new CustomEvent("nowen:storage-changed", { detail: { reason: "trash-emptied" } }));
+      } catch { /* ignore */ }
+      actions.setNotes([]);
+      if (state.activeNote?.isTrashed) {
+        actions.setActiveNote(null);
+      }
+      actions.refreshNotebooks();
+    } catch (err: any) {
+      console.error("清空回收站失败", err);
+      toast.error(err?.message || t('sidebar.emptyTrashFailed'));
+    }
+  };
+
   const handleCreateNote = async (noteType: "normal" | "word" = "normal") => {
     haptic.light();
     // 回收站视图禁止新建笔记
@@ -2706,18 +2750,14 @@ export default function NoteList() {
           )}
           {state.viewMode === "trash" ? (
             // 回收站视图下用"一键清空"按钮替换"新建"——后者在回收站语义不通且会被禁止；
-            // 通过自定义事件复用 Sidebar 已有的清空确认弹窗（含锁定检测 / 体量统计 / VACUUM 提示）。
+            // 移动端 Sidebar 未挂载时自定义事件无人监听，改为直接调用 confirm + api.emptyTrash。
             <Button
               variant="ghost"
               size="icon"
               className="h-8 w-8 text-accent-danger hover:bg-accent-danger/10"
               title={t('sidebar.emptyTrash')}
               aria-label={t('sidebar.emptyTrash')}
-              onClick={() => {
-                try {
-                  window.dispatchEvent(new CustomEvent("nowen:open-empty-trash"));
-                } catch { /* ignore */ }
-              }}
+              onClick={handleEmptyTrash}
             >
               <Trash2 size={18} />
             </Button>
@@ -2810,18 +2850,14 @@ export default function NoteList() {
           )}
           {state.viewMode === "trash" ? (
             // 回收站视图：将"+"换成"一键清空回收站"——破坏性操作做红色降级 + 标题提示，
-            // 复用 Sidebar 已有的确认弹窗（自定义事件解耦，避免重复实现 80 行清空逻辑）。
+            // 直接调用 confirm + api.emptyTrash，不依赖 Sidebar 自定义事件。
             <Button
               variant="ghost"
               size="icon"
               className="h-7 w-7 text-accent-danger hover:bg-accent-danger/10"
               title={t('sidebar.emptyTrash')}
               aria-label={t('sidebar.emptyTrash')}
-              onClick={() => {
-                try {
-                  window.dispatchEvent(new CustomEvent("nowen:open-empty-trash"));
-                } catch { /* ignore */ }
-              }}
+              onClick={handleEmptyTrash}
             >
               <Trash2 size={15} />
             </Button>

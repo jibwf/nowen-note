@@ -762,6 +762,7 @@ export default function MindMapCenter() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [showSearch, setShowSearch] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<string[]>([]);
   const [searchIndex, setSearchIndex] = useState(0);
@@ -1257,19 +1258,51 @@ export default function MindMapCenter() {
     URL.revokeObjectURL(url);
   }, [mapData, activeMap]);
 
-  const handleCreate = useCallback(async () => {
+  // ????
+  const MINDMAP_TEMPLATES = useMemo(() => [
+    { name: t("mindMap.templateBlank"), icon: "📜", data: null },
+    { name: t("mindMap.templateProject"), icon: "💻", data: { root: { id: "root", text: t("mindMap.templateProject"), children: [
+      { id: "n1", text: "目标", children: [{ id: "n1a", text: "核心目标", children: [] }, { id: "n1b", text: "关键指标", children: [] }] },
+      { id: "n2", text: "任务", children: [{ id: "n2a", text: "待办", children: [] }, { id: "n2b", text: "进行中", children: [] }, { id: "n2c", text: "已完成", children: [] }] },
+      { id: "n3", text: "时间线", children: [{ id: "n3a", text: "Q1", children: [] }, { id: "n3b", text: "Q2", children: [] }] },
+    ] } } },
+    { name: t("mindMap.templateMeeting"), icon: "📝", data: { root: { id: "root", text: "会议纪要", children: [
+      { id: "n1", text: "参会人", children: [] },
+      { id: "n2", text: "议题", children: [{ id: "n2a", text: "议题 1", children: [{ id: "n2a1", text: "结论", children: [] }, { id: "n2a2", text: "待跟进", children: [] }] }] },
+      { id: "n3", text: "行动项", children: [{ id: "n3a", text: "负责人 | 截止日期", children: [] }] },
+    ] } } },
+    { name: t("mindMap.templateReading"), icon: "📚", data: { root: { id: "root", text: "读书笔记", children: [
+      { id: "n1", text: "书名 / 作者", children: [] },
+      { id: "n2", text: "核心观点", children: [{ id: "n2a", text: "观点 1", children: [] }, { id: "n2b", text: "观点 2", children: [] }] },
+      { id: "n3", text: "重要摘录", children: [] },
+      { id: "n4", text: "我的思考", children: [] },
+    ] } } },
+    { name: t("mindMap.templateAnalysis"), icon: "🔍", data: { root: { id: "root", text: "问题分析", children: [
+      { id: "n1", text: "问题描述", children: [] },
+      { id: "n2", text: "原因分析", children: [{ id: "n2a", text: "根因 1", children: [] }, { id: "n2b", text: "根因 2", children: [] }] },
+      { id: "n3", text: "解决方案", children: [{ id: "n3a", text: "方案 A", children: [] }, { id: "n3b", text: "方案 B", children: [] }] },
+      { id: "n4", text: "行动计划", children: [] },
+    ] } } },
+  ], [t]);
+
+  const handleCreateWithTemplate = useCallback(async (templateIdx: number) => {
+    setShowTemplates(false);
     try {
-      const map = await api.createMindMap({ title: t("mindMap.untitled") });
-      // 注意：MindMapListItem 自 Y4 起新增了必填字段 workspaceId（null = 个人空间）。
-      // 这里必须把后端返回的 workspaceId 一并透传，否则 tsc 会报
-      //   TS2345: Property 'workspaceId' is missing in type ...
-      // 导致 frontend build 挂掉（Docker/Release 流水线里表现为 vite build 阶段失败）。
+      const template = MINDMAP_TEMPLATES[templateIdx];
+      const title = templateIdx === 0 ? t("mindMap.untitled") : template.name;
+      const data = template.data ? JSON.stringify(template.data) : undefined;
+      const map = await api.createMindMap({ title, data });
       setMaps((prev) => [{ id: map.id, userId: map.userId, workspaceId: map.workspaceId, title: map.title, createdAt: map.createdAt, updatedAt: map.updatedAt }, ...prev]);
       handleSelect(map.id);
     } catch (err) {
       console.error("Failed to create mindmap:", err);
     }
-  }, [handleSelect, t]);
+  }, [handleSelect, t, MINDMAP_TEMPLATES]);
+
+  const handleCreate = useCallback(async () => {
+    setShowTemplates(true);
+  }, []);
+
 
   // 删除导图
   const handleDeleteMap = useCallback(async (id: string) => {
@@ -2034,6 +2067,27 @@ export default function MindMapCenter() {
       </div>
 
       )}
+      {/* Template selection modal */}
+      {showTemplates && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowTemplates(false)}>
+          <div className="bg-app-surface rounded-xl shadow-xl border border-app-border p-5 w-80 max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-tx-primary mb-3">{t("mindMap.chooseTemplate")}</h3>
+            <div className="space-y-1">
+              {MINDMAP_TEMPLATES.map((tpl, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleCreateWithTemplate(idx)}
+                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-left hover:bg-app-hover transition-colors"
+                >
+                  <span className="text-xl">{tpl.icon}</span>
+                  <span className="text-sm text-tx-primary">{tpl.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Center: Mind Map Canvas */}
       <div className="flex-1 flex flex-col overflow-hidden bg-app-bg transition-colors" ref={containerRef}>
         {activeMap && mapData ? (

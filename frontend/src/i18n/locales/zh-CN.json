@@ -1342,7 +1342,13 @@
     "relationCreated": "关系线已创建",
     "drawingRelation": "连线模式 - 点击节点",
     "selectNodesFirst": "请先选中至少2个节点",
-    "boundaryCreated": "边界框已创建"
+    "boundaryCreated": "边界框已创建",
+    "templateBlank": "????",
+    "templateProject": "????",
+    "templateMeeting": "????",
+    "templateReading": "????",
+    "templateAnalysis": "????",
+    "chooseTemplate": "????"
   },
   "ai": {
     "title": "AI 智能配置",

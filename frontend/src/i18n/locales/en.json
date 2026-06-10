@@ -1328,7 +1328,13 @@
     "relationCreated": "Relation created",
     "drawingRelation": "Drawing - click a node",
     "selectNodesFirst": "Select at least 2 nodes first",
-    "boundaryCreated": "Boundary created"
+    "boundaryCreated": "Boundary created",
+    "templateBlank": "Blank",
+    "templateProject": "Project Plan",
+    "templateMeeting": "Meeting Notes",
+    "templateReading": "Reading Notes",
+    "templateAnalysis": "Problem Analysis",
+    "chooseTemplate": "Choose Template"
   },
   "ai": {
     "title": "AI Configuration",

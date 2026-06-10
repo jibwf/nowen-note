@@ -2077,6 +2077,16 @@ export default function MindMapCenter() {
 
             return (
               <>
+                <div className="pb-2">
+                  <button onClick={() => setShowNewFolder(true)} className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md text-xs text-tx-tertiary hover:text-tx-secondary hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                    <FolderPlus size={13} /> {t("mindMap.newFolder")}
+                  </button>
+                  {showNewFolder && (
+                    <div className="flex items-center gap-1 px-2 py-1">
+                      <input type="text" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newFolderName.trim()) { api.createMindMapFolder({ name: newFolderName.trim() }).then(() => { loadFolders(); setShowNewFolder(false); setNewFolderName(""); }); } if (e.key === "Escape") { setShowNewFolder(false); setNewFolderName(""); } }} placeholder={t("mindMap.folderName")} className="flex-1 bg-transparent text-xs text-tx-primary placeholder:text-tx-tertiary outline-none border-b border-app-border py-0.5" autoFocus />
+                    </div>
+                  )}
+                </div>
                 {topFolders.map(f => renderFolder(f, 0))}
                 {uncategorized.length > 0 && (
                   <div>
@@ -2092,16 +2102,6 @@ export default function MindMapCenter() {
                     </div>
                   </div>
                 )}
-                <div className="pt-2">
-                  <button onClick={() => setShowNewFolder(true)} className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded-md text-xs text-tx-tertiary hover:text-tx-secondary hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
-                    <FolderPlus size={13} /> {t("mindMap.newFolder")}
-                  </button>
-                  {showNewFolder && (
-                    <div className="flex items-center gap-1 px-2 py-1">
-                      <input type="text" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newFolderName.trim()) { api.createMindMapFolder({ name: newFolderName.trim() }).then(() => { loadFolders(); setShowNewFolder(false); setNewFolderName(""); }); } if (e.key === "Escape") { setShowNewFolder(false); setNewFolderName(""); } }} placeholder={t("mindMap.folderName")} className="flex-1 bg-transparent text-xs text-tx-primary placeholder:text-tx-tertiary outline-none border-b border-app-border py-0.5" autoFocus />
-                    </div>
-                  )}
-                </div>
               </>
             );
           })()}

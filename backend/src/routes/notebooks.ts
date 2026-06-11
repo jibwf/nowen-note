@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { randomBytes } from "node:crypto";
 import { getDb } from "../db/schema";
 import { v4 as uuid } from "uuid";
 import {
@@ -8,8 +9,21 @@ import {
   hasPermission,
   buildVisibilityWhere,
 } from "../middleware/acl";
+import { notebookRoleToPermission } from "../services/notebook-permissions";
 
 const app = new Hono();
+
+function parseNotebookMemberRole(role: unknown): "editor" | "viewer" | null {
+  return role === "editor" || role === "viewer" ? role : null;
+}
+
+function notebookMemberId(notebookId: string, userId: string) {
+  return `${notebookId}:${userId}`;
+}
+
+function generateShareToken() {
+  return randomBytes(24).toString("base64url");
+}
 
 /**
  * 获取所有笔记本（树形结构）
@@ -122,6 +136,371 @@ app.get("/", (c) => {
   }
 
   return c.json(rows);
+});
+
+// User-facing collaboration entry: notebooks shared with the current user.
+app.get("/shared-with-me", (c) => {
+  const db = getDb();
+  const userId = c.req.header("X-User-Id") || "";
+
+  const rows = db
+    .prepare(
+      `
+      WITH shared AS (
+        SELECT nb.id
+        FROM notebook_members nm
+        JOIN notebooks nb ON nb.id = nm.notebookId
+        WHERE nm.userId = ?
+          AND nm.status = 'active'
+          AND nb.userId <> ?
+          AND nb.isDeleted = 0
+      ),
+      nb_tree(ancestorId, descendantId) AS (
+        SELECT id, id FROM notebooks
+        WHERE id IN (SELECT id FROM shared) AND isDeleted = 0
+        UNION ALL
+        SELECT t.ancestorId, n.id
+        FROM nb_tree t
+        JOIN notebooks n ON n.parentId = t.descendantId
+        WHERE n.isDeleted = 0
+      )
+      SELECT nb.*, COALESCE(nc.noteCount, 0) AS noteCount, nm.role AS myRole
+      FROM notebooks nb
+      JOIN notebook_members nm
+        ON nm.notebookId = nb.id AND nm.userId = ? AND nm.status = 'active'
+      LEFT JOIN (
+        SELECT t.ancestorId AS notebookId, COUNT(notes.id) AS noteCount
+        FROM nb_tree t
+        JOIN notes ON notes.notebookId = t.descendantId
+        WHERE notes.isTrashed = 0
+        GROUP BY t.ancestorId
+      ) nc ON nb.id = nc.notebookId
+      WHERE nb.id IN (SELECT id FROM shared)
+      ORDER BY nb.updatedAt DESC, nb.id ASC
+    `,
+    )
+    .all(userId, userId, userId) as any[];
+
+  return c.json(
+    rows.map((row) => ({
+      ...row,
+      permission: notebookRoleToPermission(row.myRole),
+    })),
+  );
+});
+
+app.get("/share/:token", (c) => {
+  const db = getDb();
+  const token = c.req.param("token");
+  const link = db
+    .prepare(
+      `SELECT l.id, l.notebookId, l.role, l.enabled, l.expiresAt, l.createdAt,
+              nb.name, nb.icon, nb.color,
+              u.username AS ownerUsername, u.displayName AS ownerDisplayName
+         FROM notebook_share_links l
+         JOIN notebooks nb ON nb.id = l.notebookId
+         JOIN users u ON u.id = nb.userId
+        WHERE l.token = ?
+          AND l.enabled = 1
+          AND nb.isDeleted = 0
+          AND (l.expiresAt IS NULL OR l.expiresAt > datetime('now'))`,
+    )
+    .get(token);
+  if (!link) return c.json({ error: "share link not found" }, 404);
+  return c.json(link);
+});
+
+app.post("/share/:token/join", (c) => {
+  const db = getDb();
+  const userId = c.req.header("X-User-Id") || "";
+  const token = c.req.param("token");
+
+  const link = db
+    .prepare(
+      `SELECT l.notebookId, l.role, l.createdBy, nb.userId AS ownerId
+         FROM notebook_share_links l
+         JOIN notebooks nb ON nb.id = l.notebookId
+        WHERE l.token = ?
+          AND l.enabled = 1
+          AND nb.isDeleted = 0
+          AND (l.expiresAt IS NULL OR l.expiresAt > datetime('now'))`,
+    )
+    .get(token) as
+    | { notebookId: string; role: string; createdBy: string; ownerId: string }
+    | undefined;
+  if (!link) return c.json({ error: "share link not found" }, 404);
+  if (link.ownerId === userId) {
+    return c.json({ success: true, notebookId: link.notebookId, role: "owner" });
+  }
+
+  const role = parseNotebookMemberRole(link.role) || "viewer";
+  db.prepare(
+    `INSERT INTO notebook_members (id, notebookId, userId, role, status, invitedBy)
+     VALUES (?, ?, ?, ?, 'active', ?)
+     ON CONFLICT(notebookId, userId) DO UPDATE SET
+       role = excluded.role,
+       status = 'active',
+       invitedBy = excluded.invitedBy,
+       updatedAt = datetime('now')`,
+  ).run(notebookMemberId(link.notebookId, userId), link.notebookId, userId, role, link.createdBy);
+
+  return c.json({ success: true, notebookId: link.notebookId, role });
+});
+
+app.get("/:id/share-link", (c) => {
+  const db = getDb();
+  const userId = c.req.header("X-User-Id") || "";
+  const id = c.req.param("id");
+
+  const { permission } = resolveNotebookPermission(id, userId);
+  if (!hasPermission(permission, "manage")) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+
+  const link = db
+    .prepare(
+      `SELECT id, notebookId, token, role, enabled, expiresAt, createdBy, createdAt, updatedAt
+         FROM notebook_share_links
+        WHERE notebookId = ? AND enabled = 1
+        ORDER BY createdAt DESC
+        LIMIT 1`,
+    )
+    .get(id);
+  return c.json(link || null);
+});
+
+app.post("/:id/share-link", async (c) => {
+  const db = getDb();
+  const userId = c.req.header("X-User-Id") || "";
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
+  const role = parseNotebookMemberRole(body.role) || "viewer";
+  const expiresAt = typeof body.expiresAt === "string" && body.expiresAt.trim()
+    ? body.expiresAt.trim()
+    : null;
+
+  const { permission } = resolveNotebookPermission(id, userId);
+  if (!hasPermission(permission, "manage")) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+
+  db.prepare(
+    `UPDATE notebook_share_links
+        SET enabled = 0, updatedAt = datetime('now')
+      WHERE notebookId = ? AND enabled = 1`,
+  ).run(id);
+
+  const linkId = uuid();
+  const token = generateShareToken();
+  db.prepare(
+    `INSERT INTO notebook_share_links (id, notebookId, token, role, enabled, expiresAt, createdBy)
+     VALUES (?, ?, ?, ?, 1, ?, ?)`,
+  ).run(linkId, id, token, role, expiresAt, userId);
+
+  const link = db
+    .prepare(
+      `SELECT id, notebookId, token, role, enabled, expiresAt, createdBy, createdAt, updatedAt
+         FROM notebook_share_links
+        WHERE id = ?`,
+    )
+    .get(linkId);
+  return c.json(link, 201);
+});
+
+app.patch("/:id/share-link", async (c) => {
+  const db = getDb();
+  const userId = c.req.header("X-User-Id") || "";
+  const id = c.req.param("id");
+  const body = await c.req.json();
+
+  const { permission } = resolveNotebookPermission(id, userId);
+  if (!hasPermission(permission, "manage")) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+
+  const link = db
+    .prepare("SELECT id FROM notebook_share_links WHERE notebookId = ? AND enabled = 1 ORDER BY createdAt DESC LIMIT 1")
+    .get(id) as { id: string } | undefined;
+  if (!link) return c.json({ error: "share link not found" }, 404);
+
+  const fields: string[] = [];
+  const params: any[] = [];
+  if (body.role !== undefined) {
+    const role = parseNotebookMemberRole(body.role);
+    if (!role) return c.json({ error: "role must be editor or viewer" }, 400);
+    fields.push("role = ?");
+    params.push(role);
+  }
+  if (body.expiresAt !== undefined) {
+    fields.push("expiresAt = ?");
+    params.push(body.expiresAt ? String(body.expiresAt) : null);
+  }
+  if (body.enabled !== undefined) {
+    fields.push("enabled = ?");
+    params.push(body.enabled ? 1 : 0);
+  }
+  if (fields.length === 0) return c.json({ error: "no changes" }, 400);
+
+  fields.push("updatedAt = datetime('now')");
+  params.push(link.id);
+  db.prepare(`UPDATE notebook_share_links SET ${fields.join(", ")} WHERE id = ?`).run(...params);
+
+  const updated = db
+    .prepare(
+      `SELECT id, notebookId, token, role, enabled, expiresAt, createdBy, createdAt, updatedAt
+         FROM notebook_share_links
+        WHERE id = ?`,
+    )
+    .get(link.id);
+  return c.json(updated);
+});
+
+app.delete("/:id/share-link", (c) => {
+  const db = getDb();
+  const userId = c.req.header("X-User-Id") || "";
+  const id = c.req.param("id");
+
+  const { permission } = resolveNotebookPermission(id, userId);
+  if (!hasPermission(permission, "manage")) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+
+  db.prepare(
+    `UPDATE notebook_share_links
+        SET enabled = 0, updatedAt = datetime('now')
+      WHERE notebookId = ? AND enabled = 1`,
+  ).run(id);
+
+  return c.json({ success: true });
+});
+
+app.get("/:id/members", (c) => {
+  const db = getDb();
+  const userId = c.req.header("X-User-Id") || "";
+  const id = c.req.param("id");
+
+  const { permission } = resolveNotebookPermission(id, userId);
+  if (!hasPermission(permission, "manage")) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+
+  const members = db
+    .prepare(
+      `SELECT nm.id, nm.notebookId, nm.userId, nm.role, nm.status, nm.invitedBy,
+              nm.createdAt, nm.updatedAt,
+              u.username, u.email, u.displayName, u.avatarUrl
+         FROM notebook_members nm
+         JOIN users u ON u.id = nm.userId
+        WHERE nm.notebookId = ? AND nm.status != 'removed'
+        ORDER BY CASE nm.role WHEN 'owner' THEN 0 WHEN 'editor' THEN 1 ELSE 2 END,
+                 u.username ASC`,
+    )
+    .all(id);
+
+  return c.json(members);
+});
+
+app.post("/:id/members", async (c) => {
+  const db = getDb();
+  const userId = c.req.header("X-User-Id") || "";
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const targetUserId = String(body.userId || "").trim();
+  const role = parseNotebookMemberRole(body.role);
+
+  const { permission } = resolveNotebookPermission(id, userId);
+  if (!hasPermission(permission, "manage")) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  if (!targetUserId || !role) {
+    return c.json({ error: "userId and role are required" }, 400);
+  }
+
+  const target = db
+    .prepare("SELECT id FROM users WHERE id = ? AND isDisabled = 0")
+    .get(targetUserId) as { id: string } | undefined;
+  if (!target) return c.json({ error: "user not found" }, 404);
+
+  db.prepare(
+    `INSERT INTO notebook_members (id, notebookId, userId, role, status, invitedBy)
+     VALUES (?, ?, ?, ?, 'active', ?)
+     ON CONFLICT(notebookId, userId) DO UPDATE SET
+       role = excluded.role,
+       status = 'active',
+       invitedBy = excluded.invitedBy,
+       updatedAt = datetime('now')`,
+  ).run(notebookMemberId(id, targetUserId), id, targetUserId, role, userId);
+
+  const member = db
+    .prepare(
+      `SELECT nm.id, nm.notebookId, nm.userId, nm.role, nm.status, nm.invitedBy,
+              nm.createdAt, nm.updatedAt,
+              u.username, u.email, u.displayName, u.avatarUrl
+         FROM notebook_members nm
+         JOIN users u ON u.id = nm.userId
+        WHERE nm.notebookId = ? AND nm.userId = ?`,
+    )
+    .get(id, targetUserId);
+  return c.json(member, 201);
+});
+
+app.patch("/:id/members/:memberUserId", async (c) => {
+  const db = getDb();
+  const userId = c.req.header("X-User-Id") || "";
+  const id = c.req.param("id");
+  const memberUserId = c.req.param("memberUserId");
+  const body = await c.req.json();
+  const role = parseNotebookMemberRole(body.role);
+
+  const { permission } = resolveNotebookPermission(id, userId);
+  if (!hasPermission(permission, "manage")) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  if (!role) return c.json({ error: "role must be editor or viewer" }, 400);
+
+  const member = db
+    .prepare("SELECT role FROM notebook_members WHERE notebookId = ? AND userId = ? AND status != 'removed'")
+    .get(id, memberUserId) as { role: string } | undefined;
+  if (!member) return c.json({ error: "member not found" }, 404);
+  if (member.role === "owner") {
+    return c.json({ error: "owner role cannot be changed here" }, 400);
+  }
+
+  db.prepare(
+    `UPDATE notebook_members
+        SET role = ?, updatedAt = datetime('now')
+      WHERE notebookId = ? AND userId = ?`,
+  ).run(role, id, memberUserId);
+
+  return c.json({ success: true });
+});
+
+app.delete("/:id/members/:memberUserId", (c) => {
+  const db = getDb();
+  const userId = c.req.header("X-User-Id") || "";
+  const id = c.req.param("id");
+  const memberUserId = c.req.param("memberUserId");
+
+  const { permission } = resolveNotebookPermission(id, userId);
+  if (!hasPermission(permission, "manage")) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+
+  const member = db
+    .prepare("SELECT role FROM notebook_members WHERE notebookId = ? AND userId = ? AND status != 'removed'")
+    .get(id, memberUserId) as { role: string } | undefined;
+  if (!member) return c.json({ error: "member not found" }, 404);
+  if (member.role === "owner") {
+    return c.json({ error: "owner cannot be removed here" }, 400);
+  }
+
+  db.prepare(
+    `UPDATE notebook_members
+        SET status = 'removed', updatedAt = datetime('now')
+      WHERE notebookId = ? AND userId = ?`,
+  ).run(id, memberUserId);
+
+  return c.json({ success: true });
 });
 
 // 创建笔记本

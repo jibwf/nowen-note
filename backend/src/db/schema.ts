@@ -480,6 +480,36 @@ function initSchema(db: Database.Database) {
       FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
     );
 
+    -- 笔记本成员：Notebook 作为用户感知的协作空间，Workspace 仍保留为底层容器
+    CREATE TABLE IF NOT EXISTS notebook_members (
+      id TEXT PRIMARY KEY,
+      notebookId TEXT NOT NULL,
+      userId TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'viewer',
+      status TEXT NOT NULL DEFAULT 'active',
+      invitedBy TEXT,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+      updatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (notebookId) REFERENCES notebooks(id) ON DELETE CASCADE,
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (invitedBy) REFERENCES users(id) ON DELETE SET NULL,
+      UNIQUE(notebookId, userId)
+    );
+
+    CREATE TABLE IF NOT EXISTS notebook_share_links (
+      id TEXT PRIMARY KEY,
+      notebookId TEXT NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      role TEXT NOT NULL DEFAULT 'viewer',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      expiresAt TEXT,
+      createdBy TEXT NOT NULL,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+      updatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (notebookId) REFERENCES notebooks(id) ON DELETE CASCADE,
+      FOREIGN KEY (createdBy) REFERENCES users(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_ws_owner ON workspaces(ownerId);
     CREATE INDEX IF NOT EXISTS idx_ws_members_user ON workspace_members(userId);
     CREATE INDEX IF NOT EXISTS idx_ws_members_ws ON workspace_members(workspaceId);
@@ -487,6 +517,10 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_ws_invites_ws ON workspace_invites(workspaceId);
     CREATE INDEX IF NOT EXISTS idx_note_acl_user ON note_acl(userId);
     CREATE INDEX IF NOT EXISTS idx_note_acl_note ON note_acl(noteId);
+    CREATE INDEX IF NOT EXISTS idx_notebook_members_notebook ON notebook_members(notebookId);
+    CREATE INDEX IF NOT EXISTS idx_notebook_members_user ON notebook_members(userId);
+    CREATE INDEX IF NOT EXISTS idx_notebook_share_links_notebook ON notebook_share_links(notebookId);
+    CREATE INDEX IF NOT EXISTS idx_notebook_share_links_token ON notebook_share_links(token);
   `);
 
   // ==============================================================

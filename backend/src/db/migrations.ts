@@ -1262,6 +1262,75 @@ export const MIGRATIONS: Migration[] = [
       try { db.prepare("ALTER TABLE mindmaps ADD COLUMN folderId TEXT").run(); } catch {}
     },
   },
+  // v18: Notebook 级成员关系。Workspace 继续作为底层容器，Notebook 成为产品层协作空间。
+  {
+    version: 18,
+    name: "notebook-members",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS notebook_members (
+          id TEXT PRIMARY KEY,
+          notebookId TEXT NOT NULL,
+          userId TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'viewer',
+          status TEXT NOT NULL DEFAULT 'active',
+          invitedBy TEXT,
+          createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+          updatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (notebookId) REFERENCES notebooks(id) ON DELETE CASCADE,
+          FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (invitedBy) REFERENCES users(id) ON DELETE SET NULL,
+          UNIQUE(notebookId, userId)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_notebook_members_notebook
+          ON notebook_members(notebookId);
+        CREATE INDEX IF NOT EXISTS idx_notebook_members_user
+          ON notebook_members(userId);
+      `);
+
+      db.prepare(`
+        INSERT OR IGNORE INTO notebook_members
+          (id, notebookId, userId, role, status, invitedBy, createdAt, updatedAt)
+        SELECT
+          id || ':' || userId,
+          id,
+          userId,
+          'owner',
+          'active',
+          NULL,
+          datetime('now'),
+          datetime('now')
+        FROM notebooks
+      `).run();
+    },
+  },
+  {
+    version: 19,
+    name: "notebook-share-links",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS notebook_share_links (
+          id TEXT PRIMARY KEY,
+          notebookId TEXT NOT NULL,
+          token TEXT NOT NULL UNIQUE,
+          role TEXT NOT NULL DEFAULT 'viewer',
+          enabled INTEGER NOT NULL DEFAULT 1,
+          expiresAt TEXT,
+          createdBy TEXT NOT NULL,
+          createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+          updatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (notebookId) REFERENCES notebooks(id) ON DELETE CASCADE,
+          FOREIGN KEY (createdBy) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_notebook_share_links_notebook
+          ON notebook_share_links(notebookId);
+        CREATE INDEX IF NOT EXISTS idx_notebook_share_links_token
+          ON notebook_share_links(token);
+      `);
+    },
+  },
 ];
 
 /** 当前代码已知的最高 schema 版本（== MIGRATIONS 里 max(version)）。 */

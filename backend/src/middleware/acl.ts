@@ -11,6 +11,10 @@
  */
 import type { Context, Next } from "hono";
 import { getDb } from "../db/schema";
+import {
+  resolveNoteNotebookMemberPermission,
+  resolveNotebookMemberPermission,
+} from "../services/notebook-permissions";
 
 export type WorkspaceRole = "owner" | "admin" | "editor" | "commenter" | "viewer";
 export type Permission = "read" | "comment" | "write" | "manage";
@@ -92,9 +96,21 @@ export function resolveNotePermission(
 
   if (!note) return { permission: null, workspaceId: null, noteOwnerId: null };
 
+  if (note.userId === userId) {
+    return { permission: "manage", workspaceId: note.workspaceId, noteOwnerId: note.userId };
+  }
+
+  const notebookMemberPermission = resolveNoteNotebookMemberPermission(db, noteId, userId);
+  if (notebookMemberPermission) {
+    return {
+      permission: notebookMemberPermission,
+      workspaceId: note.workspaceId,
+      noteOwnerId: note.userId,
+    };
+  }
+
   // 个人空间
   if (!note.workspaceId) {
-    if (note.userId === userId) return { permission: "manage", workspaceId: null, noteOwnerId: note.userId };
     return { permission: null, workspaceId: null, noteOwnerId: note.userId };
   }
 
@@ -126,8 +142,20 @@ export function resolveNotebookPermission(
 
   if (!nb) return { permission: null, workspaceId: null, notebookOwnerId: null };
 
+  if (nb.userId === userId) {
+    return { permission: "manage", workspaceId: nb.workspaceId, notebookOwnerId: nb.userId };
+  }
+
+  const notebookMemberPermission = resolveNotebookMemberPermission(db, notebookId, userId);
+  if (notebookMemberPermission) {
+    return {
+      permission: notebookMemberPermission,
+      workspaceId: nb.workspaceId,
+      notebookOwnerId: nb.userId,
+    };
+  }
+
   if (!nb.workspaceId) {
-    if (nb.userId === userId) return { permission: "manage", workspaceId: null, notebookOwnerId: nb.userId };
     return { permission: null, workspaceId: null, notebookOwnerId: nb.userId };
   }
 

@@ -75,6 +75,36 @@ export interface WorkspaceMember {
   avatarUrl: string | null;
 }
 
+export type NotebookRole = "owner" | "editor" | "viewer";
+export type NotebookMemberStatus = "active" | "invited" | "removed";
+
+export interface NotebookMember {
+  id: string;
+  notebookId: string;
+  userId: string;
+  role: NotebookRole;
+  status: NotebookMemberStatus;
+  invitedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  username?: string;
+  email?: string | null;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+}
+
+export interface NotebookShareLink {
+  id: string;
+  notebookId: string;
+  token: string;
+  role: Exclude<NotebookRole, "owner">;
+  enabled: 0 | 1 | number;
+  expiresAt: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface WorkspaceInvite {
   id: string;
   workspaceId: string;
@@ -130,6 +160,8 @@ export interface Notebook {
   createdAt: string;
   updatedAt: string;
   noteCount?: number;
+  myRole?: NotebookRole;
+  permission?: WorkspacePermission;
   children?: Notebook[];
 }
 

@@ -70,9 +70,16 @@ app.get("/", (c) => {
     LEFT JOIN users ON users.id = notes.userId
     WHERE 1=1`;
   const params: any[] = [userId];
+  const useNotebookScope =
+    Boolean(notebookId) && !search && isTrashed !== "1" && isFavorite !== "1" && !tagId;
 
   // Scope 过滤
-  if (workspaceId && workspaceId !== "personal") {
+  if (useNotebookScope && notebookId) {
+    const { permission } = resolveNotebookPermission(notebookId, userId);
+    if (!hasPermission(permission, "read")) {
+      return c.json({ error: "Notebook not found or forbidden" }, 404);
+    }
+  } else if (workspaceId && workspaceId !== "personal") {
     // 指定工作区：必须是成员
     const role = getUserWorkspaceRole(workspaceId, userId);
     if (!role) return c.json({ error: "无权访问该工作区" }, 403);

@@ -1,4 +1,4 @@
-import { Notebook, Note, NoteListItem, Tag, SearchResult, User, UserPublicInfo, Task, TaskStats, TaskFilter, CustomFont, MindMap, MindMapListItem, Diary, DiaryTimeline, DiaryStats, Share, ShareInfo, SharedNoteContent, NoteVersion, ShareComment, Workspace, WorkspaceAdminItem, WorkspaceMember, WorkspaceInvite, WorkspaceRole, WorkspaceFeatures, FileItem, FileDetail, FileListResponse, FileStats, FileSortKey, FileCategory, FileFilter, FileMyUploadsRef } from "@/types";
+import { Notebook, NotebookMember, NotebookShareLink, Note, NoteListItem, Tag, SearchResult, User, UserPublicInfo, Task, TaskStats, TaskFilter, CustomFont, MindMap, MindMapListItem, Diary, DiaryTimeline, DiaryStats, Share, ShareInfo, SharedNoteContent, NoteVersion, ShareComment, Workspace, WorkspaceAdminItem, WorkspaceMember, WorkspaceInvite, WorkspaceRole, WorkspaceFeatures, FileItem, FileDetail, FileListResponse, FileStats, FileSortKey, FileCategory, FileFilter, FileMyUploadsRef } from "@/types";
 import {
   shouldEnqueue as _shouldEnqueue,
   enqueue as _enqueue,
@@ -570,7 +570,8 @@ async function request<T>(url: string, options?: RequestOptions): Promise<T> {
   // 401 / 403 + ACCOUNT_DISABLED：会话已失效（token 无效、用户被禁用、tokenVersion 被吊销等），
   // 统一清 token 并刷新回登录页。
   // 分享页（/share/:token）是无登录场景，不应 reload —— 否则会把整个分享页刷回登录页。
-  const isSharePage = typeof window !== "undefined" && /^\/share\//.test(window.location.pathname);
+  const isSharePage =
+    typeof window !== "undefined" && /^\/(?:share|notebook-share)\//.test(window.location.pathname);
   if (res.status === 401 || res.status === 403) {
     let errBody: any = {};
     try { errBody = await res.clone().json(); } catch {}
@@ -904,6 +905,42 @@ export const api = {
     request<{ success: boolean }>("/notebooks/reorder/batch", { method: "PUT", body: JSON.stringify({ items }) }),
   moveNotebook: (id: string, data: { parentId?: string | null; sortOrder?: number }) =>
     request<Notebook>(`/notebooks/${id}/move`, { method: "PUT", body: JSON.stringify(data) }),
+  getSharedNotebooks: () => request<Notebook[]>("/notebooks/shared-with-me"),
+  getNotebookMembers: (id: string) => request<NotebookMember[]>(`/notebooks/${id}/members`),
+  addNotebookMember: (id: string, data: { userId: string; role: "editor" | "viewer" }) =>
+    request<NotebookMember>(`/notebooks/${id}/members`, { method: "POST", body: JSON.stringify(data) }),
+  updateNotebookMember: (id: string, userId: string, data: { role: "editor" | "viewer" }) =>
+    request<{ success: boolean }>(`/notebooks/${id}/members/${userId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  removeNotebookMember: (id: string, userId: string) =>
+    request<{ success: boolean }>(`/notebooks/${id}/members/${userId}`, { method: "DELETE" }),
+  getNotebookShareLink: (id: string) => request<NotebookShareLink | null>(`/notebooks/${id}/share-link`),
+  createNotebookShareLink: (id: string, data?: { role?: "editor" | "viewer"; expiresAt?: string | null }) =>
+    request<NotebookShareLink>(`/notebooks/${id}/share-link`, { method: "POST", body: JSON.stringify(data || {}) }),
+  updateNotebookShareLink: (
+    id: string,
+    data: { role?: "editor" | "viewer"; expiresAt?: string | null; enabled?: boolean },
+  ) => request<NotebookShareLink>(`/notebooks/${id}/share-link`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteNotebookShareLink: (id: string) =>
+    request<{ success: boolean }>(`/notebooks/${id}/share-link`, { method: "DELETE" }),
+  getNotebookShareInfo: (token: string) =>
+    request<{
+      id: string;
+      notebookId: string;
+      role: "editor" | "viewer";
+      enabled: number;
+      expiresAt: string | null;
+      createdAt: string;
+      name: string;
+      icon: string;
+      color: string | null;
+      ownerUsername: string;
+      ownerDisplayName: string | null;
+    }>(`/notebooks/share/${token}`),
+  joinNotebookShareLink: (token: string) =>
+    request<{ success: boolean; notebookId: string; role: "owner" | "editor" | "viewer" }>(
+      `/notebooks/share/${token}/join`,
+      { method: "POST" },
+    ),
 
   // Notes
   getNotes: (params?: Record<string, string>) => {

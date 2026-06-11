@@ -104,7 +104,7 @@ export default function WorkspaceSwitcher({ onWorkspaceChange, collapsed }: Work
   };
 
   const currentWs = workspaces.find((w) => w.id === current);
-  const displayName = current === "personal" ? "个人空间" : currentWs?.name || "个人空间";
+  const displayName = current === "personal" ? "我的笔记" : currentWs?.name || "我的笔记";
   const displayIcon = current === "personal" ? "🏠" : currentWs?.icon || "🏢";
 
   // 在入口按钮（展开/收起态）上右键当前工作区时，直接弹出对应右键菜单。
@@ -168,12 +168,12 @@ export default function WorkspaceSwitcher({ onWorkspaceChange, collapsed }: Work
             if (items.length > 0) items.push({ id: "sep1", label: "", separator: true });
             items.push({
               id: "edit",
-              label: t("workspaceSwitcher.contextMenu.edit", "编辑工作区"),
+              label: t("workspaceSwitcher.contextMenu.edit", "编辑团队空间"),
               icon: <Pencil className="w-3.5 h-3.5" />,
             });
             items.push({
               id: "delete",
-              label: t("workspaceSwitcher.contextMenu.delete", "删除工作区"),
+              label: t("workspaceSwitcher.contextMenu.delete", "删除团队空间"),
               icon: <Trash2 className="w-3.5 h-3.5" />,
               danger: true,
             });
@@ -271,8 +271,8 @@ export default function WorkspaceSwitcher({ onWorkspaceChange, collapsed }: Work
                 {/* 个人空间 */}
                 <WorkspaceItem
                   icon="🏠"
-                  name="个人空间"
-                  subtitle="仅自己可见"
+                  name="我的笔记"
+                  subtitle="个人内容"
                   active={current === "personal"}
                   onClick={() => switchTo("personal")}
                 />
@@ -318,7 +318,7 @@ export default function WorkspaceSwitcher({ onWorkspaceChange, collapsed }: Work
                   }}
                 >
                   <Plus className="w-4 h-4" />
-                  创建工作区
+                  创建团队空间
                 </button>
                 <button
                   className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded hover:bg-accent"
@@ -426,13 +426,13 @@ function CreateWorkspaceDialog({
 
   const handleCreate = async () => {
     if (!name.trim()) {
-      toast.error("请输入工作区名称");
+      toast.error("请输入团队空间名称");
       return;
     }
     setLoading(true);
     try {
       const ws = await api.createWorkspace({ name: name.trim(), description, icon });
-      toast.success("工作区创建成功");
+      toast.success("团队空间创建成功");
       onCreated(ws);
     } catch (e: any) {
       toast.error(e.message || "创建失败");
@@ -442,7 +442,7 @@ function CreateWorkspaceDialog({
   };
 
   return (
-    <Modal title="创建工作区" onClose={onClose}>
+    <Modal title="创建团队空间" onClose={onClose}>
       <div className="space-y-3">
         <div>
           <label className="text-sm mb-1 block">图标</label>
@@ -506,10 +506,10 @@ function JoinWorkspaceDialog({
     try {
       const res = await api.joinWorkspace(code.trim());
       if (res.alreadyMember) {
-        toast.info("您已是该工作区成员");
+        toast.info("您已是该团队空间成员");
         onJoined(res.workspaceId!);
       } else {
-        toast.success(`已加入工作区：${res.workspace?.name}`);
+        toast.success(`已加入团队空间：${res.workspace?.name}`);
         onJoined(res.workspace!.id);
       }
     } catch (e: any) {
@@ -520,7 +520,7 @@ function JoinWorkspaceDialog({
   };
 
   return (
-    <Modal title="使用邀请码加入工作区" onClose={onClose}>
+    <Modal title="使用邀请码加入团队空间" onClose={onClose}>
       <div className="space-y-3">
         <div>
           <label className="text-sm mb-1 block">邀请码</label>
@@ -531,7 +531,7 @@ function JoinWorkspaceDialog({
             autoFocus
             className="font-mono"
           />
-          <p className="text-xs text-muted-foreground mt-1">向工作区管理员索要邀请码</p>
+          <p className="text-xs text-muted-foreground mt-1">向团队空间管理员索要邀请码</p>
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={onClose} disabled={loading}>
@@ -675,7 +675,7 @@ function DeleteWorkspaceDialog({
           <p className="text-xs text-red-700 dark:text-red-300 leading-relaxed">
             {t(
               "workspaceManagement.deleteConfirmHintNoOwner",
-              "删除后该工作区下的笔记本将归还到所有者的个人空间，邀请码、成员关系会被清除，此操作不可撤销。",
+              "删除后该团队空间下的笔记本将归还到所有者的我的笔记，邀请码、成员关系会被清除，此操作不可撤销。",
             )}
           </p>
         </div>

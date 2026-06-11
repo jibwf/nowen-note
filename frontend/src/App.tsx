@@ -13,6 +13,7 @@ import AIChatPanel from "@/components/AIChatPanel";
 import DiaryCenter from "@/components/DiaryCenter";
 import FileManager from "@/components/FileManager";
 import SharedNoteView from "@/components/SharedNoteView";
+import NotebookShareJoinView from "@/components/NotebookShareJoinView";
 import LoginPage from "@/components/LoginPage";
 import QuickLoginGate from "@/components/QuickLoginGate";
 import QuickLoginEnrollDialog from "@/components/QuickLoginEnrollDialog";
@@ -1127,6 +1128,18 @@ function App() {
       <ThemeProvider>
         <ConfirmProvider>
           <SharedNoteView shareToken={shareMatch[1]} />
+          <Toaster />
+        </ConfirmProvider>
+      </ThemeProvider>
+    );
+  }
+
+  const notebookShareMatch = path.match(/^\/notebook-share\/([A-Za-z0-9_-]+)$/);
+  if (notebookShareMatch) {
+    return (
+      <ThemeProvider>
+        <ConfirmProvider>
+          <NotebookShareJoinView token={notebookShareMatch[1]} />
           <Toaster />
         </ConfirmProvider>
       </ThemeProvider>

@@ -15,6 +15,7 @@ import SettingsModal from "@/components/SettingsModal";
 import ContextMenu, { ContextMenuItem } from "@/components/ContextMenu";
 import TagColorPopover from "@/components/TagColorPopover";
 import WorkspaceSwitcher from "@/components/WorkspaceSwitcher";
+import NotebookShareDialog from "@/components/NotebookShareDialog";
 import { useContextMenu } from "@/hooks/useContextMenu";
 import { useApp, useAppActions } from "@/store/AppContext";
 import { useSiteSettings } from "@/hooks/useSiteSettings";
@@ -872,6 +873,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
       return true;
     }
   });
+  const [sharedNotebooks, setSharedNotebooks] = useState<Notebook[]>([]);
 
   // v15 信息架构改造前：导航区是一个可折叠的扁平 8 项列表（与笔记本/标签的折叠策略一致），
   // 用 navExpanded + nowen-nav-expanded localStorage 控制。改造后导航被拆为
@@ -916,6 +918,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
       { id: "sep1", label: "", separator: true },
       { id: "change_icon", label: t('sidebar.changeIcon'), icon: <Smile size={14} /> },
       { id: "rename", label: t('common.rename'), icon: <Edit2 size={14} /> },
+      { id: "share", label: "分享", icon: <Link2 size={14} /> },
       { id: "move", label: t('sidebar.moveNotebook'), icon: <FolderInput size={14} /> },
     ];
     if (showExport) {
@@ -984,6 +987,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
 
   // 删除确认
   const [deleteTarget, setDeleteTarget] = useState<Notebook | null>(null);
+  const [shareTarget, setShareTarget] = useState<Notebook | null>(null);
   // 标签删除确认（自定义弹窗，替代 window.confirm）
   const [deleteTagTarget, setDeleteTagTarget] = useState<{ id: string; name: string; color: string } | null>(null);
 
@@ -1084,6 +1088,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
   useEffect(() => {
     const loadScopedData = () => {
       api.getNotebooks().then(actions.setNotebooks).catch(console.error);
+      api.getSharedNotebooks().then(setSharedNotebooks).catch(console.error);
       api.getTags().then(actions.setTags).catch(console.error);
     };
     // Y4: 加载当前工作区的功能开关——个人空间固定置 null（全开）
@@ -1653,6 +1658,12 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
         }
         break;
       }
+      case "share": {
+        if (targetNb) {
+          setShareTarget(targetNb);
+        }
+        break;
+      }
       case "change_icon": {
         setIconPickerId(targetId);
         break;
@@ -2085,6 +2096,35 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
       </AnimatePresence>
 
       {/* Tags —— 使用 shrink-0 + 内部 max-height + scroll，避免在小屏（如 1366x768）挤压上方 Notebooks 或与 Footer 交叠 */}
+      {sharedNotebooks.length > 0 && (
+        <div className="border-t border-app-border shrink-0 px-2 py-2">
+          <div className="px-1 pb-1 text-xs font-medium text-tx-tertiary uppercase tracking-wider">
+            共享笔记本
+          </div>
+          <div className="space-y-0.5">
+            {sharedNotebooks.map((nb) => (
+              <button
+                key={nb.id}
+                type="button"
+                onClick={() => handleNotebookSelect(nb.id)}
+                className={cn(
+                  "w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-left transition-colors",
+                  state.selectedNotebookId === nb.id
+                    ? "bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300"
+                    : "hover:bg-app-hover text-tx-secondary"
+                )}
+              >
+                <span className="shrink-0 text-base leading-none">{nb.icon || "📒"}</span>
+                <span className="min-w-0 flex-1 truncate">{nb.name}</span>
+                <span className="shrink-0 text-[10px] text-tx-tertiary">
+                  {nb.myRole === "editor" ? "可编辑" : "只读"}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="border-t border-app-border shrink-0">
         <button
           onClick={() => toggleTagsExpanded()}
@@ -2234,6 +2274,13 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
       <AnimatePresence>
         {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       </AnimatePresence>
+
+      {shareTarget && (
+        <NotebookShareDialog
+          notebook={shareTarget}
+          onClose={() => setShareTarget(null)}
+        />
+      )}
 
       {/* Notebook Context Menu */}
       <ContextMenu

@@ -65,8 +65,18 @@ app.get("/", (c) => {
           return "n.workspaceId = ?";
         })()
       : (() => {
-          scopeParams.push(userId);
-          return "n.userId = ? AND n.workspaceId IS NULL";
+          scopeParams.push(userId, userId, userId);
+          return `((n.userId = ? AND n.workspaceId IS NULL)
+            OR EXISTS (
+              SELECT 1
+              FROM notebook_members nm
+              JOIN notebooks nb ON nb.id = nm.notebookId
+              WHERE nm.notebookId = n.notebookId
+                AND nm.userId = ?
+                AND nm.status = 'active'
+                AND nb.userId <> ?
+                AND nb.isDeleted = 0
+            ))`;
         })();
 
   if (!scopeSql) return c.json({ error: "无权访问该工作区" }, 403);

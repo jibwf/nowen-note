@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+﻿import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Server, Wifi, CheckCircle2, AlertCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -17,6 +17,7 @@ export default function ServerConnect({ onConnected }: ServerConnectProps) {
     protocol: "http",
     host: "",
     port: "",
+    path: "",
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");

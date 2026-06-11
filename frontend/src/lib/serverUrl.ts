@@ -1,31 +1,124 @@
-/**
- * 服务器地址拆分 / 合并工具
+﻿/**
+ * 服务器地址工具
  *
- * 用户在登录/连接页会把服务器地址拆成三个字段：
- *   protocol: "http" | "https"   —— 下拉选择，默认 http
- *   host:     "192.168.1.10"     —— 纯主机/IP，不含 scheme、不含 :port、不含 path
- *   port:     "3001"             —— 可空；空则不拼到 URL，走 protocol 默认端口 (80/443)
+ * 核心概念：serverBaseUrl = protocol://host[:port][/path-prefix]
+ *   - 不含 /api 后缀（由 getBaseUrl() 拼接）
+ *   - 不含末尾斜杠
+ *   - 保留 path 前缀（用于 fnOS / 樱花穿透 / 反代路径场景）
  *
- * 历史版本只有一个"服务器地址"文本框，localStorage 里可能存成整串 URL，
- * 所以本模块同时提供 parseServerUrl，能把旧数据拆回三段回填。
+ * 示例：
+ *   http://192.168.1.10:3001
+ *   https://fnos.net/user:3001
+ *   https://example.com
  */
 
 export type ServerScheme = "http" | "https";
+
+// =====================================================================
+//  新 API：normalizeServerBaseUrl
+// =====================================================================
+
+/**
+ * 识别 path 末尾的 API 子路径并剥离。
+ *
+ * 规则：pathname 末尾匹配以下模式之一时，截断到该位置之前：
+ *   /api/health
+ *   /api/version
+ *   /api/auth/login  （/api/auth/...）
+ *   /api/settings
+ *   /api             （单独的 /api）
+ *
+ * 但不误删：
+ *   /api-gateway
+ *   /my-api
+ *   /user:3001
+ *
+ * 实现：从 pathname 末尾向前找 "/api" 段，且该段必须是独立路径段
+ *       （前一个字符必须是 / 或字符串开头）。
+ */
+function stripApiSuffix(pathname: string): string {
+  // 匹配末尾的 /api 或 /api/... 子路径
+  // 正则：在 /api 之前必须是 / 或字符串开头，/api 后面必须是 / 或结尾
+  const apiSuffixRe = /\/api(\/.*)?$/;
+  const match = pathname.match(apiSuffixRe);
+  if (!match) return pathname;
+  return pathname.slice(0, match.index) || "";
+}
+
+/**
+ * 将用户输入的任意格式服务器地址归一化为标准 serverBaseUrl。
+ *
+ * 容错范围：
+ *   - 补 scheme（无 scheme 默认 http://）
+ *   - 去末尾 /
+ *   - 剥离 API 子路径（/api/health → 去掉）
+ *   - 保留反代路径前缀（/user:3001 → 保留）
+ *   - 过滤非法值（null / file:// / 空串）
+ *
+ * 不抛异常，解析失败返回空串。
+ */
+export function normalizeServerBaseUrl(input: string | null | undefined): string {
+  if (!input) return "";
+  const raw = input.trim();
+  if (!raw) return "";
+
+  // 过滤非法值
+  if (raw === "null" || raw === "undefined" || raw === "file://" || raw.startsWith("file:")) {
+    return "";
+  }
+
+  // 补 scheme
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
+
+  let u: URL;
+  try {
+    u = new URL(withScheme);
+  } catch {
+    return "";
+  }
+
+  // 只接受 http/https
+  if (u.protocol !== "http:" && u.protocol !== "https:") return "";
+
+  const protocol = u.protocol === "https:" ? "https" : "http";
+  const host = u.hostname;
+  if (!host) return "";
+
+  const port = u.port;
+  // 剥离 API 子路径
+  const pathPrefix = stripApiSuffix(u.pathname).replace(/\/+$/, "");
+
+  let result = `${protocol}://${host}`;
+  if (port) result += `:${port}`;
+  if (pathPrefix) result += pathPrefix;
+  return result;
+}
+
+/**
+ * 判定输入是否为合法的服务器地址（调用归一化后非空即合法）。
+ */
+export function isValidServerUrl(input: string | null | undefined): boolean {
+  return normalizeServerBaseUrl(input) !== "";
+}
+
+// =====================================================================
+//  旧 API（保留向后兼容，内部使用新函数）
+// =====================================================================
 
 export interface ServerAddressParts {
   protocol: ServerScheme;
   host: string;
   /** 字符串形式，空串表示不指定 */
   port: string;
+  /** 反代路径前缀，如 /user:3001；空串表示无 path */
+  path: string;
 }
 
 /**
  * 把用户填写的 (protocol, host, port) 拼成后端期望的 baseUrl。
- * 约定：
- *   - host 去首尾空白、strip 可能粘贴进来的 scheme 前缀、去末尾 /
- *   - port 非数字会被忽略
- *   - 返回值不带尾部斜杠
- * 若 host 为空，返回空串（调用方应负责提示"请输入地址"）。
+ *
+ * 注意：旧版三段式模型不含 path，调用方如需 path 支持请改用
+ * normalizeServerBaseUrl() 直接接收完整 URL。
  */
 export function buildServerUrl(parts: ServerAddressParts): string {
   const host = normalizeHost(parts.host);
@@ -37,10 +130,9 @@ export function buildServerUrl(parts: ServerAddressParts): string {
 
 /**
  * 解析一个已经完整的 URL（或用户粘贴的半成品），返回 3 段。
- * 容错：
- *   - 没有协议 → 默认 http
- *   - 带 path / query 会被忽略
- *   - 解析失败兜底返回 { http, "", "" }，不抛异常
+ *
+ * 注意：旧版三段式模型不保留 path 前缀。
+ * 如需保留 path，请改用 normalizeServerBaseUrl()。
  */
 export function parseServerUrl(input: string | null | undefined): ServerAddressParts {
   const fallback: ServerAddressParts = { protocol: "http", host: "", port: "" };
@@ -49,7 +141,6 @@ export function parseServerUrl(input: string | null | undefined): ServerAddressP
   const raw = input.trim();
   if (!raw) return fallback;
 
-  // URL 构造器要求有 scheme，否则会抛；这里先补 http:// 再解析
   const withScheme = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
   try {
     const u = new URL(withScheme);
@@ -57,8 +148,8 @@ export function parseServerUrl(input: string | null | undefined): ServerAddressP
     return {
       protocol,
       host: u.hostname,
-      // u.port 对默认端口（80/443）返回 ""，正好符合我们的约定
       port: u.port || "",
+      path: stripApiSuffix(u.pathname).replace(/\/+$/, ""),
     };
   } catch {
     return fallback;
@@ -68,19 +159,13 @@ export function parseServerUrl(input: string | null | undefined): ServerAddressP
 function normalizeHost(raw: string): string {
   return raw
     .trim()
-    // 粘贴时可能带着 http(s):// 前缀，清掉
     .replace(/^https?:\/\//i, "")
-    // 去掉末尾的 path / 斜杠
     .replace(/\/.*$/, "")
-    // 去掉可能混进来的 :port（Host 输入框只放主机）
-    // 注意：IPv6 暂不支持（需要方括号包裹），作为简化：如果包含冒号则
-    // 视为 host:port，只取前半段。使用者不应把 IPv6 写在这里。
     .replace(/:\d+$/, "");
 }
 
 function normalizePort(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return "";
-  // 仅接受纯数字；非法输入一律当作不指定
   return /^\d+$/.test(trimmed) ? trimmed : "";
 }

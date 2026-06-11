@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+﻿import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Lock, User, BookOpen, CheckCircle2, AlertCircle, Mail, UserPlus, ShieldCheck, Eye, EyeOff, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { getServerUrl, setServerUrl, clearServerUrl, testServerConnection, fetchRegisterConfig, registerAccount } from "@/lib/api";
+import { getServerUrl, setServerUrl, clearServerUrl, testServerConnection, fetchRegisterConfig, registerAccount, diagnoseConnection, type DiagnosisResult } from "@/lib/api";
 import { buildServerUrl, parseServerUrl, type ServerAddressParts } from "@/lib/serverUrl";
 import ServerAddressInput from "@/components/ServerAddressInput";
 import LanDiscoveryPanel from "@/components/LanDiscoveryPanel";
@@ -120,6 +120,7 @@ export default function LoginPage({ onLogin, isClientMode = false, onDisconnect 
     protocol: "http",
     host: "",
     port: "",
+    path: "",
   });
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -132,6 +133,8 @@ export default function LoginPage({ onLogin, isClientMode = false, onDisconnect 
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
   const [serverStatus, setServerStatus] = useState<"idle" | "checking" | "ok" | "fail">("idle");
+  const [diagResults, setDiagResults] = useState<DiagnosisResult[] | null>(null);
+  const [diagRunning, setDiagRunning] = useState(false);
   const [allowRegistration, setAllowRegistration] = useState<boolean>(true);
   // Phase 6: 2FA 两阶段登录 state —— 第一步（密码）成功后若后端返回 requires2FA,
   // 就暂存 ticket + 当前 baseUrl，切到 2FA 面板让用户输入 6 位动态码或恢复码。
@@ -247,6 +250,21 @@ export default function LoginPage({ onLogin, isClientMode = false, onDisconnect 
     if (result.ok) {
       // 刷新注册开关
       fetchRegisterConfig(url).then((cfg) => setAllowRegistration(cfg.allowRegistration));
+    }
+  };
+
+  const runDiagnosis = async () => {
+    const url = buildServerUrl(serverParts);
+    if (!url) return;
+    setDiagRunning(true);
+    setDiagResults(null);
+    try {
+      const results = await diagnoseConnection(url);
+      setDiagResults(results);
+    } catch (e: any) {
+      setDiagResults([{ step: "error", ok: false, detail: e.message || "诊断异常" }]);
+    } finally {
+      setDiagRunning(false);
     }
   };
 
@@ -425,7 +443,7 @@ export default function LoginPage({ onLogin, isClientMode = false, onDisconnect 
     localStorage.removeItem("nowen-token");
     // 断开服务器 = 凭据不再有意义，一并清掉防止下次自动登录打到错误服务器
     void clearRememberedCredentials();
-    setServerParts({ protocol: "http", host: "", port: "" });
+    setServerParts({ protocol: "http", host: "", port: "", path: "" });
     setServerStatus("idle");
     setUsername("");
     setPassword("");

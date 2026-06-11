@@ -1477,6 +1477,7 @@
     "addressHint": "Pick a protocol and enter host and port (port is optional)",
     "protocolLabel": "Protocol",
     "hostPlaceholder": "Host / IP (e.g. 192.168.1.100)",
+    "urlPlaceholder": "fnos.net/user:3001 or 192.168.1.10:3001",
     "portLabel": "Port",
     "portPlaceholder": "Port",
     "connectButton": "Connect",

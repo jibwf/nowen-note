@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+﻿import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -26,7 +26,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConfirmProvider } from "@/components/ui/confirm";
 import Toaster from "@/components/Toaster";
 import { User } from "@/types";
-import { getServerUrl, clearServerUrl, broadcastLogout } from "@/lib/api";
+import { getServerUrl, setServerUrl, clearServerUrl, broadcastLogout, initializeServerUrlFromRuntime } from "@/lib/api";
 import { TASK_VIEW_SHELL_CLASS } from "@/lib/taskLayout";
 import { bootstrap as syncBootstrap, teardown as syncTeardown, syncNow } from "@/lib/syncEngine";
 import { realtime } from "@/lib/realtime";
@@ -864,7 +864,7 @@ function AuthGate() {
             localStorage.setItem("nowen-token", auth.token);
             // 桌面端首启把 origin 当作 serverUrl 落盘，让后续同源 API 调用顺利通过
             if (!getServerUrl() && window.location.origin.startsWith("http")) {
-              localStorage.setItem("nowen-server-url", window.location.origin);
+              setServerUrl(window.location.origin);
             }
           } catch { /* ignore */ }
           saveCachedAuthUser(getAuthCacheScope(getServerUrl()), auth.token, auth.user);

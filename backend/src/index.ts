@@ -1,4 +1,4 @@
-import { serve } from "@hono/node-server";
+﻿import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
@@ -68,7 +68,7 @@ app.use("*", cors({
   //     CORS 预检；如果没列入白名单，OPTIONS 直接 403/被浏览器拦下，所有"WS 连上之后"
   //     的 fetch 都会报 TypeError: Failed to fetch（典型现象：APK 列表能加载但点笔记
   //     立刻 Failed to fetch、点同一个笔记没反应）。
-  allowHeaders: ["Content-Type", "X-User-Id", "Authorization", "X-Sudo-Token", "X-Connection-Id"],
+  allowHeaders: ["Content-Type", "X-User-Id", "Authorization", "X-Sudo-Token", "X-Connection-Id", "X-Requested-With", "X-Request-Id"],
   credentials: true,
 }));
 

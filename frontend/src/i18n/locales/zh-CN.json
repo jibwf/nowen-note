@@ -1494,6 +1494,7 @@
     "addressHint": "选择协议、填写主机和端口（端口可留空走默认值）",
     "protocolLabel": "协议",
     "hostPlaceholder": "主机 / IP（例如 192.168.1.100）",
+    "urlPlaceholder": "fnos.net/user:3001 或 192.168.1.10:3001",
     "portLabel": "端口",
     "portPlaceholder": "端口",
     "connectButton": "连接",

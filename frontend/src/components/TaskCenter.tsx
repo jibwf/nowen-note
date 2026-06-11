@@ -331,7 +331,7 @@ export default function TaskCenter() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [stats, setStats] = useState<TaskStats | null>(null);
   const [filter, setFilter] = useState<TaskFilter>("all");
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -344,6 +344,22 @@ export default function TaskCenter() {
     toggleExpand,
     isTreeMode,
   } = useTaskTree(tasks, filter);
+
+  // 收集指定任务及其所有后代的 id（用于删除父任务时同步移除子任务）
+  const getDescendantIds = useCallback((rootId: string, taskList: Task[]): string[] => {
+    const ids: string[] = [rootId];
+    const children = taskList.filter((t) => t.parentId === rootId);
+    for (const child of children) {
+      ids.push(...getDescendantIds(child.id, taskList));
+    }
+    return ids;
+  }, []);
+
+  // selectedTask 始终从最新 tasks 派生，避免保存过期对象
+  const selectedTask = React.useMemo(() => {
+    if (!selectedTaskId) return null;
+    return tasks.find((t) => t.id === selectedTaskId) || null;
+  }, [selectedTaskId, tasks]);
 
   const loadTasks = useCallback(async () => {
     try {
@@ -366,7 +382,7 @@ export default function TaskCenter() {
 
   useEffect(() => {
     const onWs = () => {
-      setSelectedTask(null);
+      setSelectedTaskId(null);
       loadTasks();
     };
     window.addEventListener("nowen:workspace-changed", onWs);
@@ -415,7 +431,7 @@ export default function TaskCenter() {
     try {
       const updated = await api.updateTask(id, data);
       setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
-      if (selectedTask?.id === id) setSelectedTask(updated);
+      if (selectedTaskId === id) setSelectedTaskId(updated.id);
       const affectsStats =
         "dueDate" in data ||
         "isCompleted" in data ||
@@ -435,7 +451,7 @@ export default function TaskCenter() {
 
   const handleDelete = async (id: string) => {
     setTasks((prev) => prev.filter((t) => t.id !== id));
-    if (selectedTask?.id === id) setSelectedTask(null);
+    if (selectedTask?.id === id) setSelectedTaskId(null);
     try {
       await api.deleteTask(id);
       const s = await api.getTaskStats();
@@ -495,7 +511,7 @@ export default function TaskCenter() {
           {FILTERS.map((f) => (
             <button
               key={f.key}
-              onClick={() => { setFilter(f.key); setSelectedTask(null); }}
+              onClick={() => { setFilter(f.key); setSelectedTaskId(null); }}
               className={cn(
                 "w-full flex items-center justify-between px-3 py-2 rounded-md text-sm transition-colors",
                 filter === f.key
@@ -525,7 +541,7 @@ export default function TaskCenter() {
           {FILTERS.map((f) => (
             <button
               key={f.key}
-              onClick={() => { setFilter(f.key); setSelectedTask(null); }}
+              onClick={() => { setFilter(f.key); setSelectedTaskId(null); }}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0",
                 filter === f.key
@@ -592,7 +608,7 @@ export default function TaskCenter() {
                       isExpanded={expandedTaskIds.has(item.node.id)}
                       hasChildren={item.node.children.length > 0}
                       onToggle={handleToggle}
-                      onSelect={setSelectedTask}
+                      onSelect={(task) => setSelectedTaskId(task.id)}
                       onDelete={handleDelete}
                       onToggleExpand={toggleExpand}
                     />
@@ -604,7 +620,7 @@ export default function TaskCenter() {
                       key={task.id}
                       task={task}
                       onToggle={handleToggle}
-                      onSelect={setSelectedTask}
+                      onSelect={(task) => setSelectedTaskId(task.id)}
                       onDelete={handleDelete}
                     />
                   ))
@@ -622,7 +638,7 @@ export default function TaskCenter() {
             key={selectedTask.id}
             task={selectedTask}
             treeNode={selectedTreeNode}
-            onClose={() => setSelectedTask(null)}
+            onClose={() => setSelectedTaskId(null)}
             onUpdate={handleUpdate}
             onDelete={handleDelete}
           />

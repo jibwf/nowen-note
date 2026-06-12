@@ -30,6 +30,7 @@ import { FlatTaskRow } from "./tasks/FlatTaskRow";
 import { useReminderNotifier } from "./tasks/useReminderNotifier";
 import { useTaskProjects } from "./tasks/useTaskProjects";
 import { TaskBoardView } from "./tasks/TaskBoardView";
+import { MobileProjectTrigger, MobileProjectPicker } from "./tasks/MobileProjectPicker";
 
 /* ===== Main Component ===== */
 export default function TaskCenter() {
@@ -55,6 +56,7 @@ export default function TaskCenter() {
 
   // Phase 4: search
   const [searchQuery, setSearchQuery] = useState("");
+  const [workspaceVersion, setWorkspaceVersion] = useState(0);
 
   // Phase 4: projects
   const {
@@ -79,6 +81,7 @@ export default function TaskCenter() {
   const [editProjectName, setEditProjectName] = useState("");
   const [editProjectColor, setEditProjectColor] = useState("#6366f1");
   const [showProjectMenu, setShowProjectMenu] = useState<string | null>(null);
+  const [mobileProjectOpen, setMobileProjectOpen] = useState(false);
 
   // Phase 4: batch select mode
   const [selectMode, setSelectMode] = useState(false);
@@ -157,12 +160,12 @@ export default function TaskCenter() {
     } finally {
       setIsLoading(false);
     }
-  }, [filter, selectedProjectId]);
+  }, [filter, selectedProjectId, workspaceVersion]);
 
   useEffect(() => { loadTasks(); }, [loadTasks]);
 
   useEffect(() => {
-    const onWs = () => { setSelectedTaskId(null); setSelectedProjectId(null); setSearchQuery(""); setSelectedIds(new Set()); setSelectMode(false); reload(); };
+    const onWs = () => { setSelectedTaskId(null); setSearchQuery(""); setSelectedIds(new Set()); setSelectMode(false); setSelectedProjectId(null); setWorkspaceVersion((v) => v + 1); reload(); };
     window.addEventListener("nowen:workspace-changed", onWs);
     return () => window.removeEventListener("nowen:workspace-changed", onWs);
   }, [loadTasks]);
@@ -541,6 +544,21 @@ export default function TaskCenter() {
               </span>
             </button>
           ))}
+          {/* Mobile project trigger */}
+          <MobileProjectTrigger
+            selectedProjectId={selectedProjectId}
+            projects={projects}
+            onClick={() => setMobileProjectOpen(true)}
+            t={t}
+          />
+          {/* Mobile view toggle */}
+          <button
+            onClick={() => setViewMode(viewMode === "list" ? "board" : "list")}
+            className="flex items-center gap-1 px-2 py-1.5 rounded-full text-xs shrink-0 text-tx-secondary bg-app-hover/50 active:bg-app-active"
+            title={viewMode === "list" ? t("tasks.boardView") : t("tasks.listView")}
+          >
+            {viewMode === "list" ? <LayoutGrid size={12} /> : <LayoutList size={12} />}
+          </button>
         </div>
 
         {/* Overview cards only in all filter */}
@@ -789,13 +807,15 @@ export default function TaskCenter() {
       )}
 
       {/* Mobile project picker */}
-      <MobileProjectPicker
-        projects={projects}
-        selectedProjectId={selectedProjectId}
-        onSelect={(id) => { setSelectedProjectId(id); setFilter("all"); setSelectedTaskId(null); setSearchQuery(""); }}
-        onCreate={(name) => { setNewProjectName(name); handleCreateProject(); }}
-        t={t}
-      />
+      {mobileProjectOpen && (
+        <MobileProjectPicker
+          projects={projects}
+          selectedProjectId={selectedProjectId}
+          onSelect={(id) => { setSelectedProjectId(id); setFilter("all"); setSelectedTaskId(null); setSearchQuery(""); setMobileProjectOpen(false); }}
+          onCreate={(name) => { setNewProjectName(name); handleCreateProject(); setMobileProjectOpen(false); }}
+          t={t}
+        />
+      )}
 
       {/* Right: Detail Panel */}
       <AnimatePresence>

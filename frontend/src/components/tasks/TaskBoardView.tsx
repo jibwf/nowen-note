@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import type { Task, TaskStatus } from "@/types";
 import { TitleView } from "./taskTitleTokens";
-import { DateBadge } from "./DateBadge";
+import { DateBadge, isTaskDateOverdue } from "./DateBadge";
 import { calculateTaskProgress } from "./taskProgress";
 import { buildTaskTree, type TaskTreeNode } from "./taskProgress";
 
@@ -50,11 +50,15 @@ export function TaskBoardView({
 
   const handleDrop = useCallback((status: TaskStatus) => {
     if (dragId) {
-      onStatusChange(dragId, status);
+      const draggedTask = tasks.find((t) => t.id === dragId);
+      const currentStatus = draggedTask?.status || (draggedTask?.isCompleted ? "done" : "todo");
+      if (currentStatus !== status) {
+        onStatusChange(dragId, status);
+      }
     }
     setDragId(null);
     setDragOverCol(null);
-  }, [dragId, onStatusChange]);
+  }, [dragId, onStatusChange, tasks]);
 
   const handleDragEnd = useCallback(() => {
     setDragId(null);
@@ -141,7 +145,7 @@ export function TaskBoardView({
                     className={cn(
                       "p-3 rounded-lg bg-app-surface border hover:shadow-md hover:border-accent-primary/30 cursor-pointer transition-all",
                       dragOverCol && dragId === task.id ? "opacity-50" : "",
-                      task.isCompleted === 0 && task.dueAt && new Date(task.dueAt) < new Date() ? "border-red-300 dark:border-red-800" : "border-app-border"
+                      (task.isCompleted === 0 && task.dueDate && isTaskDateOverdue(task.dueDate, task.dueAt)) ? "border-red-300 dark:border-red-800" : "border-app-border"
                     )}
                     onClick={() => onSelect(task)}
                   >

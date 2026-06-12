@@ -56,7 +56,7 @@ export function TaskAIBreakdown({
   };
 
   const handleCreate = async () => {
-    const selected = suggestions.filter((s) => s.selected);
+    const selected = suggestions.filter((s) => s.selected && s.title?.trim());
     if (selected.length === 0) return;
     setCreating(true);
     try {

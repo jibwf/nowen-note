@@ -199,6 +199,22 @@ tasks.post("/", requireWorkspaceFeature("tasks"), async (c) => {
   const body: any = await c.req.json();
   const id = crypto.randomUUID();
   const { title, priority = 2, dueDate = null, dueAt = null, noteId = null, parentId = null } = body;
+  const repeatRule = body.repeatRule || "none";
+  const repeatInterval = body.repeatInterval ?? 1;
+  const repeatEndDate = body.repeatEndDate ?? null;
+  const repeatGroupId = body.repeatGroupId ?? null;
+  const repeatGeneratedFromId = body.repeatGeneratedFromId ?? null;
+
+  const VALID_REPEAT = ["none", "daily", "weekly", "monthly", "yearly"];
+  if (!VALID_REPEAT.includes(repeatRule)) {
+    return c.json({ error: "Invalid repeatRule", code: "INVALID_REPEAT_RULE" }, 400);
+  }
+  if (repeatRule !== "none" && repeatInterval < 1) {
+    return c.json({ error: "repeatInterval must be >= 1", code: "INVALID_REPEAT_INTERVAL" }, 400);
+  }
+  if (repeatRule !== "none" && !dueDate && !dueAt) {
+    return c.json({ error: "Repeating task requires dueDate or dueAt", code: "REPEAT_REQUIRES_DATE" }, 400);
+  }
 
   if (!title || !title.trim()) {
     return c.json({ error: "Title is required" }, 400);
@@ -245,9 +261,9 @@ tasks.post("/", requireWorkspaceFeature("tasks"), async (c) => {
   const effectiveIsCompleted = status === "done" ? 1 : 0;
 
   db.prepare(`
-    INSERT INTO tasks (id, userId, workspaceId, title, isCompleted, priority, dueDate, dueAt, noteId, parentId, projectId, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, userId, effectiveWorkspaceId, title.trim(), effectiveIsCompleted, priority, dueDate, dueAt, noteId, parentId, projectId, status);
+    INSERT INTO tasks (id, userId, workspaceId, title, isCompleted, priority, dueDate, dueAt, noteId, parentId, projectId, status, repeatRule, repeatInterval, repeatEndDate, repeatGroupId, repeatGeneratedFromId)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, userId, effectiveWorkspaceId, title.trim(), effectiveIsCompleted, priority, dueDate, dueAt, noteId, parentId, projectId, status, repeatRule, repeatInterval, repeatEndDate, repeatGroupId, repeatGeneratedFromId);
 
   const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
   return c.json(task, 201);
@@ -278,6 +294,22 @@ tasks.put("/:id", (c) => {
     const parentId = body.parentId !== undefined ? body.parentId : existing.parentId;
     const sortOrder = body.sortOrder ?? existing.sortOrder;
     const projectId = body.projectId !== undefined ? body.projectId : existing.projectId;
+
+    // Repeat fields
+    const repeatRule = body.repeatRule !== undefined ? body.repeatRule : (existing.repeatRule || "none");
+    const repeatInterval = body.repeatInterval !== undefined ? body.repeatInterval : (existing.repeatInterval ?? 1);
+    const repeatEndDate = body.repeatEndDate !== undefined ? body.repeatEndDate : (existing.repeatEndDate ?? null);
+
+    const VALID_REPEAT = ["none", "daily", "weekly", "monthly", "yearly"];
+    if (!VALID_REPEAT.includes(repeatRule)) {
+      return c.json({ error: "Invalid repeatRule", code: "INVALID_REPEAT_RULE" }, 400);
+    }
+    if (repeatRule !== "none" && (repeatInterval ?? 0) < 1) {
+      return c.json({ error: "repeatInterval must be >= 1", code: "INVALID_REPEAT_INTERVAL" }, 400);
+    }
+    if (repeatRule !== "none" && !dueDate && !dueAt) {
+      return c.json({ error: "Repeating task requires dueDate or dueAt", code: "REPEAT_REQUIRES_DATE" }, 400);
+    }
 
     // Fix 5: status / isCompleted bidirectional sync
     const VALID_STATUSES = ["todo", "doing", "blocked", "done"];
@@ -350,9 +382,9 @@ tasks.put("/:id", (c) => {
 
     db.prepare(`
       UPDATE tasks SET title = ?, isCompleted = ?, priority = ?, dueDate = ?, dueAt = ?,
-        noteId = ?, parentId = ?, sortOrder = ?, projectId = ?, status = ?, updatedAt = datetime('now')
+        noteId = ?, parentId = ?, sortOrder = ?, projectId = ?, status = ?, repeatRule = ?, repeatInterval = ?, repeatEndDate = ?, updatedAt = datetime('now')
       WHERE id = ?
-    `).run(title, isCompleted, priority, dueDate, dueAt, noteId, parentId, sortOrder, projectId, status, id);
+    `).run(title, isCompleted, priority, dueDate, dueAt, noteId, parentId, sortOrder, projectId, status, repeatRule, repeatInterval, repeatEndDate, id);
 
     const updated = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
     return c.json(updated);
@@ -366,9 +398,7 @@ tasks.patch("/:id/toggle", (c) => {
   const userId = c.req.header("X-User-Id")!;
   const id = c.req.param("id");
 
-  const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as
-    | { userId: string; workspaceId: string | null; isCompleted: number }
-    | undefined;
+  const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as any;
   if (!task) return c.json({ error: "Task not found" }, 404);
 
   if (!canManageResource(task.userId, task.workspaceId, userId)) {
@@ -379,8 +409,64 @@ tasks.patch("/:id/toggle", (c) => {
   const newTaskStatus = newStatus === 1 ? "done" : "todo";
   db.prepare("UPDATE tasks SET isCompleted = ?, status = ?, updatedAt = datetime('now') WHERE id = ?").run(newStatus, newTaskStatus, id);
 
+  let generatedTask = null;
+
+  if (newStatus === 1 && task.repeatRule && task.repeatRule !== "none" && !task.repeatNextGeneratedId) {
+    const baseDateStr = task.dueAt ? task.dueAt.split("T")[0] : task.dueDate;
+    if (baseDateStr) {
+      const interval = task.repeatInterval || 1;
+      const parts = baseDateStr.split("-").map(Number);
+      const base = new Date(parts[0], parts[1] - 1, parts[2]);
+      let next;
+      switch (task.repeatRule) {
+        case "daily": next = new Date(base); next.setDate(next.getDate() + interval); break;
+        case "weekly": next = new Date(base); next.setDate(next.getDate() + 7 * interval); break;
+        case "monthly":
+          next = new Date(base); next.setMonth(next.getMonth() + interval);
+          if (next.getDate() !== base.getDate()) next.setDate(0);
+          break;
+        case "yearly":
+          next = new Date(base); next.setFullYear(next.getFullYear() + interval);
+          if (next.getDate() !== base.getDate()) next.setDate(0);
+          break;
+        default: next = new Date(base);
+      }
+      let shouldGenerate = true;
+      if (task.repeatEndDate) {
+        const endParts = task.repeatEndDate.split("-").map(Number);
+        const endDate = new Date(endParts[0], endParts[1] - 1, endParts[2]);
+        if (next > endDate) shouldGenerate = false;
+      }
+      if (shouldGenerate) {
+        const yyyy = next.getFullYear();
+        const mm = String(next.getMonth() + 1).padStart(2, "0");
+        const dd = String(next.getDate()).padStart(2, "0");
+        const nextDateStr = `${yyyy}-${mm}-${dd}`;
+        let nextDueAt = null;
+        let nextDueDate = nextDateStr;
+        if (task.dueAt) {
+          const timePart = task.dueAt.split("T")[1] || "00:00:00";
+          nextDueAt = `${nextDateStr}T${timePart}`;
+        }
+        const newId = crypto.randomUUID();
+        const groupId = task.repeatGroupId || task.id;
+        db.prepare(`
+          INSERT INTO tasks (id, userId, workspaceId, title, isCompleted, priority, dueDate, dueAt, noteId, parentId, projectId, status, repeatRule, repeatInterval, repeatEndDate, repeatGroupId, repeatGeneratedFromId)
+          VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?)
+        `).run(newId, task.userId, task.workspaceId, task.title, task.priority, nextDueAt, nextDueAt || nextDueDate, task.noteId, task.parentId, task.projectId, task.repeatRule, task.repeatInterval, task.repeatEndDate, groupId, task.id);
+        db.prepare("UPDATE tasks SET repeatNextGeneratedId = ? WHERE id = ?").run(newId, id);
+        const reminders = db.prepare("SELECT * FROM task_reminders WHERE taskId = ?").all(id) as any[];
+        for (const r of reminders) {
+          const rId = crypto.randomUUID();
+          db.prepare("INSERT INTO task_reminders (id, taskId, userId, offsetMinutes, enabled, lastNotifiedAt, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, NULL, datetime('now'), datetime('now'))").run(rId, newId, r.userId, r.offsetMinutes, r.enabled);
+        }
+        generatedTask = db.prepare("SELECT * FROM tasks WHERE id = ?").get(newId);
+      }
+    }
+  }
+
   const updated = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
-  return c.json(updated);
+  return c.json({ task: updated, generatedTask });
 });
 
 // 删除任务

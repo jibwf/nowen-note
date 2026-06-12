@@ -1151,7 +1151,22 @@
     "save": "Save",
     "dropHere": "Drop here",
     "calendarView": "Calendar",
-    "calendarEmpty": "No tasks this day"
+    "calendarEmpty": "No tasks this day",
+    "repeat": {
+      "title": "Repeat",
+      "none": "No repeat",
+      "daily": "Daily",
+      "weekly": "Weekly",
+      "monthly": "Monthly",
+      "yearly": "Yearly",
+      "every": "Every",
+      "days": "day(s)",
+      "weeks": "week(s)",
+      "months": "month(s)",
+      "years": "year(s)",
+      "endDate": "Repeat until",
+      "needDueDate": "Set a due date first to enable repeat"
+    }
   },
   "tags": {
     "addTagPlaceholder": "Add tag...",

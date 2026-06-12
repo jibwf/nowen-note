@@ -1,7 +1,7 @@
 ﻿import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  CheckCircle2, Circle, Flag, Trash2, User as UserIcon, Plus,
+  CheckCircle2, Circle, Flag, Trash2, User as UserIcon, Plus, Repeat,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
@@ -9,6 +9,7 @@ import { getCurrentWorkspace } from "@/lib/api";
 import type { Task } from "@/types";
 import { TitleView } from "./taskTitleTokens";
 import { DateBadge } from "./DateBadge";
+import { isRepeatingTask } from "./taskRepeatUtils";
 import { SubtaskInput } from "./SubtaskInput";
 
 /**
@@ -160,6 +161,7 @@ export const FlatTaskRow = React.forwardRef<HTMLDivElement, {
           <span className="hidden md:inline-flex">
             <DateBadge dateStr={task.dueDate} dueAt={task.dueAt} />
           </span>
+          {isRepeatingTask(task) && <Repeat size={12} className="text-accent-primary/60" title={task.repeatRule} />}
           <Flag size={14} className={pri.flagClass} />
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}

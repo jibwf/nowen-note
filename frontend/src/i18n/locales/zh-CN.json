@@ -1163,7 +1163,22 @@
     "save": "保存",
     "dropHere": "拖到这里",
     "calendarView": "日历视图",
-    "calendarEmpty": "这天没有任务"
+    "calendarEmpty": "这天没有任务",
+    "repeat": {
+      "title": "重复设置",
+      "none": "不重复",
+      "daily": "每天",
+      "weekly": "每周",
+      "monthly": "每月",
+      "yearly": "每年",
+      "every": "每",
+      "days": "天",
+      "weeks": "周",
+      "months": "月",
+      "years": "年",
+      "endDate": "重复截止日期",
+      "needDueDate": "请先设置截止日期才能启用重复"
+    }
   },
   "tags": {
     "addTagPlaceholder": "添加标签...",

@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Flag, Trash2, X, Bell, BellOff, CheckCircle2, Circle, Plus, Clock } from "lucide-react";
+import { Flag, Trash2, X, Bell, BellOff, CheckCircle2, Circle, Plus, Clock, Repeat } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { zhCN, enUS } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type { Task, TaskPriority, TaskReminder } from "@/types";
+import { isRepeatingTask } from "./taskRepeatUtils";
 import type { TaskTreeNode } from "./taskProgress";
 import { calculateTaskProgress } from "./taskProgress";
 import { parseTaskTitle, TitleView } from "./taskTitleTokens";
@@ -61,6 +62,9 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
   const [priority, setPriority] = useState<TaskPriority>(task.priority);
   const [dueDate, setDueDate] = useState(task.dueDate || "");
   const [dueAt, setDueAt] = useState(task.dueAt || "");
+  const [repeatRule, setRepeatRule] = useState(task.repeatRule || "none");
+  const [repeatInterval, setRepeatInterval] = useState(task.repeatInterval || 1);
+  const [repeatEndDate, setRepeatEndDate] = useState(task.repeatEndDate || "");
   const titleRef = useRef<HTMLTextAreaElement>(null);
 
   // reminder state
@@ -79,6 +83,9 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
     setPriority(task.priority);
     setDueDate(task.dueDate || "");
     setDueAt(task.dueAt || "");
+    setRepeatRule(task.repeatRule || "none");
+    setRepeatInterval(task.repeatInterval || 1);
+    setRepeatEndDate(task.repeatEndDate || "");
   }, [task.id]);
 
   // load reminders for this task
@@ -331,6 +338,75 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
             </div>
           </div>
         )}
+
+        {/* Repeat Settings */}
+        <div className="rounded-lg border border-app-border bg-app-elevated/50 p-4 space-y-2">
+          <div className="flex items-center gap-2 mb-1">
+            <Repeat size={14} className="text-tx-tertiary" />
+            <span className="text-xs text-tx-tertiary uppercase tracking-wider font-medium">
+              {t("tasks.repeat.title") || "Repeat"}
+            </span>
+          </div>
+          <select
+            value={repeatRule}
+            onChange={(e) => {
+              const rule = e.target.value;
+              setRepeatRule(rule);
+              if (rule === "none") {
+                onUpdate(task.id, { repeatRule: "none", repeatInterval: 1, repeatEndDate: null });
+              } else {
+                onUpdate(task.id, { repeatRule: rule, repeatInterval, repeatEndDate: repeatEndDate || null });
+              }
+            }}
+            disabled={!hasDeadline}
+            className="w-full px-3 py-2 rounded-md bg-app-bg border border-app-border text-sm text-tx-primary focus:outline-none focus:border-accent-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <option value="none">{t("tasks.repeat.none") || "No repeat"}</option>
+            <option value="daily">{t("tasks.repeat.daily") || "Daily"}</option>
+            <option value="weekly">{t("tasks.repeat.weekly") || "Weekly"}</option>
+            <option value="monthly">{t("tasks.repeat.monthly") || "Monthly"}</option>
+            <option value="yearly">{t("tasks.repeat.yearly") || "Yearly"}</option>
+          </select>
+          {!hasDeadline && repeatRule === "none" && (
+            <p className="text-[10px] text-tx-tertiary">{t("tasks.repeat.needDueDate") || "Set a due date first to enable repeat"}</p>
+          )}
+          {repeatRule !== "none" && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-tx-secondary">{t("tasks.repeat.every") || "Every"}</span>
+              <input
+                type="number"
+                min={1}
+                value={repeatInterval}
+                onChange={(e) => {
+                  const val = Math.max(1, parseInt(e.target.value) || 1);
+                  setRepeatInterval(val);
+                  onUpdate(task.id, { repeatInterval: val });
+                }}
+                className="w-16 px-2 py-1 rounded-md bg-app-bg border border-app-border text-sm text-tx-primary text-center focus:outline-none focus:border-accent-primary"
+              />
+              <span className="text-xs text-tx-secondary">
+                {repeatRule === "daily" ? (t("tasks.repeat.days") || "day(s)") :
+                 repeatRule === "weekly" ? (t("tasks.repeat.weeks") || "week(s)") :
+                 repeatRule === "monthly" ? (t("tasks.repeat.months") || "month(s)") :
+                 (t("tasks.repeat.years") || "year(s)")}
+              </span>
+            </div>
+          )}
+          {repeatRule !== "none" && (
+            <div>
+              <label className="text-xs text-tx-tertiary mb-1 block">{t("tasks.repeat.endDate") || "Repeat until"}</label>
+              <input
+                type="date"
+                value={repeatEndDate}
+                onChange={(e) => {
+                  setRepeatEndDate(e.target.value);
+                  onUpdate(task.id, { repeatEndDate: e.target.value || null });
+                }}
+                className="w-full px-3 py-2 rounded-md bg-app-bg border border-app-border text-sm text-tx-primary focus:outline-none focus:border-accent-primary transition-colors"
+              />
+            </div>
+          )}
+        </div>
 
         {/* ===== Reminder Section (functional) ===== */}
         <div className="rounded-lg border border-app-border bg-app-elevated/50 p-4 space-y-3">

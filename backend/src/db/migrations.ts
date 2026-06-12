@@ -1400,6 +1400,32 @@ export const MIGRATIONS: Migration[] = [
       db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(projectId)");
     },
   },
+  {
+    version: 23,
+    name: "task-repeat",
+    up: (db) => {
+      const cols = db.prepare("PRAGMA table_info(tasks)").all() as { name: string }[];
+      const colNames = new Set(cols.map((c) => c.name));
+      if (!colNames.has("repeatRule")) {
+        db.exec("ALTER TABLE tasks ADD COLUMN repeatRule TEXT NOT NULL DEFAULT 'none'");
+      }
+      if (!colNames.has("repeatInterval")) {
+        db.exec("ALTER TABLE tasks ADD COLUMN repeatInterval INTEGER NOT NULL DEFAULT 1");
+      }
+      if (!colNames.has("repeatEndDate")) {
+        db.exec("ALTER TABLE tasks ADD COLUMN repeatEndDate TEXT");
+      }
+      if (!colNames.has("repeatGroupId")) {
+        db.exec("ALTER TABLE tasks ADD COLUMN repeatGroupId TEXT");
+      }
+      if (!colNames.has("repeatGeneratedFromId")) {
+        db.exec("ALTER TABLE tasks ADD COLUMN repeatGeneratedFromId TEXT");
+      }
+      if (!colNames.has("repeatNextGeneratedId")) {
+        db.exec("ALTER TABLE tasks ADD COLUMN repeatNextGeneratedId TEXT");
+      }
+    },
+  },
 ];
 
 /** 当前代码已知的最高 schema 版本（== MIGRATIONS 里 max(version)）。 */

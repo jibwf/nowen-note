@@ -8,7 +8,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import type { Task } from "@/types";
-import { isTaskDateOverdue, toLocalDate } from "./DateBadge";
+import { isTaskDateOverdue } from "./DateBadge";
 import { TitleView } from "./taskTitleTokens";
 
 /** Get the effective date key for a task (dueAt > dueDate) */
@@ -16,6 +16,12 @@ function getTaskDateKey(task: Task): string | null {
   if (task.dueAt) return task.dueAt.split("T")[0];
   if (task.dueDate) return task.dueDate;
   return null;
+}
+
+/** Unified overdue check: supports dueAt-only tasks */
+function isCalendarTaskOverdue(task: Task): boolean {
+  const dateKey = getTaskDateKey(task);
+  return !task.isCompleted && !!dateKey && isTaskDateOverdue(dateKey, task.dueAt);
 }
 
 /** Group tasks by date key (YYYY-MM-DD) */
@@ -92,7 +98,7 @@ export function TaskCalendarView({
             <ChevronLeft size={18} />
           </button>
           <h2 className="text-sm font-semibold text-tx-primary min-w-[120px] text-center">
-            {format(currentMonth, "yyyy\u5E74M\u6708", { locale: dateLocale })}
+            {(i18n.language === "zh-CN" ? format(currentMonth, "yyyy\u5E74M\u6708") : format(currentMonth, "MMMM yyyy", { locale: dateLocale }))}
           </h2>
           <button onClick={() => setCurrentMonth((m) => addMonths(m, 1))} className="p-1 rounded hover:bg-app-hover text-tx-secondary transition-colors">
             <ChevronRight size={18} />
@@ -149,7 +155,7 @@ export function TaskCalendarView({
                   {/* Task dots / mini cards */}
                   <div className="flex-1 space-y-0.5 overflow-hidden">
                     {visibleTasks.map((task) => {
-                      const overdue = !task.isCompleted && task.dueDate && isTaskDateOverdue(task.dueDate, task.dueAt);
+                      const overdue = isCalendarTaskOverdue(task);
                       return (
                         <div
                           key={task.id}
@@ -179,17 +185,19 @@ export function TaskCalendarView({
         </div>
 
         {/* Selected date panel (desktop right side) */}
-        {selectedDate && selectedDateTasks.length > 0 && (
+        {selectedDate && (
           <div className="hidden md:flex w-[260px] shrink-0 flex-col border-l border-app-border bg-app-surface overflow-y-auto">
             <div className="px-4 py-3 border-b border-app-border">
               <span className="text-sm font-semibold text-tx-primary">
-                {format(selectedDate, "M\u6708d\u65E5 EEEE", { locale: dateLocale })}
+                {(i18n.language === "zh-CN" ? format(selectedDate, "M\u6708d\u65E5 EEEE") : format(selectedDate, "EEEE, MMM d", { locale: dateLocale }))}
               </span>
               <span className="ml-2 text-xs text-tx-tertiary">{selectedDateTasks.length}{t("tasks.title")}</span>
             </div>
             <div className="flex-1 p-3 space-y-1.5">
-              {selectedDateTasks.map((task) => {
-                const overdue = !task.isCompleted && task.dueDate && isTaskDateOverdue(task.dueDate, task.dueAt);
+              {selectedDateTasks.length === 0 ? (
+                <div className="text-center text-xs text-tx-tertiary py-8">{t("tasks.calendarEmpty") || "这天没有任务"}</div>
+              ) : selectedDateTasks.map((task) => {
+                const overdue = isCalendarTaskOverdue(task);
                 return (
                   <div
                     key={task.id}
@@ -223,17 +231,19 @@ export function TaskCalendarView({
       </div>
 
       {/* Mobile: selected date task list at bottom */}
-      {selectedDate && selectedDateTasks.length > 0 && (
+      {selectedDate && (
         <div className="md:hidden border-t border-app-border bg-app-surface overflow-y-auto max-h-[30vh]">
           <div className="px-4 py-2 border-b border-app-border/50">
             <span className="text-xs font-semibold text-tx-primary">
-              {format(selectedDate, "M/d EEE", { locale: dateLocale })}
+              {(i18n.language === "zh-CN" ? format(selectedDate, "M/d EEE") : format(selectedDate, "EEE, MMM d", { locale: dateLocale }))}
             </span>
             <span className="ml-1 text-[10px] text-tx-tertiary">{selectedDateTasks.length}</span>
           </div>
           <div className="p-2 space-y-1">
-            {selectedDateTasks.map((task) => {
-              const overdue = !task.isCompleted && task.dueDate && isTaskDateOverdue(task.dueDate, task.dueAt);
+            {selectedDateTasks.length === 0 ? (
+              <div className="text-center text-xs text-tx-tertiary py-4">{t("tasks.calendarEmpty") || "这天没有任务"}</div>
+            ) : selectedDateTasks.map((task) => {
+              const overdue = isCalendarTaskOverdue(task);
               return (
                 <div
                   key={task.id}

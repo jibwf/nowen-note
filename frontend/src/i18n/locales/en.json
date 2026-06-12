@@ -1150,7 +1150,8 @@
     "projectColor": "Color",
     "save": "Save",
     "dropHere": "Drop here",
-    "calendarView": "Calendar"
+    "calendarView": "Calendar",
+    "calendarEmpty": "No tasks this day"
   },
   "tags": {
     "addTagPlaceholder": "Add tag...",

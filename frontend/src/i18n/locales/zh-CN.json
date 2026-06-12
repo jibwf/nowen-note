@@ -1162,7 +1162,8 @@
     "projectColor": "颜色",
     "save": "保存",
     "dropHere": "拖到这里",
-    "calendarView": "日历视图"
+    "calendarView": "日历视图",
+    "calendarEmpty": "这天没有任务"
   },
   "tags": {
     "addTagPlaceholder": "添加标签...",

@@ -410,10 +410,7 @@
     "copySelectionText": "Copied selected text",
     "copySelectionFail": "Copy failed, please use system copy",
     "selectAllText": "Select all",
-    "dialConfirm": "Call {{phone}}?",
-    "copySelectionText": "Copied selected text",
-    "copySelectionFail": "Copy failed, please use system copy",
-    "selectAllText": "Select all"
+    "dialConfirm": "Call {{phone}}?"
   },
   "searchReplace": {
     "toolbarTitle": "Find & Replace (Ctrl+F)",
@@ -1121,7 +1118,15 @@
       "testBody": "This is a test reminder",
       "pushComingSoon": "APP push coming soon",
       "emailComingSoon": "Email reminders coming soon"
-    }
+    },
+    "search": "Search tasks",
+    "searchPlaceholder": "Search by title...",
+    "selectedCount": "{{count}} selected",
+    "batchComplete": "Complete selected",
+    "batchDelete": "Delete selected",
+    "batchCancel": "Cancel selection",
+    "selectMode": "Select mode",
+    "dragHint": "Drag to reorder"
   },
   "tags": {
     "addTagPlaceholder": "Add tag...",

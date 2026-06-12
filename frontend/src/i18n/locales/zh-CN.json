@@ -417,10 +417,7 @@
     "copySelectionText": "已复制选中文本",
     "copySelectionFail": "复制失败，请使用系统复制",
     "selectAllText": "全选",
-    "dialConfirm": "拨打电话？ {{phone}}",
-    "copySelectionText": "已复制选中文本",
-    "copySelectionFail": "复制失败，请使用系统复制",
-    "selectAllText": "全选"
+    "dialConfirm": "拨打电话？ {{phone}}"
   },
   "searchReplace": {
     "toolbarTitle": "查找替换 (Ctrl+F)",
@@ -1099,11 +1096,11 @@
     "openLink": "打开链接",
     "expand": "展开",
     "collapse": "折叠",
-    "addChild": "\u6DFB\u52A0\u5B50\u4EFB\u52A1",
-    "addChildPlaceholder": "\u8F93\u5165\u5B50\u4EFB\u52A1\u6807\u9898\uFF0C\u6309 Enter \u786E\u8BA4...",
-    "confirmDeleteWithChildren": "\u6B64\u4EFB\u52A1\u530B\u6709 {{count}} \u4E2A\u5B50\u4EFB\u52A1\uFF0C\u5220\u9664\u540E\u4E0D\u53EF\u6062\u590D\u3002\u786E\u8BA4\u5220\u9664\uFF1F",
-    "subtasks": "\u5B50\u4EFB\u52A1",
-    "noSubtasks": "\u6682\u65E0\u5B50\u4EFB\u52A1",
+    "addChild": "添加子任务",
+    "addChildPlaceholder": "输入子任务标题，按 Enter 确认...",
+    "confirmDeleteWithChildren": "此任务匋有 {{count}} 个子任务，删除后不可恢复。确认删除？",
+    "subtasks": "子任务",
+    "noSubtasks": "暂无子任务",
     "overview": {
       "totalProgress": "总体进度",
       "pending": "{{count}} 待完成",
@@ -1123,17 +1120,25 @@
     "reminder": {
       "title": "提醒设置",
       "comingSoon": "提醒功能即将推出，敬请期待。",
-      "atDue": "\u622A\u6B62\u65F6\u63D0\u9192",
-      "before5min": "\u63D0\u524D 5 \u5206\u949F",
-      "before30min": "\u63D0\u524D 30 \u5206\u949F",
-      "before1hour": "\u63D0\u524D 1 \u5C0F\u65F6",
-      "before1day": "\u63D0\u524D 1 \u5929",
-      "needDueDate": "\u8BF7\u5148\u8BBE\u7F6E\u622A\u6B62\u65E5\u671F\u6216\u65F6\u95F4",
-      "testNotification": "\u6D4B\u8BD5\u901A\u77E5",
-      "testBody": "\u8FD9\u662F\u4E00\u6761\u6D4B\u8BD5\u63D0\u9192",
-      "pushComingSoon": "APP \u63A8\u9001\u5373\u5C06\u652F\u6301",
-      "emailComingSoon": "\u90AE\u4EF6\u63D0\u9192\u5373\u5C06\u652F\u6301"
-    }
+      "atDue": "截止时提醒",
+      "before5min": "提前 5 分钟",
+      "before30min": "提前 30 分钟",
+      "before1hour": "提前 1 小时",
+      "before1day": "提前 1 天",
+      "needDueDate": "请先设置截止日期或时间",
+      "testNotification": "测试通知",
+      "testBody": "这是一条测试提醒",
+      "pushComingSoon": "APP 推送即将支持",
+      "emailComingSoon": "邮件提醒即将支持"
+    },
+    "search": "搜索任务",
+    "searchPlaceholder": "输入关键词搜索...",
+    "selectedCount": "已选 {{count}} 项",
+    "batchComplete": "批量完成",
+    "batchDelete": "批量删除",
+    "batchCancel": "取消选择",
+    "selectMode": "选择模式",
+    "dragHint": "拖拽排序"
   },
   "tags": {
     "addTagPlaceholder": "添加标签...",

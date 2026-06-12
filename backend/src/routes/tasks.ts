@@ -1,4 +1,4 @@
-﻿import { Hono } from "hono";
+import { Hono } from "hono";
 import type { Context } from "hono";
 import { getDb } from "../db/schema";
 import crypto from "crypto";
@@ -344,4 +344,47 @@ tasks.delete("/:id", (c) => {
   return c.json({ success: true });
 });
 
+
+
+
+// batch: complete / delete multiple tasks
+tasks.post("/batch", async (c) => {
+  const db = getDb();
+  const userId = c.req.header("X-User-Id")!;
+  const body = await c.req.json();
+  const { ids, action } = body as { ids: string[]; action: "complete" | "delete" };
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return c.json({ error: "ids cannot be empty", code: "BAD_REQUEST" }, 400);
+  }
+  if (!["complete", "delete"].includes(action)) {
+    return c.json({ error: "action must be complete or delete", code: "BAD_REQUEST" }, 400);
+  }
+
+  const safeIds = ids.slice(0, 100);
+  const placeholders = safeIds.map(() => "?").join(",");
+  const tasksFound = db.prepare(
+    "SELECT id, userId, workspaceId FROM tasks WHERE id IN (" + placeholders + ")"
+  ).all(...safeIds) as { id: string; userId: string; workspaceId: string | null }[];
+
+  const allowedIds = tasksFound
+    .filter((t) => canManageResource(t.userId, t.workspaceId, userId))
+    .map((t) => t.id);
+
+  if (allowedIds.length === 0) {
+    return c.json({ error: "Forbidden", code: "FORBIDDEN" }, 403);
+  }
+
+  const ph = allowedIds.map(() => "?").join(",");
+  if (action === "complete") {
+    db.prepare("UPDATE tasks SET isCompleted = 1, updatedAt = datetime(\"now\") WHERE id IN (" + ph + ")")
+      .run(...allowedIds);
+  } else {
+    db.prepare("DELETE FROM tasks WHERE id IN (" + ph + ")").run(...allowedIds);
+  }
+
+  return c.json({ success: true, affected: allowedIds.length });
+});
+
 export default tasks;
+

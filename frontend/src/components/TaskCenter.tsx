@@ -1,8 +1,10 @@
-﻿import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { AnimatePresence } from "framer-motion";
 import {
   Calendar, ListTodo,
   CalendarDays, AlertTriangle, CheckCheck, Inbox,
+  Search, X as XIcon, GripVertical,
+  CheckSquare, Trash2, Square,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api";
@@ -14,7 +16,7 @@ import {
   TASK_MOBILE_FILTER_BAR_CLASS,
 } from "@/lib/taskLayout";
 
-// 子组件 & 工具
+// sub-components & utilities
 import { useTaskTree } from "./tasks/useTaskTree";
 import { buildTaskTree } from "./tasks/taskProgress";
 import type { TaskTreeNode } from "./tasks/taskProgress";
@@ -23,16 +25,17 @@ import { TaskTreeRow } from "./tasks/TaskTreeRow";
 import { TaskQuickAdd } from "./tasks/TaskQuickAdd";
 import { TaskDetailPanel } from "./tasks/TaskDetailPanel";
 import { FlatTaskRow } from "./tasks/FlatTaskRow";
-/* ===== 主组件 ===== */
+
+/* ===== Main Component ===== */
 export default function TaskCenter() {
   const { t } = useTranslation();
 
   const FILTERS: { key: TaskFilter; label: string; icon: React.ReactNode }[] = [
-    { key: "all", label: t('tasks.allTasks'), icon: <Inbox size={16} /> },
-    { key: "today", label: t('tasks.today'), icon: <CalendarDays size={16} /> },
-    { key: "week", label: t('tasks.next7Days'), icon: <Calendar size={16} /> },
-    { key: "overdue", label: t('tasks.overdue'), icon: <AlertTriangle size={16} /> },
-    { key: "completed", label: t('tasks.completed'), icon: <CheckCheck size={16} /> },
+    { key: "all", label: t("tasks.allTasks"), icon: <Inbox size={16} /> },
+    { key: "today", label: t("tasks.today"), icon: <CalendarDays size={16} /> },
+    { key: "week", label: t("tasks.next7Days"), icon: <Calendar size={16} /> },
+    { key: "overdue", label: t("tasks.overdue"), icon: <AlertTriangle size={16} /> },
+    { key: "completed", label: t("tasks.completed"), icon: <CheckCheck size={16} /> },
   ];
 
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -42,9 +45,21 @@ export default function TaskCenter() {
   const [newTitle, setNewTitle] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const pendingOrphansRef = useRef<string[]>([]);
 
-  // 树形任务 hook
+  // Phase 4: search
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Phase 4: batch select mode
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Phase 4: drag state
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  // tree hook
   const {
     flatOrderedTasks,
     expandedTaskIds,
@@ -52,9 +67,7 @@ export default function TaskCenter() {
     isTreeMode,
   } = useTaskTree(tasks, filter);
 
-  // 收集指定任务及其所有后代的 id（用于删除父任务时同步移除子任务）
-  // 收集指定任务及其所有后代的 id（用于删除父任务时同步移除子任务）
-  // 加 visited 防护，避免坏数据 parentId 环导致递归死循环
+  // getDescendantIds with cycle protection
   const getDescendantIds = useCallback((rootId: string, taskList: Task[], visited = new Set<string>()): string[] => {
     if (visited.has(rootId)) return [];
     visited.add(rootId);
@@ -65,10 +78,39 @@ export default function TaskCenter() {
     }
     return ids;
   }, []);
-  const selectedTask = React.useMemo(() => {
+
+  const selectedTask = useMemo(() => {
     if (!selectedTaskId) return null;
     return tasks.find((t) => t.id === selectedTaskId) || null;
   }, [selectedTaskId, tasks]);
+
+  const selectedTreeNode = useMemo<TaskTreeNode | null>(() => {
+    if (!selectedTaskId || !isTreeMode) return null;
+    const tree = buildTaskTree(tasks);
+    const findNode = (nodes: TaskTreeNode[]): TaskTreeNode | null => {
+      for (const n of nodes) {
+        if (n.id === selectedTaskId) return n;
+        const found = findNode(n.children);
+        if (found) return found;
+      }
+      return null;
+    };
+    return findNode(tree);
+  }, [selectedTaskId, tasks, isTreeMode]);
+
+  // filtered tasks by search query
+  const displayTasks = useMemo(() => {
+    if (!searchQuery.trim()) return tasks;
+    const q = searchQuery.trim().toLowerCase();
+    return tasks.filter((t) => t.title.toLowerCase().includes(q));
+  }, [tasks, searchQuery]);
+
+  // recompute flatOrdered for display (search-filtered)
+  const displayFlatOrdered = useMemo(() => {
+    if (!searchQuery.trim()) return flatOrderedTasks;
+    const q = searchQuery.trim().toLowerCase();
+    return flatOrderedTasks.filter((item) => item.node.title.toLowerCase().includes(q));
+  }, [flatOrderedTasks, searchQuery]);
 
   const loadTasks = useCallback(async () => {
     try {
@@ -85,19 +127,41 @@ export default function TaskCenter() {
     }
   }, [filter]);
 
-  useEffect(() => {
-    loadTasks();
-  }, [loadTasks]);
+  useEffect(() => { loadTasks(); }, [loadTasks]);
 
   useEffect(() => {
-    const onWs = () => {
-      setSelectedTaskId(null);
-      loadTasks();
-    };
+    const onWs = () => { setSelectedTaskId(null); loadTasks(); };
     window.addEventListener("nowen:workspace-changed", onWs);
     return () => window.removeEventListener("nowen:workspace-changed", onWs);
   }, [loadTasks]);
 
+  // === Keyboard shortcuts ===
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      const isInput = tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable;
+
+      if (e.key === "Escape") {
+        if (selectMode) { setSelectMode(false); setSelectedIds(new Set()); return; }
+        if (selectedTaskId) { setSelectedTaskId(null); return; }
+        if (searchQuery) { setSearchQuery(""); return; }
+      }
+      if (isInput) return;
+
+      if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+      if (e.key === "/") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selectMode, selectedTaskId, searchQuery]);
+
+  // === CRUD Handlers ===
   const handleToggle = async (id: string) => {
     setTasks((prev) =>
       prev.map((t) => (t.id === id ? { ...t, isCompleted: t.isCompleted ? 0 : 1 } : t))
@@ -106,9 +170,7 @@ export default function TaskCenter() {
       await api.toggleTask(id);
       const s = await api.getTaskStats();
       setStats(s);
-    } catch {
-      loadTasks();
-    }
+    } catch { loadTasks(); }
   };
 
   const handleCreate = async (orphanIds: string[] = []): Promise<boolean> => {
@@ -121,9 +183,7 @@ export default function TaskCenter() {
       inputRef.current?.focus();
       if (orphanIds.length) {
         await Promise.all(
-          orphanIds.map((id) =>
-            api.taskAttachments.bind(id, task.id).catch(() => null)
-          )
+          orphanIds.map((id) => api.taskAttachments.bind(id, task.id).catch(() => null))
         );
       }
       const s = await api.getTaskStats();
@@ -135,8 +195,6 @@ export default function TaskCenter() {
     }
   };
 
-
-  // 创建子任务
   const handleCreateChild = async (title: string, parentId: string): Promise<void> => {
     try {
       const task = await api.createTask({ title, parentId });
@@ -144,114 +202,155 @@ export default function TaskCenter() {
       const s = await api.getTaskStats();
       setStats(s);
     } catch (err) {
-      console.error("Failed to create subtask:", err);
-    }
-  };
-
-  const handleUpdate = async (id: string, data: Partial<Task>) => {
-    try {
-      const updated = await api.updateTask(id, data);
-      setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
-      if (selectedTaskId === id) setSelectedTaskId(updated.id);
-      const affectsStats =
-        "dueDate" in data ||
-        "isCompleted" in data ||
-        "priority" in data;
-      if (affectsStats) {
-        try {
-          const s = await api.getTaskStats();
-          setStats(s);
-        } catch (e) {
-          console.error("Failed to refresh task stats:", e);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to update task:", err);
+      console.error("Failed to create child task:", err);
     }
   };
 
   const handleDelete = async (id: string) => {
-    // 收集要删除的 id 列表（父任务 + 所有后代），乐观更新一次性移除
-    const idsToRemove = getDescendantIds(id, tasks);
-    // 有子任务时弹出确认
-    if (idsToRemove.length > 1) {
-      const ok = window.confirm(
-        t('tasks.confirmDeleteWithChildren', { count: idsToRemove.length - 1 })
-      );
+    const descendantIds = getDescendantIds(id, tasks);
+    if (descendantIds.length > 1) {
+      const ok = window.confirm(t("tasks.confirmDeleteWithChildren", { count: descendantIds.length - 1 }));
       if (!ok) return;
     }
-    setTasks((prev) => prev.filter((t) => !idsToRemove.includes(t.id)));
-    if (selectedTaskId && idsToRemove.includes(selectedTaskId)) setSelectedTaskId(null);
+    setTasks((prev) => prev.filter((t) => !descendantIds.includes(t.id)));
+    if (selectedTaskId && descendantIds.includes(selectedTaskId)) {
+      setSelectedTaskId(null);
+    }
     try {
       await api.deleteTask(id);
       const s = await api.getTaskStats();
       setStats(s);
-    } catch {
-      loadTasks();
-    }
+    } catch { loadTasks(); }
   };
+
+  const handleUpdate = async (id: string, data: Partial<Task>) => {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...data } : t)));
+    try {
+      await api.updateTask(id, data);
+      const s = await api.getTaskStats();
+      setStats(s);
+    } catch { loadTasks(); }
+  };
+
+  // === Batch operations ===
+  const toggleSelectId = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleBatchComplete = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setTasks((prev) => prev.map((t) => ids.includes(t.id) ? { ...t, isCompleted: 1 } : t));
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    try {
+      await api.batchTasks(ids, "complete");
+      const s = await api.getTaskStats();
+      setStats(s);
+    } catch { loadTasks(); }
+  };
+
+  const handleBatchDelete = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const totalDescendants = ids.reduce((acc, id) => acc + getDescendantIds(id, tasks).length, 0);
+    if (totalDescendants > ids.length) {
+      const ok = window.confirm(t("tasks.confirmDeleteWithChildren", { count: totalDescendants - ids.length }));
+      if (!ok) return;
+    }
+    setTasks((prev) => prev.filter((t) => !selectedIds.has(t.id)));
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    try {
+      await api.batchTasks(ids, "delete");
+      const s = await api.getTaskStats();
+      setStats(s);
+    } catch { loadTasks(); }
+  };
+
+  // === Drag reorder ===
+  const handleDragStart = useCallback((id: string, e: React.DragEvent) => {
+    setDragId(id);
+    e.dataTransfer.effectAllowed = "move";
+    const img = document.createElement("div");
+    img.style.opacity = "0";
+    document.body.appendChild(img);
+    e.dataTransfer.setDragImage(img, 0, 0);
+    requestAnimationFrame(() => document.body.removeChild(img));
+  }, []);
+
+  const handleDragOver = useCallback((id: string, e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (id !== dragOverId) setDragOverId(id);
+  }, [dragOverId]);
+
+  const handleDrop = useCallback(async (targetId: string) => {
+    if (!dragId || dragId === targetId) { setDragId(null); setDragOverId(null); return; }
+
+    const targetTask = tasks.find((t) => t.id === targetId);
+    if (!targetTask) { setDragId(null); setDragOverId(null); return; }
+
+    setTasks((prev) => {
+      const without = prev.filter((t) => t.id !== dragId);
+      const dragTask = prev.find((t) => t.id === dragId);
+      if (!dragTask) return prev;
+      const targetIdx = without.findIndex((t) => t.id === targetId);
+      if (targetIdx < 0) return prev;
+      const result = [...without];
+      result.splice(targetIdx, 0, { ...dragTask, sortOrder: targetTask.sortOrder });
+      return result;
+    });
+
+    try {
+      await api.updateTask(dragId, { sortOrder: targetTask.sortOrder });
+    } catch { loadTasks(); }
+
+    setDragId(null);
+    setDragOverId(null);
+  }, [dragId, tasks]);
+
+  const handleDragEnd = useCallback(() => {
+    setDragId(null);
+    setDragOverId(null);
+  }, []);
+
+  // filter count helper
   const filterCount = (key: TaskFilter): number => {
     if (!stats) return 0;
     switch (key) {
       case "all": return stats.total;
       case "today": return stats.today;
-      case "week": return stats.week ?? 0;
+      case "week": return stats.week;
       case "overdue": return stats.overdue;
       case "completed": return stats.completed;
       default: return 0;
     }
   };
 
-  // 查找 selectedTask 对应的树节点（用于详情面板进度计算）
-  const selectedTreeNode = React.useMemo(() => {
-    if (!selectedTask || !isTreeMode) return null;
-    const findNode = (nodes: TaskTreeNode[]): TaskTreeNode | null => {
-      for (const n of nodes) {
-        if (n.id === selectedTask.id) return n;
-        const found = findNode(n.children);
-        if (found) return found;
-      }
-      return null;
-    };
-    // 从 flatOrderedTasks 中重建树查找（避免重复构建）
-    // 直接用 buildTaskTree 查找更准确
-
-    const tree = buildTaskTree(tasks);
-    return findNode(tree);
-  }, [selectedTask, tasks, isTreeMode]);
-
   return (
     <div className={TASK_CENTER_ROOT_CLASS}>
-      {/* Left: Filter Panel — 桌面端显示 */}
-      <div className="hidden md:flex w-[220px] min-w-[220px] shrink-0 border-r border-app-border bg-app-surface flex-col transition-colors">
+      {/* Left: Sidebar Filters (desktop) */}
+      <div className="hidden md:flex w-48 shrink-0 flex-col border-r border-app-border bg-app-surface overflow-y-auto" style={{ paddingTop: "var(--safe-area-top)" }}>
         <div className="px-4 py-4 border-b border-app-border">
-          <div className="flex items-center gap-2">
-            <ListTodo size={18} className="text-accent-primary" />
-            <h2 className="text-sm font-bold text-tx-primary">{t('tasks.title')}</h2>
-          </div>
-          {stats && (
-            <div className="mt-2 text-xs text-tx-tertiary">
-              {t('tasks.pendingCount', { pending: stats.pending, completed: stats.completed })}
-            </div>
-          )}
+          <span className="text-xs font-semibold text-tx-tertiary uppercase tracking-wider">{t("tasks.title")}</span>
         </div>
-
-        <nav className="flex-1 p-2 space-y-0.5">
+        <nav className="flex-1 px-2 py-2 space-y-0.5">
           {FILTERS.map((f) => (
             <button
               key={f.key}
-              onClick={() => { setFilter(f.key); setSelectedTaskId(null); }}
+              onClick={() => { setFilter(f.key); setSelectedTaskId(null); setSearchQuery(""); }}
               className={cn(
-                "w-full flex items-center justify-between px-3 py-2 rounded-md text-sm transition-colors",
-                filter === f.key
-                  ? "bg-app-active text-accent-primary"
-                  : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary"
+                "flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm transition-colors",
+                filter === f.key ? "bg-accent-primary/10 text-accent-primary font-medium" : "text-tx-secondary hover:bg-app-hover"
               )}
             >
-              <span className="flex items-center gap-2.5">
-                {f.icon}
-                {f.label}
-              </span>
+              {f.icon}
+              <span className="flex-1 text-left">{f.label}</span>
               <span className={cn(
                 "text-xs min-w-[20px] text-center rounded-full px-1.5 py-0.5",
                 filter === f.key ? "bg-accent-primary/20 text-accent-primary" : "text-tx-tertiary"
@@ -265,12 +364,12 @@ export default function TaskCenter() {
 
       {/* Center: Task List */}
       <div className={TASK_CENTER_MAIN_CLASS}>
-        {/* 移动端：水平筛选标签 */}
+        {/* Mobile: horizontal filter bar */}
         <div className={TASK_MOBILE_FILTER_BAR_CLASS}>
           {FILTERS.map((f) => (
             <button
               key={f.key}
-              onClick={() => { setFilter(f.key); setSelectedTaskId(null); }}
+              onClick={() => { setFilter(f.key); setSelectedTaskId(null); setSearchQuery(""); }}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0",
                 filter === f.key
@@ -290,16 +389,69 @@ export default function TaskCenter() {
           ))}
         </div>
 
-        {/* 顶部概览卡片 — 仅在 "all" 过滤时显示 */}
+        {/* Overview cards only in all filter */}
         {filter === "all" && !isLoading && (
           <TaskOverview tasks={tasks} stats={stats} />
         )}
 
-        {/* Header — 桌面端显示 */}
-        <div className="hidden md:block px-6 py-4 border-b border-app-border">
+        {/* Header desktop with batch controls */}
+        <div className="hidden md:flex items-center justify-between px-6 py-4 border-b border-app-border">
           <h1 className="text-lg font-bold text-tx-primary">
-            {FILTERS.find((f) => f.key === filter)?.label || t('tasks.allTasks')}
+            {FILTERS.find((f) => f.key === filter)?.label || t("tasks.allTasks")}
           </h1>
+          <div className="flex items-center gap-2">
+            {selectMode ? (
+              <>
+                <span className="text-xs text-tx-tertiary">{t("tasks.selectedCount", { count: selectedIds.size })}</span>
+                <button
+                  onClick={handleBatchComplete}
+                  disabled={selectedIds.size === 0}
+                  className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-accent-primary/10 text-accent-primary hover:bg-accent-primary/20 disabled:opacity-40 transition-colors"
+                >
+                  <CheckSquare size={14} /> {t("tasks.batchComplete")}
+                </button>
+                <button
+                  onClick={handleBatchDelete}
+                  disabled={selectedIds.size === 0}
+                  className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-red-500/10 text-red-500 hover:bg-red-500/20 disabled:opacity-40 transition-colors"
+                >
+                  <Trash2 size={14} /> {t("tasks.batchDelete")}
+                </button>
+                <button
+                  onClick={() => { setSelectMode(false); setSelectedIds(new Set()); }}
+                  className="text-xs text-tx-tertiary hover:text-tx-secondary px-2 py-1 transition-colors"
+                >
+                  {t("tasks.batchCancel")}
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setSelectMode(true)}
+                className="flex items-center gap-1 px-2 py-1 text-xs text-tx-tertiary hover:text-tx-secondary rounded-md hover:bg-app-hover transition-colors"
+                title={t("tasks.selectMode")}
+              >
+                <CheckSquare size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Search bar */}
+        <div className="flex items-center gap-2 px-4 md:px-6 py-2 border-b border-app-border">
+          <Search size={14} className="text-tx-tertiary shrink-0" />
+          <input
+            ref={searchRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t("tasks.searchPlaceholder")}
+            className="flex-1 bg-transparent text-sm text-tx-primary placeholder:text-tx-tertiary focus:outline-none"
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery("")} className="text-tx-tertiary hover:text-tx-secondary transition-colors">
+              <XIcon size={14} />
+            </button>
+          )}
         </div>
 
         {/* Quick Add */}
@@ -316,51 +468,114 @@ export default function TaskCenter() {
         <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 py-3">
           {isLoading ? (
             <div className="flex items-center justify-center h-32 text-tx-tertiary text-sm">
-              {t('common.loading')}
+              {t("common.loading")}
             </div>
-          ) : tasks.length === 0 ? (
+          ) : displayTasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 text-tx-tertiary">
               <CheckCheck size={36} className="mb-3 opacity-40" />
-              <span className="text-sm">{t('tasks.noTasks')}</span>
+              <span className="text-sm">{searchQuery ? t("tasks.search") + ": 0" : t("tasks.noTasks")}</span>
             </div>
           ) : (
             <div className="space-y-2">
               <AnimatePresence mode="popLayout">
                 {isTreeMode ? (
-                  // 树形模式：使用 flatOrderedTasks 渲染带缩进的任务行
-                  flatOrderedTasks.map((item) => (
-                    <TaskTreeRow
+                  displayFlatOrdered.map((item) => (
+                    <div
                       key={item.node.id}
-                      task={item.node}
-                      depth={item.depth}
-                      isExpanded={expandedTaskIds.has(item.node.id)}
-                      hasChildren={item.node.children.length > 0}
-                      onToggle={handleToggle}
-                      onSelect={(task) => setSelectedTaskId(task.id)}
-                      onDelete={handleDelete}
-                      onToggleExpand={toggleExpand}
-                      onCreateChild={handleCreateChild}
-                    />
+                      className={cn(
+                        "relative",
+                        dragOverId === item.node.id && dragId !== item.node.id && "before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-accent-primary before:rounded-full before:-translate-y-1"
+                      )}
+                      draggable={!selectMode}
+                      onDragStart={(e) => handleDragStart(item.node.id, e)}
+                      onDragOver={(e) => handleDragOver(item.node.id, e)}
+                      onDrop={() => handleDrop(item.node.id)}
+                      onDragEnd={handleDragEnd}
+                    >
+                      {selectMode && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggleSelectId(item.node.id); }}
+                          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 p-1"
+                        >
+                          {selectedIds.has(item.node.id)
+                            ? <CheckSquare size={16} className="text-accent-primary" />
+                            : <Square size={16} className="text-tx-tertiary" />}
+                        </button>
+                      )}
+                      <TaskTreeRow
+                        task={item.node}
+                        depth={item.depth}
+                        isExpanded={expandedTaskIds.has(item.node.id)}
+                        hasChildren={item.node.children.length > 0}
+                        onToggle={handleToggle}
+                        onSelect={(task) => { if (!selectMode) setSelectedTaskId(task.id); else toggleSelectId(task.id); }}
+                        onDelete={handleDelete}
+                        onToggleExpand={toggleExpand}
+                        onCreateChild={handleCreateChild}
+                      />
+                    </div>
                   ))
                 ) : (
-                  // 过滤模式：平铺渲染
-                  tasks.map((task) => (
-                    <FlatTaskRow
+                  displayTasks.map((task) => (
+                    <div
                       key={task.id}
-                      task={task}
-                      onToggle={handleToggle}
-                      onSelect={(task) => setSelectedTaskId(task.id)}
-                      onDelete={handleDelete}
-                      allTasks={tasks}
-                      onCreateChild={handleCreateChild}
-                      onSelectTask={(taskId) => setSelectedTaskId(taskId)}
-                    />
+                      className={cn(
+                        "relative",
+                        dragOverId === task.id && dragId !== task.id && "before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-accent-primary before:rounded-full before:-translate-y-1"
+                      )}
+                      draggable={!selectMode}
+                      onDragStart={(e) => handleDragStart(task.id, e)}
+                      onDragOver={(e) => handleDragOver(task.id, e)}
+                      onDrop={() => handleDrop(task.id)}
+                      onDragEnd={handleDragEnd}
+                    >
+                      {selectMode && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggleSelectId(task.id); }}
+                          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 p-1"
+                        >
+                          {selectedIds.has(task.id)
+                            ? <CheckSquare size={16} className="text-accent-primary" />
+                            : <Square size={16} className="text-tx-tertiary" />}
+                        </button>
+                      )}
+                      <FlatTaskRow
+                        task={task}
+                        onToggle={handleToggle}
+                        onSelect={(task) => { if (!selectMode) setSelectedTaskId(task.id); else toggleSelectId(task.id); }}
+                        onDelete={handleDelete}
+                        allTasks={tasks}
+                        onCreateChild={handleCreateChild}
+                        onSelectTask={(taskId) => setSelectedTaskId(taskId)}
+                      />
+                    </div>
                   ))
                 )}
               </AnimatePresence>
             </div>
           )}
         </div>
+
+        {/* Mobile: batch action bar at bottom */}
+        {selectMode && (
+          <div className="md:hidden flex items-center justify-between gap-2 px-4 py-3 border-t border-app-border bg-app-surface">
+            <span className="text-xs text-tx-tertiary">{t("tasks.selectedCount", { count: selectedIds.size })}</span>
+            <div className="flex items-center gap-2">
+              <button onClick={handleBatchComplete} disabled={selectedIds.size === 0}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs rounded-full bg-accent-primary/10 text-accent-primary disabled:opacity-40">
+                <CheckSquare size={14} /> {t("tasks.batchComplete")}
+              </button>
+              <button onClick={handleBatchDelete} disabled={selectedIds.size === 0}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs rounded-full bg-red-500/10 text-red-500 disabled:opacity-40">
+                <Trash2 size={14} /> {t("tasks.batchDelete")}
+              </button>
+              <button onClick={() => { setSelectMode(false); setSelectedIds(new Set()); }}
+                className="text-xs text-tx-tertiary px-2 py-1.5">
+                {t("tasks.batchCancel")}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Right: Detail Panel */}

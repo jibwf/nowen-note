@@ -1131,6 +1131,8 @@ export const api = {
   updateTask: (id: string, data: Partial<Task>) => request<Task>(`/tasks/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   toggleTask: (id: string) => request<Task>(`/tasks/${id}/toggle`, { method: "PATCH" }),
   deleteTask: (id: string) => request(`/tasks/${id}`, { method: "DELETE" }),
+  batchTasks: (ids: string[], action: "complete" | "delete") =>
+    request<{ success: boolean; affected: number }>("/tasks/batch", { method: "POST", body: JSON.stringify({ ids, action }) }),
   getTaskStats: () => {
     const ws = getCurrentWorkspace();
     const qs = ws && ws !== "personal" ? `?workspaceId=${encodeURIComponent(ws)}` : "";
@@ -3344,3 +3346,4 @@ export async function fetchRegisterConfig(baseUrlOverride?: string): Promise<{ a
     return { allowRegistration: true };
   }
 }
+

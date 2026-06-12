@@ -1341,6 +1341,27 @@ export const MIGRATIONS: Migration[] = [
       db.exec(CREATE INDEX IF NOT EXISTS idx_tasks_dueAt ON tasks(dueAt););
     },
   },
+  {
+    version: 21,
+    name: "task-reminders",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS task_reminders (
+          id TEXT PRIMARY KEY,
+          taskId TEXT NOT NULL,
+          userId TEXT NOT NULL,
+          offsetMinutes INTEGER NOT NULL DEFAULT 30,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          lastNotifiedAt TEXT,
+          createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (taskId) REFERENCES tasks(id) ON DELETE CASCADE,
+          FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_task_reminders_task ON task_reminders(taskId);
+        CREATE INDEX IF NOT EXISTS idx_task_reminders_enabled ON task_reminders(enabled);
+      `);
+    },
+  },
 ];
 
 /** 当前代码已知的最高 schema 版本（== MIGRATIONS 里 max(version)）。 */

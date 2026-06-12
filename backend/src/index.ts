@@ -17,6 +17,7 @@ import settingsRouter from "./routes/settings";
 import fontsRouter from "./routes/fonts";
 import attachmentsRouter, { handleDownloadAttachment } from "./routes/attachments";
 import taskAttachmentsRouter, { handleDownloadTaskAttachment } from "./routes/task-attachments";
+import taskRemindersRouter from "./routes/task-reminders";
 import filesRouter from "./routes/files";
 import micloudRouter from "./routes/micloud";
 import oppoCloudRouter from "./routes/oppocloud";
@@ -407,7 +408,26 @@ app.route("/api/settings", settingsRouter);
 app.route("/api/fonts", fontsRouter);
 app.route("/api/attachments", attachmentsRouter);
 app.route("/api/task-attachments", taskAttachmentsRouter);
+app.route("/api/task-reminders", taskRemindersRouter);
 app.route("/api/files", filesRouter);
+
+// 提醒扫描器：每 30 秒检查一次到期的提醒
+import { scanDueReminders, markReminderNotified } from "./routes/task-reminders";
+let lastReminderScan = 0;
+setInterval(() => {
+  const now = Date.now();
+  if (now - lastReminderScan < 30000) return;
+  lastReminderScan = now;
+  try {
+    const pending = scanDueReminders();
+    for (const r of pending) {
+      console.log(`[reminder] Task "${r.taskTitle}" (${r.taskId}) reminder due for user ${r.userId}`);
+      markReminderNotified(r.reminderId);
+    }
+  } catch (e) {
+    console.error("[reminder] scan failed:", e);
+  }
+}, 30000);
 
 // 获取当前登录用户信息
 app.get("/api/me", (c) => {

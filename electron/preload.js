@@ -1,4 +1,4 @@
-// electron/preload.js
+﻿// electron/preload.js
 // 通过 contextBridge 把主进程事件暴露给 renderer，保持 contextIsolation=true。
 const { contextBridge, ipcRenderer } = require("electron");
 
@@ -67,7 +67,7 @@ contextBridge.exposeInMainWorld("nowenDesktop", {
   },
 
   /** 设置 Windows/Linux 原生菜单栏是否隐藏。 */
-  setHideMenuBar(next) {
+  /** 发送任务提醒通知 */`n  taskNotify(title, body) {`n    return ipcRenderer.invoke("task:notify", { title, body });`n  },`n`n  /** 检查通知权限 */`n  taskNotifyPermission() {`n    return ipcRenderer.invoke("task:notify-permission");`n  },`n`n  setHideMenuBar(next) {
     return ipcRenderer.invoke("app:set-hide-menu-bar", Boolean(next));
   },
 

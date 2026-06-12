@@ -409,6 +409,10 @@
     "imageSizeOriginalTitle": "Original size (remove custom width)",
     "copySelectionText": "Copied selected text",
     "copySelectionFail": "Copy failed, please use system copy",
+    "selectAllText": "Select all",
+    "dialConfirm": "Call {{phone}}?",
+    "copySelectionText": "Copied selected text",
+    "copySelectionFail": "Copy failed, please use system copy",
     "selectAllText": "Select all"
   },
   "searchReplace": {
@@ -1106,7 +1110,17 @@
     },
     "reminder": {
       "title": "Reminders",
-      "comingSoon": "Reminders are coming soon."
+      "comingSoon": "Reminders are coming soon.",
+      "atDue": "At due time",
+      "before5min": "5 min before",
+      "before30min": "30 min before",
+      "before1hour": "1 hour before",
+      "before1day": "1 day before",
+      "needDueDate": "Set a due date or time first",
+      "testNotification": "Test notification",
+      "testBody": "This is a test reminder",
+      "pushComingSoon": "APP push coming soon",
+      "emailComingSoon": "Email reminders coming soon"
     }
   },
   "tags": {

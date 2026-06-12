@@ -925,6 +925,25 @@ function registerAppIpc() {
     return { ok: true, path: dir };
   });
 
+  
+// Task reminder notification
+ipcMain.removeHandler("task:notify");
+ipcMain.handle("task:notify", async (_event, { title, body }) => {
+  try {
+    const { Notification } = require("electron");
+    if (!Notification.isSupported()) return { success: false, reason: "not-supported" };
+    const notif = new Notification({ title, body });
+    notif.show();
+    return { success: true };
+  } catch (e) {
+    return { success: false, reason: String(e) };
+  }
+});
+
+ipcMain.removeHandler("task:notify-permission");
+ipcMain.handle("task:notify-permission", () => {
+  return { supported: require("electron").Notification.isSupported() };
+});
   ipcMain.removeHandler("app:set-hide-menu-bar");
   ipcMain.handle("app:set-hide-menu-bar", async (_event, next) => {
     currentHideMenuBar = !!next;

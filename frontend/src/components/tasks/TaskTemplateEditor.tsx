@@ -23,7 +23,7 @@ function buildTemplateItems(task: Task, allTasks: Task[]): TaskTemplateItem[] {
 
   const addTask = (t: Task, parentIndex: number | null) => {
     const index = items.length;
-    let relativeDueDays = 0;
+    let relativeDueDays: number | null = null;
     if (baseDate && t.dueDate) {
       const taskDate = new Date(t.dueDate);
       relativeDueDays = Math.round((taskDate.getTime() - baseDate.getTime()) / (1000 * 60 * 60 * 24));

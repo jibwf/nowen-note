@@ -442,7 +442,7 @@ export interface TaskProject {
 export interface TaskTemplateItem {
   title: string;
   priority: number;
-  relativeDueDays: number;
+  relativeDueDays: number | null;
   parentIndex: number | null;
   sortOrder: number;
 }

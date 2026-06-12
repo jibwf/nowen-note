@@ -122,7 +122,7 @@ export function TaskTemplatePicker({ projects, onClose, onApplied }: TaskTemplat
                     <div className="flex items-center gap-2">
                       <FileText size={14} className="text-tx-tertiary shrink-0" />
                       <span className="text-sm font-medium text-tx-primary truncate">{tpl.name}</span>
-                      <span className="text-xs text-tx-tertiary">{tpl.items.length}{t("tasks.subtaskShort")}</span>
+                      <span className="text-xs text-tx-tertiary">{t("tasks.templates.itemCount", { count: tpl.items.length })}</span>
                     </div>
                     {tpl.description && (
                       <p className="text-xs text-tx-tertiary mt-1 truncate">{tpl.description}</p>

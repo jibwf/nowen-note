@@ -1,4 +1,4 @@
-﻿{
+{
   "common": {
     "cancel": "取消",
     "chars": "字符",
@@ -1208,7 +1208,8 @@
       "noTemplates": "暂无模板",
       "created": "模板已创建",
       "failed": "操作失败",
-      "deleteConfirm": "确定删除此模板？"
+      "deleteConfirm": "确定删除此模板？",
+      "itemCount": "{{count}} 个任务"
     }
   },
   "tags": {

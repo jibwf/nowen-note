@@ -1146,7 +1146,10 @@
     "statusDoing": "In Progress",
     "statusBlocked": "Blocked",
     "statusDone": "Done",
-    "moveToProject": "Move to project"
+    "moveToProject": "Move to project",
+    "projectColor": "Color",
+    "save": "Save",
+    "dropHere": "Drop here"
   },
   "tags": {
     "addTagPlaceholder": "Add tag...",

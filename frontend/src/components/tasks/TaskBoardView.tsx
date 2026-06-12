@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
   Circle, CheckCircle2, AlertTriangle, Ban, Flag, Calendar,
@@ -33,6 +33,33 @@ export function TaskBoardView({
   onSelect: (task: Task) => void;
   onStatusChange: (id: string, status: TaskStatus) => void;
 }) {
+  // Drag state
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<TaskStatus | null>(null);
+
+  const handleDragStart = useCallback((id: string, e: React.DragEvent) => {
+    setDragId(id);
+    e.dataTransfer.effectAllowed = "move";
+  }, []);
+
+  const handleDragOver = useCallback((status: TaskStatus, e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (status !== dragOverCol) setDragOverCol(status);
+  }, [dragOverCol]);
+
+  const handleDrop = useCallback((status: TaskStatus) => {
+    if (dragId) {
+      onStatusChange(dragId, status);
+    }
+    setDragId(null);
+    setDragOverCol(null);
+  }, [dragId, onStatusChange]);
+
+  const handleDragEnd = useCallback(() => {
+    setDragId(null);
+    setDragOverCol(null);
+  }, []);
   const { t } = useTranslation();
 
   // Build a map for quick child count lookup
@@ -79,7 +106,12 @@ export function TaskBoardView({
         return (
           <div
             key={col.key}
-            className="flex flex-col min-w-[240px] w-[240px] shrink-0 bg-app-elevated/50 rounded-xl border border-app-border"
+            className={cn(
+              "flex flex-col min-w-[240px] w-[240px] shrink-0 bg-app-elevated/50 rounded-xl border transition-colors",
+              dragOverCol === col.key ? "border-accent-primary/50 bg-accent-primary/5" : "border-app-border"
+            )}
+            onDragOver={(e) => handleDragOver(col.key, e)}
+            onDrop={() => handleDrop(col.key)}
           >
             {/* Column header */}
             <div className="flex items-center gap-2 px-3 py-2.5 border-b border-app-border">
@@ -103,7 +135,14 @@ export function TaskBoardView({
                     layout
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    className="p-3 rounded-lg bg-app-surface border border-app-border hover:shadow-md hover:border-accent-primary/30 cursor-pointer transition-all"
+                    draggable
+                    onDragStart={(e) => handleDragStart(task.id, e as unknown as React.DragEvent)}
+                    onDragEnd={handleDragEnd}
+                    className={cn(
+                      "p-3 rounded-lg bg-app-surface border hover:shadow-md hover:border-accent-primary/30 cursor-pointer transition-all",
+                      dragOverCol && dragId === task.id ? "opacity-50" : "",
+                      task.isCompleted === 0 && task.dueAt && new Date(task.dueAt) < new Date() ? "border-red-300 dark:border-red-800" : "border-app-border"
+                    )}
                     onClick={() => onSelect(task)}
                   >
                     {/* Priority flag */}
@@ -119,6 +158,9 @@ export function TaskBoardView({
                       {(task.dueDate || task.dueAt) && (
                         <DateBadge dateStr={task.dueDate || (task.dueAt ? task.dueAt.split("T")[0] : null)} dueAt={task.dueAt} />
                       )}
+                      {task.parentId && (
+                        <span className="text-[10px] text-tx-tertiary px-1 py-0.5 rounded bg-app-hover">sub</span>
+                      )}
                       {childInfo && childInfo.total > 0 && (
                         <span className="text-[10px] text-tx-tertiary">
                           {childInfo.completed}/{childInfo.total}
@@ -126,27 +168,18 @@ export function TaskBoardView({
                       )}
                     </div>
 
-                    {/* Status selector */}
+                    {/* Quick status switch */}
                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-app-border/50">
-                      {COLUMNS.map((c) => {
-                        const isActive = (task.status || (task.isCompleted ? "done" : "todo")) === c.key;
-                        return (
-                          <button
-                            key={c.key}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (!isActive) onStatusChange(task.id, c.key);
-                            }}
-                            className={cn(
-                              "p-1 rounded transition-colors",
-                              isActive ? "bg-accent-primary/15" : "hover:bg-app-hover opacity-50 hover:opacity-100"
-                            )}
-                            title={STATUS_LABELS[c.key]}
-                          >
-                            <span className={c.color}>{React.cloneElement(c.icon as React.ReactElement, { size: 12 })}</span>
-                          </button>
-                        );
-                      })}
+                      {COLUMNS.filter((c) => c.key !== col.key).map((c) => (
+                        <button
+                          key={c.key}
+                          onClick={(e) => { e.stopPropagation(); onStatusChange(task.id, c.key); }}
+                          className="p-1 rounded hover:bg-app-hover opacity-40 hover:opacity-100 transition-all"
+                          title={STATUS_LABELS[c.key]}
+                        >
+                          <span className={c.color}>{React.cloneElement(c.icon as React.ReactElement, { size: 11 })}</span>
+                        </button>
+                      ))}
                     </div>
                   </motion.div>
                 );
@@ -154,7 +187,7 @@ export function TaskBoardView({
 
               {columnTasks.length === 0 && (
                 <div className="text-center text-xs text-tx-tertiary py-8 opacity-50">
-                  -
+                  {dragOverCol === col.key ? t("tasks.dropHere") || "Drop here" : "-"}
                 </div>
               )}
             </div>

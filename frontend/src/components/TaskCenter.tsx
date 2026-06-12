@@ -62,6 +62,7 @@ export default function TaskCenter() {
     selectedProjectId,
     setSelectedProjectId,
     createProject,
+    updateProject,
     deleteProject,
     refreshCounts,
     reload,
@@ -74,6 +75,10 @@ export default function TaskCenter() {
   // Phase 4: new project dialog
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+  const [editingProject, setEditingProject] = useState<TaskProject | null>(null);
+  const [editProjectName, setEditProjectName] = useState("");
+  const [editProjectColor, setEditProjectColor] = useState("#6366f1");
+  const [showProjectMenu, setShowProjectMenu] = useState<string | null>(null);
 
   // Phase 4: batch select mode
   const [selectMode, setSelectMode] = useState(false);
@@ -157,7 +162,7 @@ export default function TaskCenter() {
   useEffect(() => { loadTasks(); }, [loadTasks]);
 
   useEffect(() => {
-    const onWs = () => { setSelectedTaskId(null); setSelectedProjectId(null); setSearchQuery(""); setSelectedIds(new Set()); setSelectMode(false); reload(); loadTasks(); };
+    const onWs = () => { setSelectedTaskId(null); setSelectedProjectId(null); setSearchQuery(""); setSelectedIds(new Set()); setSelectMode(false); reload(); };
     window.addEventListener("nowen:workspace-changed", onWs);
     return () => window.removeEventListener("nowen:workspace-changed", onWs);
   }, [loadTasks]);
@@ -290,6 +295,21 @@ export default function TaskCenter() {
       setNewProjectName("");
       setShowNewProject(false);
     }
+  };
+
+  const handleDeleteProject = async (id: string) => {
+    const ok = window.confirm(t("tasks.deleteProjectConfirm"));
+    if (!ok) return;
+    await deleteProject(id);
+    if (selectedProjectId === id) setSelectedProjectId(null);
+    setShowProjectMenu(null);
+  };
+
+  const handleUpdateProject = async () => {
+    if (!editingProject || !editProjectName.trim()) return;
+    await updateProject(editingProject.id, { name: editProjectName.trim(), color: editProjectColor });
+    setEditingProject(null);
+    setShowProjectMenu(null);
   };
 
   // === Batch operations ===
@@ -458,18 +478,40 @@ export default function TaskCenter() {
           )}
 
           {projects.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => { setSelectedProjectId(p.id); setFilter("all"); setSelectedTaskId(null); setSearchQuery(""); }}
-              className={cn(
-                "flex items-center gap-2.5 w-full px-3 py-1.5 rounded-lg text-sm transition-colors group",
-                selectedProjectId === p.id ? "bg-accent-primary/10 text-accent-primary font-medium" : "text-tx-secondary hover:bg-app-hover"
+            <div key={p.id} className="relative">
+              <button
+                onClick={() => { setSelectedProjectId(p.id); setFilter("all"); setSelectedTaskId(null); setSearchQuery(""); }}
+                className={cn(
+                  "flex items-center gap-2.5 w-full px-3 py-1.5 rounded-lg text-sm transition-colors group",
+                  selectedProjectId === p.id ? "bg-accent-primary/10 text-accent-primary font-medium" : "text-tx-secondary hover:bg-app-hover"
+                )}
+              >
+                <FolderOpen size={14} style={{ color: p.color }} />
+                <span className="flex-1 text-left truncate">{p.name}</span>
+                <span className="text-[10px] text-tx-tertiary">{p.completedCount ?? 0}/{p.taskCount ?? 0}</span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowProjectMenu(showProjectMenu === p.id ? null : p.id); }}
+                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-app-hover text-tx-tertiary transition-all"
+                >
+                  <MoreHorizontal size={12} />
+                </button>
+              </button>
+              {/* Progress bar */}
+              {(p.taskCount ?? 0) > 0 && (
+                <div className="mx-3 mb-1 h-1 rounded-full bg-app-border overflow-hidden">
+                  <div className="h-full rounded-full bg-accent-primary transition-all" style={{ width: `${p.progress ?? 0}%` }} />
+                </div>
               )}
-            >
-              <FolderOpen size={14} style={{ color: p.color }} />
-              <span className="flex-1 text-left truncate">{p.name}</span>
-              <span className="text-[10px] text-tx-tertiary">{p.taskCount ?? 0}</span>
-            </button>
+              {/* Project menu */}
+              {showProjectMenu === p.id && (
+                <div className="absolute right-0 top-full z-20 mt-1 w-36 rounded-lg border border-app-border bg-app-surface shadow-lg py-1">
+                  <button onClick={() => { setEditingProject(p); setEditProjectName(p.name); setEditProjectColor(p.color); setShowProjectMenu(null); }}
+                    className="w-full text-left px-3 py-1.5 text-xs text-tx-secondary hover:bg-app-hover">{t("tasks.projectName")}</button>
+                  <button onClick={() => handleDeleteProject(p.id)}
+                    className="w-full text-left px-3 py-1.5 text-xs text-accent-danger hover:bg-accent-danger/10">{t("tasks.deleteProject")}</button>
+                </div>
+              )}
+            </div>
           ))}
         </nav>
       </div>
@@ -720,6 +762,40 @@ export default function TaskCenter() {
           </div>
         )}
       </div>
+
+      {/* Project edit dialog */}
+      {editingProject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setEditingProject(null)}>
+          <div className="bg-app-surface rounded-xl border border-app-border shadow-xl p-5 w-72 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-tx-primary">{t("tasks.projectName")}</h3>
+            <input type="text" value={editProjectName} onChange={(e) => setEditProjectName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleUpdateProject(); }}
+              className="w-full px-3 py-2 rounded-md bg-app-bg border border-app-border text-sm text-tx-primary focus:outline-none focus:border-accent-primary"
+              autoFocus />
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-tx-tertiary">{t("tasks.projectColor") || "Color"}</span>
+              {["#6366f1","#ef4444","#f59e0b","#10b981","#3b82f6","#8b5cf6","#ec4899","#6b7280"].map((c) => (
+                <button key={c} onClick={() => setEditProjectColor(c)}
+                  className={cn("w-5 h-5 rounded-full border-2 transition-all", editProjectColor === c ? "border-tx-primary scale-110" : "border-transparent")}
+                  style={{ backgroundColor: c }} />
+              ))}
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setEditingProject(null)} className="px-3 py-1.5 text-xs text-tx-secondary rounded-md hover:bg-app-hover">{t("tasks.batchCancel")}</button>
+              <button onClick={handleUpdateProject} className="px-3 py-1.5 text-xs text-white bg-accent-primary rounded-md hover:opacity-90">{t("tasks.save") || "Save"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile project picker */}
+      <MobileProjectPicker
+        projects={projects}
+        selectedProjectId={selectedProjectId}
+        onSelect={(id) => { setSelectedProjectId(id); setFilter("all"); setSelectedTaskId(null); setSearchQuery(""); }}
+        onCreate={(name) => { setNewProjectName(name); handleCreateProject(); }}
+        t={t}
+      />
 
       {/* Right: Detail Panel */}
       <AnimatePresence>

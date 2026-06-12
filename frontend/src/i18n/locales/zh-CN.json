@@ -1158,7 +1158,10 @@
     "statusDoing": "进行中",
     "statusBlocked": "已阻塞",
     "statusDone": "已完成",
-    "moveToProject": "移动到项目"
+    "moveToProject": "移动到项目",
+    "projectColor": "颜色",
+    "save": "保存",
+    "dropHere": "拖到这里"
   },
   "tags": {
     "addTagPlaceholder": "添加标签...",

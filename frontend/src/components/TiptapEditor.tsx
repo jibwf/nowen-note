@@ -39,8 +39,8 @@ import {
   Quote, ImagePlus, Film, Paperclip, CheckSquare, Highlighter, Minus, Undo, Redo,
   Code, FileCode, Sparkles, X, ZoomIn, ZoomOut, RotateCcw,
   Indent, Outdent, AlignLeft, AlignCenter, AlignRight, Trash2,
-  FileType, Check, AlertCircle, Info, ArrowUp, Link as LinkIcon,
-  ExternalLink, Unlink2, Workflow, Sigma, BookOpen, Download,
+  FileType, Check, AlertCircle, Info, ArrowUp, Copy, Link as LinkIcon,
+  ExternalLink, Unlink2, Workflow, Sigma, BookOpen, Download, Phone,
   Type, Palette, Eraser, ChevronDown, Search,
   // 表格气泡菜单图标
   Rows3, Columns3, Merge, Split, Heading, Network,
@@ -48,6 +48,8 @@ import {
 import { downloadAttachment } from "@/lib/downloadFile";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { copyText } from "@/lib/clipboard";
+import { findTextAction, type TextAction } from "@/lib/textActions";
 import { prompt as promptDialog } from "@/components/ui/confirm";
 import { Note, Tag } from "@/types";
 import TagInput from "@/components/TagInput";
@@ -1222,6 +1224,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
 
   // ---------- 选区气泡菜单（划词弹出） ----------
   // 手动实现，不依赖 Tiptap 内置 BubbleMenu（v3 下有 overflow-auto 裁剪问题）
+  const [selectedTextAction, setSelectedTextAction] = useState<TextAction | null>(null);
   const [bubble, setBubble] = useState<{ open: boolean; top: number; left: number }>({
     open: false, top: 0, left: 0,
   });
@@ -2121,7 +2124,22 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
     },
   });
 
-  // 实现 flushSave：Ctrl/Cmd+S 触发，绕过 500ms debounce 立即保存
+  const copySelectionText = useCallback(async () => {
+    if (!editor) return;
+    const { from, to, empty } = editor.state.selection;
+    if (empty) return;
+    const text = editor.state.doc.textBetween(from, to, "\n\n", "\n");
+    const ok = await copyText(text);
+    if (ok) toast.success(t('tiptap.copySelectionText'));
+    else toast.info(t('tiptap.copySelectionFail'));
+  }, [editor]);
+
+  const selectAllText = useCallback(() => {
+    if (!editor) return;
+    editor.chain().focus().selectAll().run();
+  }, [editor]);
+
+    // 实现 flushSave：Ctrl/Cmd+S 触发，绕过 500ms debounce 立即保存
   flushSaveRef.current = () => {
     if (!editor) return;
     if (debounceTimer.current) {
@@ -2660,10 +2678,12 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         const text = state.doc.textBetween(from, to, " ");
         if (!text.trim().length) {
           setBubble(b => b.open ? { ...b, open: false } : b);
+          setSelectedTextAction(null);
           return;
         }
+        setSelectedTextAction(findTextAction(text));
         const rect = posToDOMRect(view, from, to);
-        const { top, left } = placeBubble(rect, 40, 220);
+        const { top, left } = placeBubble(rect, 40, 600);
         setBubble({ open: true, top, left });
       }
     };
@@ -3725,11 +3745,43 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
       {/* 选区气泡菜单：文本格式化（手动实现，fixed 定位，避免被 overflow-auto 裁剪） */}
       {editor && editable && bubble.open && (
         <div
-          className="fixed z-50 flex items-center gap-0.5 bg-app-elevated border border-app-border rounded-lg shadow-lg p-1"
+          className="fixed z-50 flex items-center gap-0.5 bg-app-elevated border border-app-border rounded-lg shadow-lg p-1 overflow-x-auto max-w-[calc(100vw-16px)]"
           style={{ top: bubble.top, left: bubble.left }}
           onMouseDown={(e) => e.preventDefault()} // 阻止点击按钮时 editor blur
         >
+                    <ToolbarButton
+            onClick={() => void copySelectionText()}
+            title={t('tiptap.copySelectionText')}
+          >
+            <Copy size={14} />
+          </ToolbarButton>
           <ToolbarButton
+            onClick={() => void selectAllText()}
+            title={t('tiptap.selectAllText')}
+          >
+            <ArrowUp size={14} />
+          </ToolbarButton>
+          {selectedTextAction?.type === "phone" && (
+            <ToolbarButton
+              onClick={() => {
+                if (confirm(t('tiptap.dialConfirm', { phone: selectedTextAction.value }) || '\u62e8\u6253\u7535\u8bdd\uff1f ' + selectedTextAction.value)) {
+                  window.location.href = selectedTextAction.href;
+                }
+              }}
+              title={selectedTextAction.value}
+            >
+              <Phone size={14} />
+            </ToolbarButton>
+          )}
+          {selectedTextAction?.type === "url" && (
+            <ToolbarButton
+              onClick={() => window.open(selectedTextAction.href, '_blank', 'noopener')}
+              title={selectedTextAction.value}
+            >
+              <ExternalLink size={14} />
+            </ToolbarButton>
+          )}
+<ToolbarButton
             onClick={() => editor.chain().focus().toggleBold().run()}
             isActive={editor.isActive("bold")}
             title={t('tiptap.bold')}

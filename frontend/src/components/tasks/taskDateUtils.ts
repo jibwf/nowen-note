@@ -14,7 +14,7 @@ export function getTaskDateKey(task: Task): string | null {
  * Rules:
  * - dueDate-only: update dueDate
  * - dueAt: preserve time part, replace date part, sync dueDate
- * - no dates: return null
+ * - no dates: assign dueDate to target date
  */
 export function moveTaskToDate(task: Task, targetDateKey: string): Partial<Task> | null {
   const currentKey = getTaskDateKey(task);

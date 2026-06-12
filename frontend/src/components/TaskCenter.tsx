@@ -576,7 +576,7 @@ export default function TaskCenter() {
           <button
             onClick={() => setViewMode(viewMode === "list" ? "board" : viewMode === "board" ? "calendar" : "list")}
             className="flex items-center gap-1 px-2 py-1.5 rounded-full text-xs shrink-0 text-tx-secondary bg-app-hover/50 active:bg-app-active"
-            title={viewMode === "list" ? t("tasks.boardView") : viewMode === "board" ? (t("tasks.calendarView") || "Calendar") : t("tasks.listView")}
+            title={viewMode === "list" ? t("tasks.boardView") : viewMode === "board" ? t("tasks.calendarView") : t("tasks.listView")}
           >
             {viewMode === "list" ? <LayoutGrid size={12} /> : viewMode === "board" ? <CalendarIcon size={12} /> : <LayoutList size={12} />}
           </button>
@@ -616,7 +616,7 @@ export default function TaskCenter() {
               <button
                 onClick={() => setViewMode("calendar")}
                 className={cn("p-1.5 transition-colors", viewMode === "calendar" ? "bg-accent-primary/10 text-accent-primary" : "text-tx-tertiary hover:text-tx-secondary")}
-                title={t("tasks.calendarView") || "Calendar"}
+                title={t("tasks.calendarView")}
               >
                 <CalendarIcon size={14} />
               </button>
@@ -825,7 +825,7 @@ export default function TaskCenter() {
               className="w-full px-3 py-2 rounded-md bg-app-bg border border-app-border text-sm text-tx-primary focus:outline-none focus:border-accent-primary"
               autoFocus />
             <div className="flex items-center gap-2">
-              <span className="text-xs text-tx-tertiary">{t("tasks.projectColor") || "Color"}</span>
+              <span className="text-xs text-tx-tertiary">{t("tasks.projectColor")}</span>
               {["#6366f1","#ef4444","#f59e0b","#10b981","#3b82f6","#8b5cf6","#ec4899","#6b7280"].map((c) => (
                 <button key={c} onClick={() => setEditProjectColor(c)}
                   className={cn("w-5 h-5 rounded-full border-2 transition-all", editProjectColor === c ? "border-tx-primary scale-110" : "border-transparent")}
@@ -834,7 +834,7 @@ export default function TaskCenter() {
             </div>
             <div className="flex gap-2 justify-end">
               <button onClick={() => setEditingProject(null)} className="px-3 py-1.5 text-xs text-tx-secondary rounded-md hover:bg-app-hover">{t("tasks.batchCancel")}</button>
-              <button onClick={handleUpdateProject} className="px-3 py-1.5 text-xs text-white bg-accent-primary rounded-md hover:opacity-90">{t("tasks.save") || "Save"}</button>
+              <button onClick={handleUpdateProject} className="px-3 py-1.5 text-xs text-white bg-accent-primary rounded-md hover:opacity-90">{t("tasks.save")}</button>
             </div>
           </div>
         </div>

@@ -1069,6 +1069,7 @@
   },
   "tasks": {
     "title": "待办事项",
+    "taskCount": "{{count}} 个任务",
     "high": "高",
     "medium": "中",
     "low": "低",
@@ -1083,6 +1084,7 @@
     "taskTitle": "标题",
     "priority": "优先级",
     "dueDate": "截止日期",
+    "dueAt": "截止时间",
     "createdAt": "创建时间",
     "deleteTask": "删除任务",
     "pendingCount": "{{pending}} 待完成 · {{completed}} 已完成",
@@ -1100,6 +1102,7 @@
     "addChildPlaceholder": "输入子任务标题，按 Enter 确认...",
     "confirmDeleteWithChildren": "此任务匋有 {{count}} 个子任务，删除后不可恢复。确认删除？",
     "subtasks": "子任务",
+    "subtaskShort": "子任务",
     "noSubtasks": "暂无子任务",
     "overview": {
       "totalProgress": "总体进度",
@@ -1125,6 +1128,7 @@
       "before30min": "提前 30 分钟",
       "before1hour": "提前 1 小时",
       "before1day": "提前 1 天",
+      "customMinutes": "提前{{count}}分钟","customHours": "提前{{hours}}小时{{minutes}}分钟","customDays": "提前{{count}}天",
       "needDueDate": "请先设置截止日期或时间",
       "testNotification": "测试通知",
       "testBody": "这是一条测试提醒",

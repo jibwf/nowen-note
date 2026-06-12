@@ -22,14 +22,14 @@ function NotificationStatusBadge({ t }: { t: (key: string) => string }) {
   if (typeof Notification === "undefined") {
     return (
       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-500">
-        {t("tasks.reminder.noPermission") || "No notification support"}
+        {t("tasks.reminder.noPermission")}
       </span>
     );
   }
   if (Notification.permission === "denied") {
     return (
       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500">
-        {t("tasks.reminder.permissionDenied") || "Notifications blocked"}
+        {t("tasks.reminder.permissionDenied")}
       </span>
     );
   }
@@ -57,7 +57,9 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
   onSelectTask?: (taskId: string) => void;
 }>(({ task, treeNode, allTasks, onClose, onUpdate, onDelete, onToggle, onSelectTask }, ref) => {
   const { t, i18n } = useTranslation();
-  const dateLocale = i18n.language === "zh-CN" ? zhCN : enUS;
+  const lang = i18n.resolvedLanguage || i18n.language;
+  const isZh = lang.toLowerCase().startsWith("zh");
+  const dateLocale = isZh ? zhCN : enUS;
   const [title, setTitle] = useState(task.title);
   const [priority, setPriority] = useState<TaskPriority>(task.priority);
   const [dueDate, setDueDate] = useState(task.dueDate || "");
@@ -237,7 +239,7 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
 
         {/* Due At (time) */}
         <div>
-          <label className="text-xs text-tx-tertiary uppercase tracking-wider mb-1.5 block">{t("tasks.dueAt") || "Due Time"}</label>
+          <label className="text-xs text-tx-tertiary uppercase tracking-wider mb-1.5 block">{t("tasks.dueAt")}</label>
           <input
             type="datetime-local"
             value={dueAt}
@@ -290,7 +292,7 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
 
           {task.dueDate && (
             <div className="text-xs text-tx-tertiary">
-              {t("tasks.progress.dueLabel")}: {format(parseISO(task.dueDate), "yyyy\u5E74M\u6708d\u65E5", { locale: dateLocale })}
+              {t("tasks.progress.dueLabel")}: {format(parseISO(task.dueDate), isZh ? "yyyy\u5E74M\u6708d\u65E5" : "MMM d, yyyy", { locale: dateLocale })}
             </div>
           )}
         </div>
@@ -344,7 +346,7 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
           <div className="flex items-center gap-2 mb-1">
             <Repeat size={14} className="text-tx-tertiary" />
             <span className="text-xs text-tx-tertiary uppercase tracking-wider font-medium">
-              {t("tasks.repeat.title") || "Repeat"}
+              {t("tasks.repeat.title")}
             </span>
           </div>
           <select
@@ -361,18 +363,18 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
             disabled={!hasDeadline}
             className="w-full px-3 py-2 rounded-md bg-app-bg border border-app-border text-sm text-tx-primary focus:outline-none focus:border-accent-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <option value="none">{t("tasks.repeat.none") || "No repeat"}</option>
-            <option value="daily">{t("tasks.repeat.daily") || "Daily"}</option>
-            <option value="weekly">{t("tasks.repeat.weekly") || "Weekly"}</option>
-            <option value="monthly">{t("tasks.repeat.monthly") || "Monthly"}</option>
-            <option value="yearly">{t("tasks.repeat.yearly") || "Yearly"}</option>
+            <option value="none">{t("tasks.repeat.none")}</option>
+            <option value="daily">{t("tasks.repeat.daily")}</option>
+            <option value="weekly">{t("tasks.repeat.weekly")}</option>
+            <option value="monthly">{t("tasks.repeat.monthly")}</option>
+            <option value="yearly">{t("tasks.repeat.yearly")}</option>
           </select>
           {!hasDeadline && repeatRule === "none" && (
-            <p className="text-[10px] text-tx-tertiary">{t("tasks.repeat.needDueDate") || "Set a due date first to enable repeat"}</p>
+            <p className="text-[10px] text-tx-tertiary">{t("tasks.repeat.needDueDate")}</p>
           )}
           {repeatRule !== "none" && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-tx-secondary">{t("tasks.repeat.every") || "Every"}</span>
+              <span className="text-xs text-tx-secondary">{t("tasks.repeat.every")}</span>
               <input
                 type="number"
                 min={1}
@@ -385,16 +387,16 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
                 className="w-16 px-2 py-1 rounded-md bg-app-bg border border-app-border text-sm text-tx-primary text-center focus:outline-none focus:border-accent-primary"
               />
               <span className="text-xs text-tx-secondary">
-                {repeatRule === "daily" ? (t("tasks.repeat.days") || "day(s)") :
-                 repeatRule === "weekly" ? (t("tasks.repeat.weeks") || "week(s)") :
-                 repeatRule === "monthly" ? (t("tasks.repeat.months") || "month(s)") :
-                 (t("tasks.repeat.years") || "year(s)")}
+                {repeatRule === "daily" ? t("tasks.repeat.days") :
+                 repeatRule === "weekly" ? t("tasks.repeat.weeks") :
+                 repeatRule === "monthly" ? t("tasks.repeat.months") :
+                 t("tasks.repeat.years")}
               </span>
             </div>
           )}
           {repeatRule !== "none" && (
             <div>
-              <label className="text-xs text-tx-tertiary mb-1 block">{t("tasks.repeat.endDate") || "Repeat until"}</label>
+              <label className="text-xs text-tx-tertiary mb-1 block">{t("tasks.repeat.endDate")}</label>
               <input
                 type="date"
                 value={repeatEndDate}
@@ -502,7 +504,7 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
                   className="flex items-center gap-1 text-xs text-accent-primary hover:text-accent-primary/80 transition-colors"
                 >
                   <Plus size={14} />
-                  {t("tasks.reminder.addReminder") || "Add reminder"}
+                  {t("tasks.reminder.addReminder")}
                 </button>
               )}
             </>
@@ -533,7 +535,7 @@ function formatOffsetMinutes(minutes: number, t: any): string {
   if (minutes === 30) return t("tasks.reminder.before30min");
   if (minutes === 60) return t("tasks.reminder.before1hour");
   if (minutes === 1440) return t("tasks.reminder.before1day");
-  if (minutes < 60) return `${minutes} min`;
-  if (minutes < 1440) return `${Math.floor(minutes / 60)}h ${minutes % 60 > 0 ? minutes % 60 + "min" : ""}`;
-  return `${Math.floor(minutes / 1440)}d`;
+  if (minutes < 60) return t("tasks.reminder.customMinutes", { count: minutes });
+  if (minutes < 1440) return t("tasks.reminder.customHours", { hours: Math.floor(minutes / 60), minutes: minutes % 60 });
+  return t("tasks.reminder.customDays", { count: Math.floor(minutes / 1440) });
 }

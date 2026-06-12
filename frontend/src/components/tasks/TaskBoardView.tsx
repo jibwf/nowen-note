@@ -163,7 +163,7 @@ export function TaskBoardView({
                         <DateBadge dateStr={task.dueDate || (task.dueAt ? task.dueAt.split("T")[0] : null)} dueAt={task.dueAt} />
                       )}
                       {task.parentId && (
-                        <span className="text-[10px] text-tx-tertiary px-1 py-0.5 rounded bg-app-hover">sub</span>
+                        <span className="text-[10px] text-tx-tertiary px-1 py-0.5 rounded bg-app-hover">{t("tasks.subtaskShort")}</span>
                       )}
                       {childInfo && childInfo.total > 0 && (
                         <span className="text-[10px] text-tx-tertiary">
@@ -191,7 +191,7 @@ export function TaskBoardView({
 
               {columnTasks.length === 0 && (
                 <div className="text-center text-xs text-tx-tertiary py-8 opacity-50">
-                  {dragOverCol === col.key ? t("tasks.dropHere") || "Drop here" : "-"}
+                  {dragOverCol === col.key ? t("tasks.dropHere") : "-"}
                 </div>
               )}
             </div>

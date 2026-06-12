@@ -44,7 +44,9 @@ export function TaskCalendarView({
   onMoveTaskDate?: (taskId: string, targetDateKey: string) => void;
 }) {
   const { t, i18n } = useTranslation();
-  const dateLocale = i18n.language === "zh-CN" ? zhCN : enUS;
+  const lang = i18n.resolvedLanguage || i18n.language;
+  const isZh = lang.toLowerCase().startsWith("zh");
+  const dateLocale = isZh ? zhCN : enUS;
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
@@ -134,7 +136,7 @@ export function TaskCalendarView({
             <ChevronLeft size={18} />
           </button>
           <h2 className="text-sm font-semibold text-tx-primary min-w-[120px] text-center">
-            {(i18n.language === "zh-CN" ? format(currentMonth, "yyyy\u5E74M\u6708") : format(currentMonth, "MMMM yyyy", { locale: dateLocale }))}
+            {(isZh ? format(currentMonth, "yyyy\u5E74M\u6708") : format(currentMonth, "MMMM yyyy", { locale: dateLocale }))}
           </h2>
           <button onClick={() => setCurrentMonth((m) => addMonths(m, 1))} className="p-1 rounded hover:bg-app-hover text-tx-secondary transition-colors">
             <ChevronRight size={18} />
@@ -234,13 +236,13 @@ export function TaskCalendarView({
           <div className="hidden md:flex w-[260px] shrink-0 flex-col border-l border-app-border bg-app-surface overflow-y-auto">
             <div className="px-4 py-3 border-b border-app-border">
               <span className="text-sm font-semibold text-tx-primary">
-                {(i18n.language === "zh-CN" ? format(selectedDate, "M\u6708d\u65E5 EEEE") : format(selectedDate, "EEEE, MMM d", { locale: dateLocale }))}
+                {(isZh ? format(selectedDate, "M\u6708d\u65E5 EEEE") : format(selectedDate, "EEEE, MMM d", { locale: dateLocale }))}
               </span>
-              <span className="ml-2 text-xs text-tx-tertiary">{selectedDateTasks.length}{t("tasks.title")}</span>
+              <span className="ml-2 text-xs text-tx-tertiary">{t("tasks.taskCount", { count: selectedDateTasks.length })}</span>
             </div>
             <div className="flex-1 p-3 space-y-1.5">
               {selectedDateTasks.length === 0 ? (
-                <div className="text-center text-xs text-tx-tertiary py-8">{t("tasks.calendarEmpty") || "\u8FD9\u5929\u6CA1\u6709\u4EFB\u52A1"}</div>
+                <div className="text-center text-xs text-tx-tertiary py-8">{t("tasks.calendarEmpty")}</div>
               ) : selectedDateTasks.map((task) => {
                 const overdue = isCalendarTaskOverdue(task);
                 return (
@@ -284,13 +286,13 @@ export function TaskCalendarView({
         <div className="md:hidden border-t border-app-border bg-app-surface overflow-y-auto max-h-[30vh]">
           <div className="px-4 py-2 border-b border-app-border/50">
             <span className="text-xs font-semibold text-tx-primary">
-              {(i18n.language === "zh-CN" ? format(selectedDate, "M/d EEE") : format(selectedDate, "EEE, MMM d", { locale: dateLocale }))}
+              {(isZh ? format(selectedDate, "M/d EEE") : format(selectedDate, "EEE, MMM d", { locale: dateLocale }))}
             </span>
             <span className="ml-1 text-[10px] text-tx-tertiary">{selectedDateTasks.length}</span>
           </div>
           <div className="p-2 space-y-1">
             {selectedDateTasks.length === 0 ? (
-              <div className="text-center text-xs text-tx-tertiary py-4">{t("tasks.calendarEmpty") || "\u8FD9\u5929\u6CA1\u6709\u4EFB\u52A1"}</div>
+              <div className="text-center text-xs text-tx-tertiary py-4">{t("tasks.calendarEmpty")}</div>
             ) : selectedDateTasks.map((task) => {
               const overdue = isCalendarTaskOverdue(task);
               return (

@@ -388,7 +388,7 @@ export interface Task {
   children?: Task[];
   /** 创建者用户名；仅 list/single read 时由后端 LEFT JOIN 返回。 */
   creatorName?: string | null;
-  repeatRule?: string;
+  repeatRule?: "none" | "daily" | "weekly" | "monthly" | "yearly";
   repeatInterval?: number;
   repeatEndDate?: string | null;
   repeatGroupId?: string | null;

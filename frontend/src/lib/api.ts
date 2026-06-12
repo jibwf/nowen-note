@@ -1,4 +1,6 @@
 import { Notebook, NotebookMember, NotebookShareLink, Note, NoteListItem, Tag, SearchResult, User, UserPublicInfo, Task, TaskStats, TaskFilter, CustomFont, MindMap, MindMapListItem, Diary, DiaryTimeline, DiaryStats, Share, ShareInfo, SharedNoteContent, NoteVersion, ShareComment, Workspace, WorkspaceAdminItem, WorkspaceMember, WorkspaceInvite, WorkspaceRole, WorkspaceFeatures, FileItem, FileDetail, FileListResponse, FileStats, FileSortKey, FileCategory, FileFilter, FileMyUploadsRef } from "@/types";
+
+export type TaskMutationResponse = { task: Task; generatedTask: Task | null };
 import {
   shouldEnqueue as _shouldEnqueue,
   enqueue as _enqueue,
@@ -1129,8 +1131,8 @@ export const api = {
     const qs = ws && ws !== "personal" ? `?workspaceId=${encodeURIComponent(ws)}` : "";
     return request<Task>(`/tasks${qs}`, { method: "POST", body: JSON.stringify(data) });
   },
-  updateTask: (id: string, data: Partial<Task>) => request<Task>(`/tasks/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-  toggleTask: (id: string) => request<{ task: Task; generatedTask: Task | null }>(`/tasks/${id}/toggle`, { method: "PATCH" }),
+  updateTask: (id: string, data: Partial<Task>) => request<TaskMutationResponse>(`/tasks/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  toggleTask: (id: string) => request<TaskMutationResponse>(`/tasks/${id}/toggle`, { method: "PATCH" }),
   deleteTask: (id: string) => request(`/tasks/${id}`, { method: "DELETE" }),
   batchTasks: (ids: string[], action: "complete" | "delete") =>
     request<{ success: boolean; affected: number }>("/tasks/batch", { method: "POST", body: JSON.stringify({ ids, action }) }),

@@ -533,17 +533,23 @@ tasks.post("/batch", async (c) => {
 
   const ph = allowedIds.map(() => "?").join(",");
   if (action === "complete") {
-    db.prepare("UPDATE tasks SET isCompleted = 1, status = 'done', updatedAt = datetime(\"now\") WHERE id IN (" + ph + ")")
-      .run(...allowedIds);
+    // Only complete tasks that are not already done
+    const tasksBefore = db.prepare("SELECT * FROM tasks WHERE id IN (" + ph + ")").all(...allowedIds) as any[];
+    const toComplete = tasksBefore.filter((t) => t.isCompleted === 0);
+    if (toComplete.length === 0) return c.json({ success: true, affected: 0, generatedCount: 0 });
 
-    // Generate next repeated tasks
+    const completeIds = toComplete.map((t) => t.id);
+    const cph = completeIds.map(() => "?").join(",");
+    db.prepare("UPDATE tasks SET isCompleted = 1, status = 'done', updatedAt = datetime(\"now\") WHERE id IN (" + cph + ")")
+      .run(...completeIds);
+
+    // Generate next repeated tasks only for tasks that were previously incomplete
     let generatedCount = 0;
-    for (const id of allowedIds) {
-      const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as any;
-      if (task && generateNextRepeatedTask(db, task)) generatedCount++;
+    for (const task of toComplete) {
+      if (generateNextRepeatedTask(db, task)) generatedCount++;
     }
 
-    return c.json({ success: true, affected: allowedIds.length, generatedCount });
+    return c.json({ success: true, affected: toComplete.length, generatedCount });
   } else {
     db.prepare("DELETE FROM tasks WHERE id IN (" + ph + ")").run(...allowedIds);
     return c.json({ success: true, affected: allowedIds.length });

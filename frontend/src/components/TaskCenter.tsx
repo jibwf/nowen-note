@@ -276,7 +276,12 @@ export default function TaskCenter() {
   const handleUpdate = async (id: string, data: Partial<Task>) => {
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...data } : t)));
     try {
-      await api.updateTask(id, data);
+      const res = await api.updateTask(id, data);
+      if (res.task) setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...res.task } : t)));
+      if (res.generatedTask) setTasks((prev) => {
+        if (prev.some((t) => t.id === res.generatedTask!.id)) return prev;
+        return [...prev, res.generatedTask!];
+      });
       const s = await api.getTaskStats();
       setStats(s);
       refreshCounts();
@@ -288,7 +293,12 @@ export default function TaskCenter() {
     const newIsCompleted = status === "done" ? 1 : 0;
     setTasks((prev) => prev.map((t) => t.id === id ? { ...t, status, isCompleted: newIsCompleted } : t));
     try {
-      await api.updateTask(id, { status, isCompleted: newIsCompleted });
+      const res = await api.updateTask(id, { status, isCompleted: newIsCompleted });
+      if (res.task) setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...res.task } : t)));
+      if (res.generatedTask) setTasks((prev) => {
+        if (prev.some((t) => t.id === res.generatedTask!.id)) return prev;
+        return [...prev, res.generatedTask!];
+      });
       const s = await api.getTaskStats();
       setStats(s);
       refreshCounts();

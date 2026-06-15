@@ -20,7 +20,8 @@ function wouldCreateCycle(
   successorId: string,
   workspaceId: string | null
 ): boolean {
-  // BFS from successor following predecessor edges to see if we reach predecessorId
+  // Forward BFS: from successorId, follow successor edges to see if we reach predecessorId.
+  // If yes, adding predecessorId->successorId would create a cycle.
   const visited = new Set<string>();
   const queue = [successorId];
   while (queue.length > 0) {
@@ -28,15 +29,14 @@ function wouldCreateCycle(
     if (current === predecessorId) return true;
     if (visited.has(current)) continue;
     visited.add(current);
-    // Find all predecessors of current
-    const preds = db
+    const nexts = db
       .prepare(
-        "SELECT predecessorTaskId FROM task_dependencies WHERE successorTaskId = ?"
+        "SELECT successorTaskId FROM task_dependencies WHERE predecessorTaskId = ?"
       )
-      .all(current) as { predecessorTaskId: string }[];
-    for (const p of preds) {
-      if (!visited.has(p.predecessorTaskId)) {
-        queue.push(p.predecessorTaskId);
+      .all(current) as { successorTaskId: string }[];
+    for (const n of nexts) {
+      if (!visited.has(n.successorTaskId)) {
+        queue.push(n.successorTaskId);
       }
     }
   }
@@ -111,13 +111,12 @@ taskDependencies.post("/", async (c) => {
     return c.json({ error: "Tasks must be in the same scope" }, 400);
   }
 
-  // Permission check
+  // Permission check: must be able to manage both tasks
   const wsId = pred.workspaceId;
   if (wsId) {
-    const predRole = getUserWorkspaceRole(wsId, userId);
-    const succRole = getUserWorkspaceRole(wsId, userId);
-    if (!predRole || !succRole) {
-      return c.json({ error: "No access to workspace" }, 403);
+    const role = getUserWorkspaceRole(wsId, userId);
+    if (!role || role === "viewer" || role === "commenter") {
+      return c.json({ error: "Insufficient permissions" }, 403);
     }
   } else {
     if (pred.userId !== userId || succ.userId !== userId) {
@@ -159,11 +158,11 @@ taskDependencies.delete("/:id", (c) => {
     return c.json({ error: "Dependency not found" }, 404);
   }
 
-  // Permission: owner or workspace member
+  // Permission: must be able to manage tasks
   if (dep.workspaceId) {
     const role = getUserWorkspaceRole(dep.workspaceId, userId);
-    if (!role) {
-      return c.json({ error: "No access" }, 403);
+    if (!role || role === "viewer" || role === "commenter") {
+      return c.json({ error: "Insufficient permissions" }, 403);
     }
   } else {
     if (dep.userId !== userId) {

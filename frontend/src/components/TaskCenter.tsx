@@ -178,8 +178,7 @@ export default function TaskCenter() {
   }, []);
 
 
-  useEffect(() => { loadTasks(); }, [loadTasks]);
-    loadDependencies();
+  useEffect(() => { loadTasks(); loadDependencies(); }, [loadTasks, loadDependencies]);
 
   useEffect(() => {
     const onWs = () => { setSelectedTaskId(null); setSearchQuery(""); setSelectedIds(new Set()); setSelectMode(false); setSelectedProjectId(null); setWorkspaceVersion((v) => v + 1); reload(); };
@@ -760,6 +759,7 @@ export default function TaskCenter() {
           <TaskGanttView
             tasks={displayTasks}
             projects={projects}
+            dependencies={dependencies}
             onSelect={(task) => setSelectedTaskId(task.id)}
             onUpdateTaskDateRange={handleUpdateTaskDateRange}
           />
@@ -929,6 +929,9 @@ export default function TaskCenter() {
             onToggle={handleToggle}
             onSelectTask={(taskId) => setSelectedTaskId(taskId)}
             onCreated={async () => { await loadTasks(); const s = await api.getTaskStats(); setStats(s); refreshCounts(); }}
+            dependencies={dependencies}
+            onCreateDependency={async (predId, succId) => { await api.createTaskDependency({ predecessorTaskId: predId, successorTaskId: succId }); await loadDependencies(); }}
+            onDeleteDependency={async (id) => { await api.deleteTaskDependency(id); await loadDependencies(); }}
           />
         )}
       </AnimatePresence>

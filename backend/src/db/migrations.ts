@@ -1459,6 +1459,27 @@ export const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    version: 26,
+    name: "task-dependencies",
+    up: (db) => {
+      db.exec(`CREATE TABLE IF NOT EXISTS task_dependencies (
+        id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
+        workspaceId TEXT,
+        predecessorTaskId TEXT NOT NULL,
+        successorTaskId TEXT NOT NULL,
+        type TEXT NOT NULL DEFAULT 'finish_to_start',
+        createdAt TEXT DEFAULT (datetime('now')),
+        updatedAt TEXT DEFAULT (datetime('now'))
+      )`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_task_dependencies_user ON task_dependencies(userId)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_task_dependencies_workspace ON task_dependencies(workspaceId)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_task_dependencies_predecessor ON task_dependencies(predecessorTaskId)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_task_dependencies_successor ON task_dependencies(successorTaskId)`);
+      db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_task_dependencies_unique ON task_dependencies(predecessorTaskId, successorTaskId, type)`);
+    },
+  },
 ];
 
 /** 当前代码已知的最高 schema 版本（== MIGRATIONS 里 max(version)）。 */

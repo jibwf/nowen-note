@@ -196,6 +196,7 @@ export default function TaskGanttView({ tasks, projects, onSelect, onUpdateTaskD
             const todayIdx = days.findIndex((d) => isToday(d));
             if (todayIdx === -1) return null;
             return <div className="absolute top-0 bottom-0 w-px bg-accent-primary/30 pointer-events-none" style={{ left: `${(todayIdx / days.length) * 100}%` }} />;
+          })()}
 
           {/* Dependency lines */}
           {dependencies.length > 0 && (() => {
@@ -237,7 +238,6 @@ export default function TaskGanttView({ tasks, projects, onSelect, onUpdateTaskD
                 })}
               </svg>
             );
-          })()}
           })()}
         </div>
       </div>

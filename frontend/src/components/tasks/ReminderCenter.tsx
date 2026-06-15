@@ -30,9 +30,14 @@ function formatOffset(minutes: number, t: (key: string, opts?: any) => string): 
 }
 
 const SNOOZE_OPTIONS = [
-  { key: "10min", minutes: 10 },
-  { key: "1hour", minutes: 60 },
-  { key: "tomorrow", minutes: 24 * 60 },
+  { key: "10min", compute: () => new Date(Date.now() + 10 * 60000).toISOString() },
+  { key: "1hour", compute: () => new Date(Date.now() + 60 * 60000).toISOString() },
+  { key: "tomorrow", compute: () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+    return d.toISOString();
+  }},
 ];
 
 export function ReminderCenter({ open, onClose, onSelectTask }: ReminderCenterProps) {
@@ -64,7 +69,7 @@ export function ReminderCenter({ open, onClose, onSelectTask }: ReminderCenterPr
   }, [t]);
 
   useEffect(() => {
-    if (open) load();
+    if (open) { load(); setActionMenuId(null); setSnoozeMenuId(null); }
   }, [open, load]);
 
   const toggleGroup = (key: string) => {
@@ -107,29 +112,14 @@ export function ReminderCenter({ open, onClose, onSelectTask }: ReminderCenterPr
     finally { setActing(null); setActionMenuId(null); }
   };
 
-  const handleSnooze = async (item: ReminderOverviewItem, minutes: number) => {
+  const handleSnooze = async (item: ReminderOverviewItem, computeSnooze: () => string) => {
     setActing(item.reminderId);
     try {
-      // Create a new reminder with the snooze offset from now
-      // The snooze means: remind me in `minutes` from now
-      // We update the existing reminder's offsetMinutes to represent "minutes before due"
-      // For snooze we need to compute a new offsetMinutes based on remaining time to due
-      const dueStr = item.dueAt || (item.dueDate ? item.dueDate + "T23:59:59" : null);
-      if (dueStr) {
-        const dueMs = new Date(dueStr).getTime();
-        const snoozeUntilMs = Date.now() + minutes * 60000;
-        // If snooze time is after due, just set offset to 0 (notify at due)
-        const newOffset = Math.max(0, Math.round((dueMs - snoozeUntilMs) / 60000));
-        await api.updateTaskReminder(item.reminderId, { offsetMinutes: newOffset, enabled: true });
-      } else {
-        // No due date - just update offsetMinutes to snooze value
-        // We need to use createTaskReminder since we can't meaningfully set offset without due
-        // Instead, just toggle back on and set a sensible offset
-        await api.updateTaskReminder(item.reminderId, { offsetMinutes: minutes, enabled: true });
-      }
+      const snoozedUntil = computeSnooze();
+      await api.updateTaskReminder(item.reminderId, { enabled: true, snoozedUntil });
       await load();
     } catch { /* ignore */ }
-    finally { setActing(null); setSnoozeMenuId(null); }
+    finally { setActing(null); setSnoozeMenuId(null); setActionMenuId(null); }
   };
 
   if (!open) return null;
@@ -266,15 +256,44 @@ export function ReminderCenter({ open, onClose, onSelectTask }: ReminderCenterPr
                             key={item.reminderId}
                             className="relative border-b border-app-border/50"
                           >
-                            <button
-                              type="button"
-                              onClick={() => handleClickItem(item)}
-                              className="w-full text-left px-4 py-2 hover:bg-bg-hover transition-colors"
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="text-sm text-tx-primary truncate flex-1">
+                            <div className="flex items-stretch">
+                              {/* Left: clickable task area */}
+                              <button
+                                type="button"
+                                onClick={() => handleClickItem(item)}
+                                className="flex-1 text-left px-4 py-2 hover:bg-bg-hover transition-colors"
+                              >
+                                <div className="text-sm text-tx-primary truncate">
                                   {item.taskTitle}
                                 </div>
+                                <div className="flex items-center gap-2 mt-0.5 text-[11px] text-tx-tertiary">
+                                  {item.snoozedUntil ? (
+                                    <span>
+                                      {t("tasks.reminderCenter.snoozedUntil")}:{" "}
+                                      {new Date(item.snoozedUntil).toLocaleString()}
+                                    </span>
+                                  ) : item.reminderAt ? (
+                                    <span>
+                                      {t("tasks.reminderCenter.reminderAt")}:{" "}
+                                      {new Date(item.reminderAt).toLocaleString()}
+                                    </span>
+                                  ) : null}
+                                  {(item.dueAt || item.dueDate) && (
+                                    <span>
+                                      {t("tasks.reminderCenter.dueAt")}:{" "}
+                                      {item.dueAt
+                                        ? new Date(item.dueAt).toLocaleString()
+                                        : item.dueDate}
+                                    </span>
+                                  )}
+                                  {!item.snoozedUntil && (
+                                    <span>{formatOffset(item.offsetMinutes, t)}</span>
+                                  )}
+                                </div>
+                              </button>
+
+                              {/* Right: action button */}
+                              <div className="flex items-center pr-2">
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -282,30 +301,13 @@ export function ReminderCenter({ open, onClose, onSelectTask }: ReminderCenterPr
                                     setActionMenuId(actionMenuId === item.reminderId ? null : item.reminderId);
                                     setSnoozeMenuId(null);
                                   }}
-                                  className="ml-2 p-1 rounded text-tx-tertiary hover:text-tx-secondary hover:bg-bg-hover transition-colors"
+                                  className="p-1 rounded text-tx-tertiary hover:text-tx-secondary hover:bg-bg-hover transition-colors"
                                   disabled={acting === item.reminderId}
                                 >
                                   <MoreHorizontal size={14} />
                                 </button>
                               </div>
-                              <div className="flex items-center gap-2 mt-0.5 text-[11px] text-tx-tertiary">
-                                {item.reminderAt && (
-                                  <span>
-                                    {t("tasks.reminderCenter.reminderAt")}:{" "}
-                                    {new Date(item.reminderAt).toLocaleString()}
-                                  </span>
-                                )}
-                                {(item.dueAt || item.dueDate) && (
-                                  <span>
-                                    {t("tasks.reminderCenter.dueAt")}:{" "}
-                                    {item.dueAt
-                                      ? new Date(item.dueAt).toLocaleString()
-                                      : item.dueDate}
-                                  </span>
-                                )}
-                                <span>{formatOffset(item.offsetMinutes, t)}</span>
-                              </div>
-                            </button>
+                            </div>
 
                             {/* Action menu */}
                             <AnimatePresence>
@@ -381,7 +383,7 @@ export function ReminderCenter({ open, onClose, onSelectTask }: ReminderCenterPr
                                     <button
                                       key={opt.key}
                                       type="button"
-                                      onClick={(e) => { e.stopPropagation(); handleSnooze(item, opt.minutes); }}
+                                      onClick={(e) => { e.stopPropagation(); handleSnooze(item, opt.compute); }}
                                       disabled={acting === item.reminderId}
                                       className="w-full text-left px-3 py-1.5 text-xs text-tx-secondary hover:bg-bg-hover"
                                     >

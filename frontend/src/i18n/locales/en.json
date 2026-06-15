@@ -1262,7 +1262,8 @@
       "snooze1hour": "1 hour",
       "snoozeTomorrow": "Tomorrow",
       "disableReminder": "Disable reminder",
-      "enableReminder": "Enable reminder"
+      "enableReminder": "Enable reminder",
+      "snoozedUntil": "Snoozed until"
     }
   },
   "tags": {

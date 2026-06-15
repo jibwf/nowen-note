@@ -1273,7 +1273,8 @@
       "snooze1hour": "1 小时后",
       "snoozeTomorrow": "明天",
       "disableReminder": "关闭提醒",
-      "enableReminder": "开启提醒"
+      "enableReminder": "开启提醒",
+      "snoozedUntil": "稍后提醒至"
     }
   },
   "tags": {

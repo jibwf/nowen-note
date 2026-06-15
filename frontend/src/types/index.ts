@@ -431,6 +431,7 @@ export interface ReminderOverviewItem {
   lastNotifiedAt: string | null;
   reminderAt: string | null;
   group: "missed" | "today" | "upcoming" | "disabled";
+  snoozedUntil: string | null;
 }
 
 export interface ReminderOverview {

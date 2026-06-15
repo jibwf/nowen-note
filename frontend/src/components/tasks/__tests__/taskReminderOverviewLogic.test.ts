@@ -15,6 +15,7 @@ interface ReminderRow {
   enabled: number;
   offsetMinutes: number;
   lastNotifiedAt: string | null;
+  snoozedUntil: string | null;
 }
 
 interface OverviewItem {
@@ -30,6 +31,7 @@ interface OverviewItem {
   lastNotifiedAt: string | null;
   reminderAt: string | null;
   group: "missed" | "today" | "upcoming" | "disabled";
+  snoozedUntil: string | null;
 }
 
 function simulateOverview(rows: ReminderRow[], nowMs: number, days = 7): {
@@ -72,9 +74,30 @@ function simulateOverview(rows: ReminderRow[], nowMs: number, days = 7): {
       enabled: row.enabled,
       lastNotifiedAt: row.lastNotifiedAt,
       reminderAt,
+      snoozedUntil: row.snoozedUntil || null,
       group: "disabled",
     };
 
+    // snooze override
+    if (row.snoozedUntil) {
+      const snoozeMs = new Date(row.snoozedUntil).getTime();
+      if (snoozeMs < nowMs) {
+        item.group = 'missed';
+      } else if (snoozeMs <= todayEndMs) {
+        item.group = 'today';
+      } else if (snoozeMs <= horizonMs) {
+        item.group = 'upcoming';
+      } else {
+        continue;
+      }
+      item.reminderAt = row.snoozedUntil;
+      const grp = item.group;
+      if (grp === 'missed') missed.push(item);
+      else if (grp === 'today') today.push(item);
+      else if (grp === 'upcoming') upcoming.push(item);
+      else disabled.push(item);
+      continue;
+    }
     if (row.enabled !== 1 || row.isCompleted === 1) {
       disabled.push(item);
       continue;
@@ -117,10 +140,55 @@ describe("reminderOverview grouping", () => {
       reminderId: "r1", taskId: "t1", taskTitle: "Overdue task",
       dueAt: "2026-06-15T09:30:00Z", dueDate: null,
       isCompleted: 0, enabled: 1, offsetMinutes: 0, lastNotifiedAt: null,
+      snoozedUntil: null,
     }];
     const result = simulateOverview(rows, NOW);
     expect(result.missed).toHaveLength(1);
     expect(result.missed[0].group).toBe("missed");
+  });
+
+  it("snoozedUntil in future shows as today/upcoming, not missed", () => {
+    // Reminder was snoozed to later today
+    const snoozeTime = new Date(NOW + 2 * 3600000).toISOString(); // 2 hours from now
+    const rows: ReminderRow[] = [{
+      reminderId: "rs1", taskId: "ts1", taskTitle: "Snoozed task",
+      dueAt: "2026-06-15T09:00:00Z", dueDate: null,
+      isCompleted: 0, enabled: 1, offsetMinutes: 0, lastNotifiedAt: "2026-06-15T08:55:00Z",
+      snoozedUntil: snoozeTime,
+    }];
+    const result = simulateOverview(rows, NOW);
+    // snooze is 2h from now, which is still today -> should be in today
+    expect(result.today).toHaveLength(1);
+    expect(result.missed).toHaveLength(0);
+    expect(result.today[0].snoozedUntil).toBe(snoozeTime);
+  });
+
+  it("snoozedUntil in past triggers as missed", () => {
+    const snoozeTime = new Date(NOW - 60000).toISOString(); // 1 minute ago
+    const rows: ReminderRow[] = [{
+      reminderId: "rs2", taskId: "ts2", taskTitle: "Expired snooze",
+      dueAt: "2026-06-15T09:00:00Z", dueDate: null,
+      isCompleted: 0, enabled: 1, offsetMinutes: 0, lastNotifiedAt: "2026-06-15T08:55:00Z",
+      snoozedUntil: snoozeTime,
+    }];
+    const result = simulateOverview(rows, NOW);
+    expect(result.missed).toHaveLength(1);
+    expect(result.missed[0].snoozedUntil).toBe(snoozeTime);
+  });
+
+  it("snoozedUntil overrides lastNotifiedAt check", () => {
+    // Task was already notified, but snoozed to future
+    const snoozeTime = new Date(NOW + 3600000).toISOString();
+    const rows: ReminderRow[] = [{
+      reminderId: "rs3", taskId: "ts3", taskTitle: "Snoozed past notified",
+      dueAt: "2026-06-15T09:00:00Z", dueDate: null,
+      isCompleted: 0, enabled: 1, offsetMinutes: 0, lastNotifiedAt: "2026-06-15T08:55:00Z",
+      snoozedUntil: snoozeTime,
+    }];
+    const result = simulateOverview(rows, NOW);
+    // Should NOT be missed despite being already notified
+    expect(result.missed).toHaveLength(0);
+    expect(result.today).toHaveLength(1);
   });
 
   it("classifies today: reminderAt today and >= now", () => {
@@ -128,6 +196,7 @@ describe("reminderOverview grouping", () => {
       reminderId: "r2", taskId: "t2", taskTitle: "Later today",
       dueAt: "2026-06-15T15:00:00Z", dueDate: null,
       isCompleted: 0, enabled: 1, offsetMinutes: 0, lastNotifiedAt: null,
+      snoozedUntil: null,
     }];
     const result = simulateOverview(rows, NOW);
     expect(result.today).toHaveLength(1);
@@ -139,6 +208,7 @@ describe("reminderOverview grouping", () => {
       reminderId: "r3", taskId: "t3", taskTitle: "Tomorrow task",
       dueAt: "2026-06-16T10:00:00Z", dueDate: null,
       isCompleted: 0, enabled: 1, offsetMinutes: 0, lastNotifiedAt: null,
+      snoozedUntil: null,
     }];
     const result = simulateOverview(rows, NOW);
     expect(result.upcoming).toHaveLength(1);
@@ -150,6 +220,7 @@ describe("reminderOverview grouping", () => {
       reminderId: "r4", taskId: "t4", taskTitle: "Disabled reminder",
       dueAt: "2026-06-15T15:00:00Z", dueDate: null,
       isCompleted: 0, enabled: 0, offsetMinutes: 0, lastNotifiedAt: null,
+      snoozedUntil: null,
     }];
     const result = simulateOverview(rows, NOW);
     expect(result.disabled).toHaveLength(1);
@@ -161,6 +232,7 @@ describe("reminderOverview grouping", () => {
       reminderId: "r5", taskId: "t5", taskTitle: "Completed task",
       dueAt: "2026-06-15T15:00:00Z", dueDate: null,
       isCompleted: 1, enabled: 1, offsetMinutes: 0, lastNotifiedAt: null,
+      snoozedUntil: null,
     }];
     const result = simulateOverview(rows, NOW);
     expect(result.disabled).toHaveLength(1);
@@ -171,6 +243,7 @@ describe("reminderOverview grouping", () => {
       reminderId: "r6", taskId: "t6", taskTitle: "Both dates",
       dueAt: "2026-06-15T15:00:00Z", dueDate: "2026-06-20",
       isCompleted: 0, enabled: 1, offsetMinutes: 0, lastNotifiedAt: null,
+      snoozedUntil: null,
     }];
     const result = simulateOverview(rows, NOW);
     expect(result.today).toHaveLength(1);
@@ -182,6 +255,7 @@ describe("reminderOverview grouping", () => {
       reminderId: "r7", taskId: "t7", taskTitle: "Date only",
       dueAt: null, dueDate: "2026-06-15",
       isCompleted: 0, enabled: 1, offsetMinutes: 0, lastNotifiedAt: null,
+      snoozedUntil: null,
     }];
     const result = simulateOverview(rows, NOW);
     // reminderAt = 2026-06-15T23:59:59 - 0min = 2026-06-15T23:59:59
@@ -200,6 +274,7 @@ describe("reminderOverview grouping", () => {
       reminderId: "r8", taskId: "t8", taskTitle: "No date",
       dueAt: null, dueDate: null,
       isCompleted: 0, enabled: 1, offsetMinutes: 30, lastNotifiedAt: null,
+      snoozedUntil: null,
     }];
     const result = simulateOverview(rows, NOW);
     expect(result.disabled).toHaveLength(1);
@@ -210,6 +285,7 @@ describe("reminderOverview grouping", () => {
       reminderId: "r9", taskId: "t9", taskTitle: "30min before",
       dueAt: "2026-06-15T10:30:00Z", dueDate: null,
       isCompleted: 0, enabled: 1, offsetMinutes: 30, lastNotifiedAt: null,
+      snoozedUntil: null,
     }];
     const result = simulateOverview(rows, NOW);
     // reminderAt = 10:30 - 30min = 10:00 = now -> exactly at now, should be today (>= now in code is < now for missed)
@@ -227,6 +303,7 @@ describe("reminderOverview grouping", () => {
       reminderId: "r10", taskId: "t10", taskTitle: "40 days out",
       dueAt: new Date(NOW + 40 * 86400000).toISOString(), dueDate: null,
       isCompleted: 0, enabled: 1, offsetMinutes: 0, lastNotifiedAt: null,
+      snoozedUntil: null,
     }];
     const result = simulateOverview(rows, NOW, 30);
     // 40 days out > 30 day horizon -> should not appear
@@ -238,6 +315,7 @@ describe("reminderOverview grouping", () => {
       reminderId: "r11", taskId: "t11", taskTitle: "5 days out",
       dueAt: new Date(NOW + 5 * 86400000).toISOString(), dueDate: null,
       isCompleted: 0, enabled: 1, offsetMinutes: 0, lastNotifiedAt: null,
+      snoozedUntil: null,
     }];
     const result7 = simulateOverview(rows, NOW, 7);
     expect(result7.upcoming).toHaveLength(1);

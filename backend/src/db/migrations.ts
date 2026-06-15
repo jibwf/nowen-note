@@ -1480,6 +1480,14 @@ export const MIGRATIONS: Migration[] = [
       db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_task_dependencies_unique ON task_dependencies(predecessorTaskId, successorTaskId, type)`);
     },
   },
+
+  {
+    version: 27,
+    name: "task-reminders-snoozedUntil",
+    up: (db) => {
+      db.exec(`ALTER TABLE task_reminders ADD COLUMN snoozedUntil TEXT`);
+    },
+  },
 ];
 
 /** 当前代码已知的最高 schema 版本（== MIGRATIONS 里 max(version)）。 */

@@ -49,7 +49,7 @@ taskReminders.get("/overview", (c) => {
   let rows: any[];
   if (scope.workspaceId) {
     rows = db.prepare(`
-      SELECT r.id AS reminderId, r.taskId, r.offsetMinutes, r.enabled, r.lastNotifiedAt,
+      SELECT r.id AS reminderId, r.taskId, r.offsetMinutes, r.enabled, r.lastNotifiedAt, r.snoozedUntil,
              t.title AS taskTitle, t.status AS taskStatus, t.isCompleted,
              t.dueDate, t.dueAt
       FROM task_reminders r
@@ -59,7 +59,7 @@ taskReminders.get("/overview", (c) => {
     `).all(userId, scope.workspaceId) as any[];
   } else {
     rows = db.prepare(`
-      SELECT r.id AS reminderId, r.taskId, r.offsetMinutes, r.enabled, r.lastNotifiedAt,
+      SELECT r.id AS reminderId, r.taskId, r.offsetMinutes, r.enabled, r.lastNotifiedAt, r.snoozedUntil,
              t.title AS taskTitle, t.status AS taskStatus, t.isCompleted,
              t.dueDate, t.dueAt
       FROM task_reminders r
@@ -76,7 +76,9 @@ taskReminders.get("/overview", (c) => {
 
   for (const row of rows) {
     let reminderAt: string | null = null;
-    if (row.dueAt) {
+    if (row.snoozedUntil) {
+      reminderAt = row.snoozedUntil;
+    } else if (row.dueAt) {
       const dueMs = new Date(row.dueAt).getTime();
       const rMs = dueMs - row.offsetMinutes * 60000;
       reminderAt = new Date(rMs).toISOString();
@@ -97,6 +99,7 @@ taskReminders.get("/overview", (c) => {
       offsetMinutes: row.offsetMinutes,
       enabled: row.enabled,
       lastNotifiedAt: row.lastNotifiedAt,
+      snoozedUntil: row.snoozedUntil,
       reminderAt,
       group: "",
     };
@@ -228,6 +231,7 @@ export interface PendingReminder {
   dueDate: string | null;
   userId: string;
   offsetMinutes: number;
+  snoozedUntil: string | null;
 }
 
 /**
@@ -272,10 +276,26 @@ export function scanDueReminders(): PendingReminder[] {
     const dueMs = new Date(dueStr).getTime();
     const reminderMs = dueMs - row.offsetMinutes * 60 * 1000;
 
-    // 到提醒时间了
+    // snooze override
+    if (row.snoozedUntil) {
+      const snoozeMs = new Date(row.snoozedUntil).getTime();
+      if (snoozeMs > now) continue;
+      pending.push({
+        reminderId: row.reminderId,
+        taskId: row.taskId,
+        taskTitle: row.taskTitle,
+        dueAt: row.dueAt,
+        dueDate: row.dueDate,
+        userId: row.userId,
+        offsetMinutes: row.offsetMinutes,
+        snoozedUntil: row.snoozedUntil,
+      });
+      continue;
+    }
+
+    // Normal path
     if (reminderMs > now) continue;
 
-    // 已经通知过
     if (row.lastNotifiedAt) {
       const lastNotifiedMs = new Date(row.lastNotifiedAt).getTime();
       if (lastNotifiedMs >= reminderMs) continue;
@@ -289,6 +309,7 @@ export function scanDueReminders(): PendingReminder[] {
       dueDate: row.dueDate,
       userId: row.userId,
       offsetMinutes: row.offsetMinutes,
+      snoozedUntil: null,
     });
   }
 
@@ -301,7 +322,7 @@ export function scanDueReminders(): PendingReminder[] {
 export function markReminderNotified(reminderId: string) {
   const db = getDb();
   db.prepare(
-    "UPDATE task_reminders SET lastNotifiedAt = datetime('now') WHERE id = ?"
+    "UPDATE task_reminders SET lastNotifiedAt = datetime('now'), snoozedUntil = NULL WHERE id = ?"
   ).run(reminderId);
 }
 

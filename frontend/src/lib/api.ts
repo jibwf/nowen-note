@@ -1194,7 +1194,7 @@ export const api = {
     request<import("@/types").TaskReminder[]>(`/task-reminders/${taskId}`),
   createTaskReminder: (taskId: string, offsetMinutes: number) =>
     request<import("@/types").TaskReminder>(`/task-reminders/${taskId}`, { method: "POST", body: JSON.stringify({ offsetMinutes }) }),
-  updateTaskReminder: (reminderId: string, data: { offsetMinutes?: number; enabled?: boolean }) =>
+  updateTaskReminder: (reminderId: string, data: { offsetMinutes?: number; enabled?: boolean; snoozedUntil?: string | null }) =>
     request<import("@/types").TaskReminder>(`/task-reminders/${reminderId}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteTaskReminder: (reminderId: string) =>
     request(`/task-reminders/${reminderId}`, { method: "DELETE" }),

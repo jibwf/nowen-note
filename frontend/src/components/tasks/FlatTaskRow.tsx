@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  CheckCircle2, Circle, Flag, Trash2, User as UserIcon, Plus, Repeat,
+  CheckCircle2, Circle, Flag, Trash2, User as UserIcon, Plus, Repeat, Link2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
@@ -13,8 +13,8 @@ import { isRepeatingTask } from "./taskRepeatUtils";
 import { SubtaskInput } from "./SubtaskInput";
 
 /**
- * �?allTasks 中向上遍�?parentId 构建父任务路径�?
- * 最多展�?maxDepth 层，超出�?"..." 省略�?
+ * �?allTasks 中向上遍�?parentId 构建父任务路径�?
+ * 最多展�?maxDepth 层，超出�?"..." 省略�?
  */
 function buildParentPath(taskId: string, allTasks: Task[], maxDepth = 3): Task[] {
   const map = new Map(allTasks.map((t) => [t.id, t]));
@@ -34,17 +34,18 @@ function buildParentPath(taskId: string, allTasks: Task[], maxDepth = 3): Task[]
   return path;
 }
 
-/** 平铺模式任务行（过滤模式使用�?*/
+/** 平铺模式任务行（过滤模式使用�?*/
 export const FlatTaskRow = React.forwardRef<HTMLDivElement, {
   task: Task;
-  /** 所有任务（用于构建父任务路�?breadcrumb�?*/
+  /** 所有任务（用于构建父任务路�?breadcrumb�?*/
   allTasks?: Task[];
   onToggle: (id: string) => void;
   onSelect: (task: Task) => void;
   onDelete: (id: string) => void;
   onCreateChild?: (title: string, parentId: string) => Promise<void>;
   onSelectTask?: (taskId: string) => void;
-}>(({ task, allTasks, onToggle, onSelect, onDelete, onCreateChild, onSelectTask }, ref) => {
+  blockedByDependency?: boolean;
+}>(({ task, allTasks, onToggle, onSelect, onDelete, onCreateChild, onSelectTask, blockedByDependency }, ref) => {
   const { t } = useTranslation();
   const isCompleted = task.isCompleted === 1;
   const [showSubtaskInput, setShowSubtaskInput] = useState(false);
@@ -58,7 +59,7 @@ export const FlatTaskRow = React.forwardRef<HTMLDivElement, {
   const showCreator =
     !!task.creatorName && getCurrentWorkspace() !== "personal";
 
-  // 父任务路�?
+  // 父任务路�?
   const parentPath = useMemo(() => {
     if (!allTasks || !task.parentId) return [];
     return buildParentPath(task.id, allTasks);
@@ -92,7 +93,7 @@ export const FlatTaskRow = React.forwardRef<HTMLDivElement, {
         </button>
 
         <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-          {/* 父任务路�?breadcrumb */}
+          {/* 父任务路�?breadcrumb */}
           {parentPath.length > 0 && (
             <div className="flex items-center gap-1 text-[10px] text-tx-tertiary min-w-0 mb-0.5">
               {parentPath.map((p, i) => (
@@ -148,7 +149,7 @@ export const FlatTaskRow = React.forwardRef<HTMLDivElement, {
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
-          {/* 添加子任务按�?*/}
+          {/* 添加子任务按�?*/}
           {onCreateChild && (
             <button
               onClick={(e) => { e.stopPropagation(); setShowSubtaskInput(true); }}
@@ -162,6 +163,7 @@ export const FlatTaskRow = React.forwardRef<HTMLDivElement, {
             <DateBadge dateStr={task.dueDate} dueAt={task.dueAt} />
           </span>
           {isRepeatingTask(task) && <span title={t(`tasks.repeat.${task.repeatRule}`)}><Repeat size={12} className="text-accent-primary/60" /></span>}
+          {blockedByDependency && !isCompleted && <span title={t("tasks.dependencies.blockedByIncomplete")}><Link2 size={12} className="text-amber-500" /></span>}
           <Flag size={14} className={pri.flagClass} />
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}

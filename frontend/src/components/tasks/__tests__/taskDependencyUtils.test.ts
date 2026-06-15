@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { wouldCreateCycle, buildTaskRowIndex, getDependencyLinePoints } from "../taskDependencyUtils";
+import { wouldCreateCycle, buildTaskRowIndex, getDependencyLinePoints, getBlockingDependencies, isTaskBlockedByDependency } from "../taskDependencyUtils";
 import type { TaskDependency } from "../../../types";
 
 function dep(pre: string, suc: string): TaskDependency {
@@ -82,3 +82,49 @@ describe("getDependencyLinePoints", () => {
     expect(points.length).toBe(2);
   });
 });
+
+describe("getBlockingDependencies", () => {
+  const tasks = [
+    { id: "A", isCompleted: 0 },
+    { id: "B", isCompleted: 1 },
+    { id: "C", isCompleted: 0 },
+  ] as any;
+  const deps = [dep("A", "C"), dep("B", "C")];
+
+  it("returns incomplete predecessors", () => {
+    const blockers = getBlockingDependencies("C", deps, tasks);
+    expect(blockers.length).toBe(1);
+    expect(blockers[0].id).toBe("A");
+  });
+
+  it("returns empty when all predecessors done", () => {
+    const blockers = getBlockingDependencies("B", [], tasks);
+    expect(blockers.length).toBe(0);
+  });
+
+  it("returns empty for task with no deps", () => {
+    const blockers = getBlockingDependencies("A", deps, tasks);
+    expect(blockers.length).toBe(0);
+  });
+});
+
+describe("isTaskBlockedByDependency", () => {
+  const tasks = [
+    { id: "A", isCompleted: 0 },
+    { id: "B", isCompleted: 0 },
+  ] as any;
+
+  it("returns true when blocked", () => {
+    expect(isTaskBlockedByDependency("B", [dep("A", "B")], tasks)).toBe(true);
+  });
+
+  it("returns false when predecessor completed", () => {
+    const doneTasks = [{ id: "A", isCompleted: 1 }, { id: "B", isCompleted: 0 }] as any;
+    expect(isTaskBlockedByDependency("B", [dep("A", "B")], doneTasks)).toBe(false);
+  });
+
+  it("returns false when no deps", () => {
+    expect(isTaskBlockedByDependency("A", [], tasks)).toBe(false);
+  });
+});
+

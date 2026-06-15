@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Flag, Trash2, X, Bell, BellOff, CheckCircle2, Circle, Plus, Clock, Repeat } from "lucide-react";
+import { Flag, Trash2, X, Bell, BellOff, CheckCircle2, Circle, Plus, Clock, Repeat, Link2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { zhCN, enUS } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
@@ -11,6 +11,7 @@ import { isRepeatingTask } from "./taskRepeatUtils";
 import { TaskAIBreakdown } from "./TaskAIBreakdown";
 import { TaskTemplateEditor } from "./TaskTemplateEditor";
 import { TaskDependencyEditor } from "./TaskDependencyEditor";
+import { isTaskBlockedByDependency } from "./taskDependencyUtils";
 import type { TaskTreeNode } from "./taskProgress";
 import { calculateTaskProgress } from "./taskProgress";
 import { parseTaskTitle, TitleView } from "./taskTitleTokens";
@@ -404,6 +405,12 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
           {/* Dependencies */}
           {onCreateDependency && onDeleteDependency && allTasks && (
             <div className="border-t border-app-border pt-3 mt-3">
+              {isTaskBlockedByDependency(task.id, dependencies, allTasks || []) && !task.isCompleted && (
+                <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-400 rounded px-2 py-1.5 mb-2">
+                  <Link2 size={12} />
+                  {t("tasks.dependencies.blockedByIncomplete")}
+                </div>
+              )}
               <TaskDependencyEditor
                 task={task}
                 allTasks={allTasks}

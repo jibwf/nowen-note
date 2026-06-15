@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api";
 import { Task, TaskFilter, TaskStats, TaskStatus, TaskProject, TaskDependency } from "@/types";
 import { cn } from "@/lib/utils";
+import { isTaskBlockedByDependency } from "./tasks/taskDependencyUtils";
 import {
   TASK_CENTER_MAIN_CLASS,
   TASK_CENTER_ROOT_CLASS,
@@ -811,6 +812,7 @@ export default function TaskCenter() {
                         onDelete={handleDelete}
                         onToggleExpand={toggleExpand}
                         onCreateChild={handleCreateChild}
+                        blockedByDependency={isTaskBlockedByDependency(item.node.id, dependencies, tasks)}
                       />
                     </div>
                   ))
@@ -846,6 +848,7 @@ export default function TaskCenter() {
                         allTasks={tasks}
                         onCreateChild={handleCreateChild}
                         onSelectTask={(taskId) => setSelectedTaskId(taskId)}
+                        blockedByDependency={isTaskBlockedByDependency(task.id, dependencies, tasks)}
                       />
                     </div>
                   ))

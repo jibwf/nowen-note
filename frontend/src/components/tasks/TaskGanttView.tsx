@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { Task, TaskProject, TaskDependency } from "../../types";
 import { getTaskStartDate, getTaskEndDate, moveTaskDateRange, isTaskScheduled, buildTimelineDays, getVisibleTaskBar, resizeTaskDateRange } from "./taskGanttUtils";
-import { buildTaskRowIndex, getDependencyLinePoints } from "./taskDependencyUtils";
+import { buildTaskRowIndex, getDependencyLinePoints, isTaskBlockedByDependency } from "./taskDependencyUtils";
 import { format, addDays, startOfWeek, startOfMonth, addWeeks, addMonths, isToday, isBefore } from "date-fns";
 
 interface Props {
@@ -159,6 +159,7 @@ export default function TaskGanttView({ tasks, projects, onSelect, onUpdateTaskD
               if (!bar) return null;
               const isDragging = dragState?.taskId === task.id;
               const isOverdue = !task.isCompleted && task.dueDate && isBefore(new Date(task.dueDate + "T23:59:59"), new Date());
+              const isBlocked = isTaskBlockedByDependency(task.id, dependencies, tasks);
               const dragOffset = isDragging && dragState ? (dragState.diffDays / days.length) * 100 : 0;
               const roundedClass = `${bar.clippedStart ? "rounded-l-none" : "rounded-l"} ${bar.clippedEnd ? "rounded-r-none" : "rounded-r"}`;
               return (
@@ -173,8 +174,13 @@ export default function TaskGanttView({ tasks, projects, onSelect, onUpdateTaskD
                     }}
                     onMouseDown={(e) => handleDragStart(task.id, e, "move")}
                     onClick={() => onSelect(task)}
-                    title={task.title}
+                    title={isBlocked ? task.title + " (" + t("tasks.dependencies.blocked") + ")" : task.title}
                   >
+                    {isBlocked && !task.isCompleted && (
+                      <div className="absolute -top-1 -left-1 w-3.5 h-3.5 rounded-full bg-amber-500 flex items-center justify-center" title={t("tasks.dependencies.blockedByIncomplete")}>
+                        <svg viewBox="0 0 12 12" className="w-2 h-2 fill-white"><path d="M8.5 5V3.5a2.5 2.5 0 0 0-5 0V5H2.5A1.5 1.5 0 0 0 1 6.5v4A1.5 1.5 0 0 0 2.5 12h7a1.5 1.5 0 0 0 1.5-1.5v-4A1.5 1.5 0 0 0 9.5 5H8.5zM4 3.5a1.5 1.5 0 1 1 3 0V5H4V3.5z"/></svg>
+                      </div>
+                    )}
                     {/* Left resize handle */}
                     <div
                       className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize opacity-0 hover:opacity-100 bg-white/30 rounded-l"

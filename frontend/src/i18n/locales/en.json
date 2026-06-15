@@ -1225,7 +1225,10 @@
       "noDependencies": "No dependencies",
       "cycleError": "Circular dependency is not allowed",
       "delete": "Delete",
-      "finishToStart": "Finish to start"
+      "finishToStart": "Finish to start",
+      "blocked": "Blocked",
+      "blockedByIncomplete": "Blocked by incomplete predecessor",
+      "allDependenciesDone": "All dependencies completed"
     }
   },
   "tags": {

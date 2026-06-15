@@ -80,3 +80,36 @@ export function wouldCreateCycle(
   }
   return false;
 }
+
+/**
+ * Get all dependencies where the given task is blocked by incomplete predecessors.
+ * Returns the list of predecessor tasks that are not yet completed.
+ */
+export function getBlockingDependencies(
+  taskId: string,
+  dependencies: TaskDependency[],
+  tasks: Task[]
+): Task[] {
+  const taskMap = new Map(tasks.map((t) => [t.id, t]));
+  const blockers: Task[] = [];
+  for (const dep of dependencies) {
+    if (dep.successorTaskId !== taskId) continue;
+    const pred = taskMap.get(dep.predecessorTaskId);
+    if (pred && pred.isCompleted !== 1) {
+      blockers.push(pred);
+    }
+  }
+  return blockers;
+}
+
+/**
+ * Check if a task is blocked by any incomplete dependency.
+ */
+export function isTaskBlockedByDependency(
+  taskId: string,
+  dependencies: TaskDependency[],
+  tasks: Task[]
+): boolean {
+  return getBlockingDependencies(taskId, dependencies, tasks).length > 0;
+}
+

@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckCircle2, Circle, Flag, ChevronRight, ChevronDown,
-  Trash2, User as UserIcon, Plus, Repeat,
+  Trash2, User as UserIcon, Plus, Repeat, Link2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
@@ -15,7 +15,7 @@ import { TitleView } from "./taskTitleTokens";
 import { DateBadge } from "./DateBadge";
 import { SubtaskInput } from "./SubtaskInput";
 
-/* ===== Ê÷ÐÎÈÎÎñÐÐ ===== */
+/* ===== ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ===== */
 export const TaskTreeRow = React.forwardRef<HTMLDivElement, {
   task: TaskTreeNode;
   depth: number;
@@ -26,6 +26,7 @@ export const TaskTreeRow = React.forwardRef<HTMLDivElement, {
   onDelete: (id: string) => void;
   onToggleExpand: (id: string) => void;
   onCreateChild: (title: string, parentId: string) => Promise<void>;
+  blockedByDependency?: boolean;
 }>(({
   task,
   depth,
@@ -36,6 +37,7 @@ export const TaskTreeRow = React.forwardRef<HTMLDivElement, {
   onDelete,
   onToggleExpand,
   onCreateChild,
+  blockedByDependency,
 }, ref) => {
   const { t } = useTranslation();
   const isCompleted = task.isCompleted === 1;
@@ -71,7 +73,7 @@ export const TaskTreeRow = React.forwardRef<HTMLDivElement, {
         )}
         onClick={() => onSelect(task)}
       >
-        {/* Õ¹¿ª/ÕÛµþ¼ýÍ· */}
+        {/* Õ¹ï¿½ï¿½/ï¿½Ûµï¿½ï¿½ï¿½Í· */}
         {hasChildren ? (
           <button
             onClick={(e) => { e.stopPropagation(); onToggleExpand(task.id); }}
@@ -98,7 +100,7 @@ export const TaskTreeRow = React.forwardRef<HTMLDivElement, {
           )}
         </button>
 
-        {/* Title + ÔªÐÅÏ¢ */}
+        {/* Title + Ôªï¿½ï¿½Ï¢ */}
         <div className="flex-1 min-w-0 flex flex-col gap-0.5">
           <span
             className={cn(
@@ -134,9 +136,9 @@ export const TaskTreeRow = React.forwardRef<HTMLDivElement, {
           )}
         </div>
 
-        {/* ÓÒ²à badges */}
+        {/* ï¿½Ò²ï¿½ badges */}
         <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
-          {/* Ìí¼Ó×ÓÈÎÎñ°´Å¥ ¡ª hover Ê±ÏÔÊ¾ */}
+          {/* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Å¥ ï¿½ï¿½ hover Ê±ï¿½ï¿½Ê¾ */}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -165,6 +167,7 @@ export const TaskTreeRow = React.forwardRef<HTMLDivElement, {
             <DateBadge dateStr={task.dueDate} dueAt={task.dueAt} />
           </span>
           {isRepeatingTask(task) && <span title={t(`tasks.repeat.${task.repeatRule}`)}><Repeat size={12} className="text-accent-primary/60" /></span>}
+          {blockedByDependency && !task.isCompleted && <span title={t("tasks.dependencies.blockedByIncomplete")}><Link2 size={12} className="text-amber-500" /></span>}
           <Flag size={14} className={pri.flagClass} />
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}
@@ -175,7 +178,7 @@ export const TaskTreeRow = React.forwardRef<HTMLDivElement, {
         </div>
       </motion.div>
 
-      {/* Inline ×ÓÈÎÎñÊäÈë¿ò */}
+      {/* Inline ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */}
       <AnimatePresence>
         {showSubtaskInput && (
           <motion.div

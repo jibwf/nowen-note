@@ -1,7 +1,7 @@
-﻿import type { Task } from "../../types";
+import type { Task } from "../../types";
 
 export function getTaskStartDate(task: Task): string | null {
-  return task.startDate || null;
+  return task.startDate || task.dueDate || null;
 }
 
 export function getTaskEndDate(task: Task): string | null {
@@ -25,7 +25,11 @@ export function moveTaskDateRange(task: Task, targetStartDate: string): { startD
   const endMs = new Date(currentEnd + 'T00:00:00').getTime();
   const duration = endMs - startMs;
   const newStartMs = new Date(targetStartDate + 'T00:00:00').getTime();
-  const newEnd = new Date(newStartMs + duration).toISOString().split('T')[0];
+  const newEndDate = new Date(newStartMs + duration);
+  const ny = newEndDate.getFullYear();
+  const nm = String(newEndDate.getMonth() + 1).padStart(2, '0');
+  const nd = String(newEndDate.getDate()).padStart(2, '0');
+  const newEnd = ny + '-' + nm + '-' + nd;
   return { startDate: targetStartDate, dueDate: newEnd };
 }
 

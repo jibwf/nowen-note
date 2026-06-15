@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Flag, Trash2, X, Bell, BellOff, CheckCircle2, Circle, Plus, Clock, Repeat } from "lucide-react";
 import { format, parseISO } from "date-fns";
@@ -72,6 +72,9 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
   const [repeatInterval, setRepeatInterval] = useState(task.repeatInterval || 1);
   const [repeatEndDate, setRepeatEndDate] = useState(task.repeatEndDate || "");
   const titleRef = useRef<HTMLTextAreaElement>(null);
+
+  // date range validation error
+  const [dateError, setDateError] = useState<string | null>(null);
 
   // reminder state
   const [reminders, setReminders] = useState<TaskReminder[]>([]);
@@ -237,7 +240,16 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
           <input
             type="date"
             value={startDate}
-            onChange={(e) => { setStartDate(e.target.value); onUpdate(task.id, { startDate: e.target.value || null }); }}
+            onChange={(e) => {
+              const newVal = e.target.value;
+              setStartDate(newVal);
+              if (newVal && dueDate && newVal > dueDate) {
+                setDateError(t("tasks.gantt.invalidDateRange"));
+                return;
+              }
+              setDateError(null);
+              onUpdate(task.id, { startDate: newVal || null });
+            }}
             className="w-full px-3 py-2 rounded-md bg-app-bg border border-app-border text-sm text-tx-primary focus:outline-none focus:border-accent-primary transition-colors"
           />
         </div>
@@ -248,10 +260,23 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
           <input
             type="date"
             value={dueDate}
-            onChange={(e) => { setDueDate(e.target.value); onUpdate(task.id, { dueDate: e.target.value || null }); }}
+            onChange={(e) => {
+              const newVal = e.target.value;
+              setDueDate(newVal);
+              if (startDate && newVal && startDate > newVal) {
+                setDateError(t("tasks.gantt.invalidDateRange"));
+                return;
+              }
+              setDateError(null);
+              onUpdate(task.id, { dueDate: newVal || null });
+            }}
             className="w-full px-3 py-2 rounded-md bg-app-bg border border-app-border text-sm text-tx-primary focus:outline-none focus:border-accent-primary transition-colors"
           />
         </div>
+
+        {dateError && (
+          <p className="text-xs text-red-500 -mt-1 mb-1">{dateError}</p>
+        )}
 
         {/* Due At (time) */}
         <div>

@@ -454,8 +454,8 @@ function generateNextRepeatedTask(db: any, task: any): any {
   const groupId = task.repeatGroupId || task.id;
   db.prepare(`
     INSERT INTO tasks (id, userId, workspaceId, title, isCompleted, priority, dueDate, dueAt, startDate, noteId, parentId, projectId, status, repeatRule, repeatInterval, repeatEndDate, repeatGroupId, repeatGeneratedFromId)
-    VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?)
-  `).run(newId, task.userId, task.workspaceId, task.title, task.priority, nextDueDate, nextDueAt, task.noteId, task.parentId, task.projectId, task.repeatRule, task.repeatInterval, task.repeatEndDate, groupId, task.id);
+    VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(newId, task.userId, task.workspaceId, task.title, task.priority, nextDueDate, nextDueAt, null, task.noteId, task.parentId, task.projectId, 'todo', task.repeatRule, task.repeatInterval, task.repeatEndDate, groupId, task.id);
 
   db.prepare("UPDATE tasks SET repeatNextGeneratedId = ? WHERE id = ?").run(newId, task.id);
 

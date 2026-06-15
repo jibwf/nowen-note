@@ -1,4 +1,4 @@
-﻿import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { Task, TaskProject } from "../../types";
 import { getTaskStartDate, getTaskEndDate, getTaskDurationDays, moveTaskDateRange, isTaskScheduled, buildTimelineDays } from "./taskGanttUtils";
@@ -15,7 +15,7 @@ export default function TaskGanttView({ tasks, projects, onSelect, onUpdateTaskD
   const { t } = useTranslation();
   const [zoom, setZoom] = useState<"week" | "month">("week");
   const [cursor, setCursor] = useState(startOfWeek(new Date()));
-  const [dragState, setDragState] = useState<{ taskId: string; startX: number; startDate: string } | null>(null);
+  const [dragState, setDragState] = useState<{ taskId: string; startX: number; startDate: string; diffDays: number } | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   const scheduledTasks = useMemo(() => tasks.filter(isTaskScheduled), [tasks]);
@@ -43,7 +43,7 @@ export default function TaskGanttView({ tasks, projects, onSelect, onUpdateTaskD
     if (!task) return;
     const startDate = getTaskStartDate(task) || getTaskEndDate(task);
     if (!startDate) return;
-    setDragState({ taskId, startX: e.clientX, startDate });
+    setDragState({ taskId, startX: e.clientX, startDate, diffDays: 0 });
     e.preventDefault();
   }, [tasks]);
 
@@ -52,20 +52,26 @@ export default function TaskGanttView({ tasks, projects, onSelect, onUpdateTaskD
     const rect = gridRef.current.getBoundingClientRect();
     const dayWidth = rect.width / days.length;
     const diffDays = Math.round((e.clientX - dragState.startX) / dayWidth);
-    if (diffDays === 0) return;
-    const newStart = addDays(new Date(dragState.startDate + "T00:00:00"), diffDays);
-    const newStartStr = format(newStart, "yyyy-MM-dd");
-    const task = tasks.find((t) => t.id === dragState.taskId);
-    if (!task) return;
-    const result = moveTaskDateRange(task, newStartStr);
-    if (result) {
-      onUpdateTaskDateRange(dragState.taskId, result);
-    }
-  }, [dragState, days, tasks, onUpdateTaskDateRange]);
+    if (diffDays === dragState.diffDays) return;
+    setDragState((prev) => prev ? { ...prev, diffDays } : null);
+  }, [dragState, days]);
 
   const handleDragEnd = useCallback(() => {
+    if (!dragState) return;
+    const { taskId, startDate, diffDays } = dragState;
+    if (diffDays !== 0) {
+      const newStart = addDays(new Date(startDate + "T00:00:00"), diffDays);
+      const newStartStr = format(newStart, "yyyy-MM-dd");
+      const task = tasks.find((t) => t.id === taskId);
+      if (task) {
+        const result = moveTaskDateRange(task, newStartStr);
+        if (result) {
+          onUpdateTaskDateRange(taskId, result);
+        }
+      }
+    }
     setDragState(null);
-  }, []);
+  }, [dragState, tasks, onUpdateTaskDateRange]);
 
   const getTaskBar = useCallback((task: Task) => {
     const start = getTaskStartDate(task);
@@ -113,7 +119,7 @@ export default function TaskGanttView({ tasks, projects, onSelect, onUpdateTaskD
             >
               <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getProjectColor(task.projectId) }} />
               <span className="text-sm truncate text-tx-primary">{task.title}</span>
-              {task.priority === 3 && <span className="text-xs text-red-500">●</span>}
+              {task.priority === 3 && <span className="text-xs text-red-500">&#x25cf;</span>}
             </div>
           ))}
         </div>
@@ -147,13 +153,15 @@ export default function TaskGanttView({ tasks, projects, onSelect, onUpdateTaskD
             {scheduledTasks.map((task) => {
               const bar = getTaskBar(task);
               if (!bar) return null;
+              const isDragging = dragState?.taskId === task.id;
               const isOverdue = !task.isCompleted && task.dueDate && isBefore(new Date(task.dueDate + "T23:59:59"), new Date());
+              const dragOffset = isDragging && dragState ? (dragState.diffDays / days.length) * 100 : 0;
               return (
                 <div key={task.id} className="relative h-8 border-b border-app-border">
                   <div
                     className="absolute top-1 h-6 rounded cursor-grab active:cursor-grabbing"
                     style={{
-                      left: `${(bar.left / days.length) * 100}%`,
+                      left: `${(bar.left / days.length) * 100 + dragOffset}%`,
                       width: `${(bar.width / days.length) * 100}%`,
                       backgroundColor: isOverdue ? "#ef4444" : getProjectColor(task.projectId),
                       opacity: task.isCompleted ? 0.4 : 0.8,

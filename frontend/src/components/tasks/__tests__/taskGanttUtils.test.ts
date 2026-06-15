@@ -1,5 +1,5 @@
-﻿import { describe, it, expect } from "vitest";
-import { getTaskDurationDays, moveTaskDateRange, isTaskScheduled } from "../taskGanttUtils";
+import { describe, it, expect } from "vitest";
+import { getTaskStartDate, getTaskDurationDays, moveTaskDateRange, isTaskScheduled } from "../taskGanttUtils";
 import type { Task } from "../../../../types";
 
 const baseTask: Task = {
@@ -48,7 +48,7 @@ describe("moveTaskDateRange", () => {
     const result = moveTaskDateRange(task, "2026-06-20");
     expect(result).not.toBeNull();
     expect(result!.startDate).toBe("2026-06-20");
-    expect(result!.dueDate).toBe("2026-06-24");
+    expect(result!.dueDate).toBe("2026-06-25");
   });
 
   it("returns null when target is same as current start", () => {
@@ -74,5 +74,41 @@ describe("isTaskScheduled", () => {
 
   it("returns false when no dates are set", () => {
     expect(isTaskScheduled(baseTask)).toBe(false);
+  });
+});
+
+describe("getTaskStartDate", () => {
+  it("returns dueDate when only dueDate is set", () => {
+    const task = { ...baseTask, dueDate: "2026-06-15" };
+    expect(getTaskStartDate(task)).toBe("2026-06-15");
+  });
+
+  it("returns startDate when both are set", () => {
+    const task = { ...baseTask, startDate: "2026-06-10", dueDate: "2026-06-15" };
+    expect(getTaskStartDate(task)).toBe("2026-06-10");
+  });
+
+  it("returns null when no dates", () => {
+    expect(getTaskStartDate(baseTask)).toBeNull();
+  });
+});
+
+describe("moveTaskDateRange dueDate-only", () => {
+  it("can move a dueDate-only task", () => {
+    const task = { ...baseTask, dueDate: "2026-06-15" };
+    const result = moveTaskDateRange(task, "2026-06-20");
+    expect(result).not.toBeNull();
+    expect(result!.startDate).toBe("2026-06-20");
+    expect(result!.dueDate).toBe("2026-06-20");
+  });
+});
+
+describe("moveTaskDateRange startDate-only", () => {
+  it("can move a startDate-only task", () => {
+    const task = { ...baseTask, startDate: "2026-06-10" };
+    const result = moveTaskDateRange(task, "2026-06-20");
+    expect(result).not.toBeNull();
+    expect(result!.startDate).toBe("2026-06-20");
+    expect(result!.dueDate).toBe("2026-06-20");
   });
 });

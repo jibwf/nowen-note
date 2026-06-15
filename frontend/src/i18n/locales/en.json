@@ -1,4 +1,4 @@
-﻿{
+{
   "common": {
     "cancel": "Cancel",
     "chars": "chars",
@@ -1178,7 +1178,8 @@
       "month": "Month",
       "unscheduled": "Unscheduled",
       "noScheduledTasks": "No scheduled tasks",
-      "invalidDateRange": "Start date cannot be after due date"
+      "invalidDateRange": "Start date cannot be after due date",
+      "scheduleToday": "Schedule today"
     },
     "calendarEmpty": "No tasks this day",
     "repeat": {

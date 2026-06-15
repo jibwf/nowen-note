@@ -1180,19 +1180,20 @@
     "dropHere": "拖到这里",
     "calendarView": "日历视图",
     "calendarEmpty": "这天没有任务",
-    "timelineView": "时间线",
-    "startDate": "开始日期",
-    "gantt": {
-      "title": "时间线",
-      "today": "今天",
-      "prev": "上一段",
-      "next": "下一段",
-      "week": "周",
-      "month": "月",
-      "unscheduled": "未排期任务",
-      "noScheduledTasks": "暂无排期任务",
-      "invalidDateRange": "开始日期不能晚于截止日期"
-    },
+    "timelineView": "时间线",
+    "startDate": "开始日期",
+    "gantt": {
+      "title": "时间线",
+      "today": "今天",
+      "prev": "上一段",
+      "next": "下一段",
+      "week": "周",
+      "month": "月",
+      "unscheduled": "未排期任务",
+      "noScheduledTasks": "暂无排期任务",
+      "invalidDateRange": "开始日期不能晚于截止日期",
+      "scheduleToday": "设为今天"
+    },
     "repeat": {
       "title": "重复设置",
       "none": "不重复",

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { getTaskStartDate, getTaskDurationDays, moveTaskDateRange, isTaskScheduled } from "../taskGanttUtils";
-import type { Task } from "../../../../types";
+import { getTaskStartDate, getTaskDurationDays, moveTaskDateRange, isTaskScheduled, resizeTaskDateRange, getVisibleTaskBar, buildTimelineDays } from "../taskGanttUtils";
+import type { Task } from "../../../types";
 
 const baseTask: Task = {
   id: "1",
@@ -110,5 +110,56 @@ describe("moveTaskDateRange startDate-only", () => {
     expect(result).not.toBeNull();
     expect(result!.startDate).toBe("2026-06-20");
     expect(result!.dueDate).toBe("2026-06-20");
+  });
+});
+
+describe("resizeTaskDateRange", () => {
+  it("can resize start date", () => {
+    const task = { ...baseTask, startDate: "2026-06-10", dueDate: "2026-06-15" };
+    const result = resizeTaskDateRange(task, "start", "2026-06-12");
+    expect(result).toEqual({ startDate: "2026-06-12", dueDate: "2026-06-15" });
+  });
+
+  it("can resize end date", () => {
+    const task = { ...baseTask, startDate: "2026-06-10", dueDate: "2026-06-15" };
+    const result = resizeTaskDateRange(task, "end", "2026-06-20");
+    expect(result).toEqual({ startDate: "2026-06-10", dueDate: "2026-06-20" });
+  });
+
+  it("returns null for invalid range (start > end)", () => {
+    const task = { ...baseTask, startDate: "2026-06-10", dueDate: "2026-06-15" };
+    expect(resizeTaskDateRange(task, "start", "2026-06-20")).toBeNull();
+  });
+
+  it("can resize dueDate-only task", () => {
+    const task = { ...baseTask, dueDate: "2026-06-15" };
+    const result = resizeTaskDateRange(task, "end", "2026-06-20");
+    expect(result).not.toBeNull();
+    expect(result!.dueDate).toBe("2026-06-20");
+  });
+});
+
+describe("getVisibleTaskBar", () => {
+  it("returns null when task is completely outside view", () => {
+    const task = { ...baseTask, startDate: "2026-05-01", dueDate: "2026-05-10" };
+    const days = buildTimelineDays(new Date("2026-06-01"), 7);
+    expect(getVisibleTaskBar(task, days)).toBeNull();
+  });
+
+  it("returns bar with clippedStart when task starts before view", () => {
+    const task = { ...baseTask, startDate: "2026-05-28", dueDate: "2026-06-03" };
+    const days = buildTimelineDays(new Date("2026-06-01"), 7);
+    const bar = getVisibleTaskBar(task, days);
+    expect(bar).not.toBeNull();
+    expect(bar!.clippedStart).toBe(true);
+    expect(bar!.clippedEnd).toBe(false);
+  });
+
+  it("returns bar with clippedEnd when task ends after view", () => {
+    const task = { ...baseTask, startDate: "2026-06-05", dueDate: "2026-06-15" };
+    const days = buildTimelineDays(new Date("2026-06-01"), 7);
+    const bar = getVisibleTaskBar(task, days);
+    expect(bar).not.toBeNull();
+    expect(bar!.clippedEnd).toBe(true);
   });
 });

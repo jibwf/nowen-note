@@ -1,8 +1,8 @@
 import { useState, useMemo, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { Task, TaskProject } from "../../types";
-import { getTaskStartDate, getTaskEndDate, getTaskDurationDays, moveTaskDateRange, isTaskScheduled, buildTimelineDays } from "./taskGanttUtils";
-import { format, addDays, startOfWeek, startOfMonth, addWeeks, addMonths, isSameDay, isToday, isBefore } from "date-fns";
+import { getTaskStartDate, getTaskEndDate, moveTaskDateRange, isTaskScheduled, buildTimelineDays, getVisibleTaskBar, resizeTaskDateRange } from "./taskGanttUtils";
+import { format, addDays, startOfWeek, startOfMonth, addWeeks, addMonths, isToday, isBefore } from "date-fns";
 
 interface Props {
   tasks: Task[];
@@ -15,7 +15,13 @@ export default function TaskGanttView({ tasks, projects, onSelect, onUpdateTaskD
   const { t } = useTranslation();
   const [zoom, setZoom] = useState<"week" | "month">("week");
   const [cursor, setCursor] = useState(startOfWeek(new Date()));
-  const [dragState, setDragState] = useState<{ taskId: string; startX: number; startDate: string; diffDays: number } | null>(null);
+  const [dragState, setDragState] = useState<{
+    taskId: string;
+    startX: number;
+    startDate: string;
+    diffDays: number;
+    mode: "move" | "resize-start" | "resize-end";
+  } | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   const scheduledTasks = useMemo(() => tasks.filter(isTaskScheduled), [tasks]);
@@ -38,12 +44,12 @@ export default function TaskGanttView({ tasks, projects, onSelect, onUpdateTaskD
     setCursor(startOfWeek(new Date()));
   }, []);
 
-  const handleDragStart = useCallback((taskId: string, e: React.MouseEvent) => {
+  const handleDragStart = useCallback((taskId: string, e: React.MouseEvent, mode: "move" | "resize-start" | "resize-end" = "move") => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
     const startDate = getTaskStartDate(task) || getTaskEndDate(task);
     if (!startDate) return;
-    setDragState({ taskId, startX: e.clientX, startDate, diffDays: 0 });
+    setDragState({ taskId, startX: e.clientX, startDate, diffDays: 0, mode });
     e.preventDefault();
   }, [tasks]);
 
@@ -58,32 +64,27 @@ export default function TaskGanttView({ tasks, projects, onSelect, onUpdateTaskD
 
   const handleDragEnd = useCallback(() => {
     if (!dragState) return;
-    const { taskId, startDate, diffDays } = dragState;
+    const { taskId, startDate, diffDays, mode } = dragState;
     if (diffDays !== 0) {
-      const newStart = addDays(new Date(startDate + "T00:00:00"), diffDays);
-      const newStartStr = format(newStart, "yyyy-MM-dd");
       const task = tasks.find((t) => t.id === taskId);
       if (task) {
-        const result = moveTaskDateRange(task, newStartStr);
-        if (result) {
-          onUpdateTaskDateRange(taskId, result);
+        if (mode === "move") {
+          const newStart = addDays(new Date(startDate + "T00:00:00"), diffDays);
+          const newStartStr = format(newStart, "yyyy-MM-dd");
+          const result = moveTaskDateRange(task, newStartStr);
+          if (result) onUpdateTaskDateRange(taskId, result);
+        } else {
+          const targetDate = format(addDays(new Date(startDate + "T00:00:00"), diffDays), "yyyy-MM-dd");
+          const side = mode === "resize-start" ? "start" : "end";
+          const result = resizeTaskDateRange(task, side, targetDate);
+          if (result) onUpdateTaskDateRange(taskId, result);
         }
       }
     }
     setDragState(null);
   }, [dragState, tasks, onUpdateTaskDateRange]);
 
-  const getTaskBar = useCallback((task: Task) => {
-    const start = getTaskStartDate(task);
-    const end = getTaskEndDate(task);
-    if (!start || !end) return null;
-    const startDate = new Date(start + "T00:00:00");
-    const endDate = new Date(end + "T00:00:00");
-    const duration = getTaskDurationDays(task);
-    const startIdx = days.findIndex((d) => isSameDay(d, startDate));
-    if (startIdx === -1) return null;
-    return { left: startIdx, width: duration };
-  }, [days]);
+  const getBar = useCallback((task: Task) => getVisibleTaskBar(task, days), [days]);
 
   const getProjectColor = useCallback((projectId: string | null) => {
     if (!projectId) return "#6b7280";
@@ -151,32 +152,48 @@ export default function TaskGanttView({ tasks, projects, onSelect, onUpdateTaskD
           {/* Task bars */}
           <div className="relative">
             {scheduledTasks.map((task) => {
-              const bar = getTaskBar(task);
+              const bar = getBar(task);
               if (!bar) return null;
               const isDragging = dragState?.taskId === task.id;
               const isOverdue = !task.isCompleted && task.dueDate && isBefore(new Date(task.dueDate + "T23:59:59"), new Date());
               const dragOffset = isDragging && dragState ? (dragState.diffDays / days.length) * 100 : 0;
+              const roundedClass = `${bar.clippedStart ? "rounded-l-none" : "rounded-l"} ${bar.clippedEnd ? "rounded-r-none" : "rounded-r"}`;
               return (
                 <div key={task.id} className="relative h-8 border-b border-app-border">
                   <div
-                    className="absolute top-1 h-6 rounded cursor-grab active:cursor-grabbing"
+                    className={`absolute top-1 h-6 cursor-grab active:cursor-grabbing ${roundedClass}`}
                     style={{
                       left: `${(bar.left / days.length) * 100 + dragOffset}%`,
                       width: `${(bar.width / days.length) * 100}%`,
                       backgroundColor: isOverdue ? "#ef4444" : getProjectColor(task.projectId),
                       opacity: task.isCompleted ? 0.4 : 0.8,
                     }}
-                    onMouseDown={(e) => handleDragStart(task.id, e)}
+                    onMouseDown={(e) => handleDragStart(task.id, e, "move")}
                     onClick={() => onSelect(task)}
                     title={task.title}
-                  />
+                  >
+                    {/* Left resize handle */}
+                    <div
+                      className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize opacity-0 hover:opacity-100 bg-white/30 rounded-l"
+                      onMouseDown={(e) => { e.stopPropagation(); handleDragStart(task.id, e, "resize-start"); }}
+                    />
+                    {/* Right resize handle */}
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize opacity-0 hover:opacity-100 bg-white/30 rounded-r"
+                      onMouseDown={(e) => { e.stopPropagation(); handleDragStart(task.id, e, "resize-end"); }}
+                    />
+                  </div>
                 </div>
               );
             })}
           </div>
 
           {/* Today column indicator */}
-          <div className="absolute top-0 bottom-0 w-px bg-accent-primary/30 pointer-events-none" style={{ left: `${(days.findIndex(isToday) / days.length) * 100}%` }} />
+          {(() => {
+            const todayIdx = days.findIndex((d) => isToday(d));
+            if (todayIdx === -1) return null;
+            return <div className="absolute top-0 bottom-0 w-px bg-accent-primary/30 pointer-events-none" style={{ left: `${(todayIdx / days.length) * 100}%` }} />;
+          })()}
         </div>
       </div>
 
@@ -186,13 +203,21 @@ export default function TaskGanttView({ tasks, projects, onSelect, onUpdateTaskD
           <h3 className="text-sm font-medium text-tx-secondary mb-2">{t("tasks.gantt.unscheduled")}</h3>
           <div className="flex flex-wrap gap-2">
             {unscheduledTasks.map((task) => (
-              <button
-                key={task.id}
-                onClick={() => onSelect(task)}
-                className="px-2 py-1 text-xs rounded bg-app-bg hover:bg-app-bg/80 text-tx-primary"
-              >
-                {task.title}
-              </button>
+              <div key={task.id} className="flex items-center gap-1">
+                <button onClick={() => onSelect(task)} className="px-2 py-1 text-xs rounded bg-app-bg hover:bg-app-bg/80 text-tx-primary">
+                  {task.title}
+                </button>
+                <button
+                  onClick={() => {
+                    const today = format(new Date(), "yyyy-MM-dd");
+                    onUpdateTaskDateRange(task.id, { startDate: today, dueDate: today });
+                  }}
+                  className="px-1.5 py-1 text-[10px] rounded bg-accent-primary/10 text-accent-primary hover:bg-accent-primary/20"
+                  title={t("tasks.gantt.scheduleToday")}
+                >
+                  {t("tasks.gantt.scheduleToday")}
+                </button>
+              </div>
             ))}
           </div>
         </div>

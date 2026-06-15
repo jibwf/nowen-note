@@ -5,7 +5,7 @@ import {
   CalendarDays, AlertTriangle, CheckCheck, Inbox,
   Search, X as XIcon, GripVertical,
   CheckSquare, Trash2, Square,
-  LayoutGrid, LayoutList, Calendar as CalendarIcon, BarChart3, FolderOpen, Plus, ChevronRight,
+  LayoutGrid, LayoutList, Calendar as CalendarIcon, BarChart3, FolderOpen, Plus, ChevronRight, Bell,
   MoreHorizontal, Trash2 as TrashIcon, FileText,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -35,6 +35,7 @@ import { TaskCalendarView } from "./tasks/TaskCalendarView";
 import TaskGanttView from "./tasks/TaskGanttView";
 import { moveTaskToDate } from "./tasks/taskDateUtils";
 import { TaskTemplatePicker } from "./tasks/TaskTemplatePicker";
+import { ReminderCenter } from "./tasks/ReminderCenter";
 import { MobileProjectTrigger, MobileProjectPicker } from "./tasks/MobileProjectPicker";
 
 /* ===== Main Component ===== */
@@ -91,6 +92,8 @@ export default function TaskCenter() {
   const [showProjectMenu, setShowProjectMenu] = useState<string | null>(null);
   const [mobileProjectOpen, setMobileProjectOpen] = useState(false);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [showReminderCenter, setShowReminderCenter] = useState(false);
+  const [reminderBadgeCount, setReminderBadgeCount] = useState(0);
 
   // Phase 4: batch select mode
   const [selectMode, setSelectMode] = useState(false);
@@ -178,8 +181,15 @@ export default function TaskCenter() {
     } catch (e) { /* ignore */ }
   }, []);
 
+  const loadReminderBadge = useCallback(async () => {
+    try {
+      const data = await api.getReminderOverview(7);
+      setReminderBadgeCount(data.missed.length + data.today.length);
+    } catch { /* ignore */ }
+  }, []);
 
-  useEffect(() => { loadTasks(); loadDependencies(); }, [loadTasks, loadDependencies]);
+
+  useEffect(() => { loadTasks(); loadDependencies(); loadReminderBadge(); }, [loadTasks, loadDependencies, loadReminderBadge]);
 
   useEffect(() => {
     const onWs = () => { setSelectedTaskId(null); setSearchQuery(""); setSelectedIds(new Set()); setSelectMode(false); setSelectedProjectId(null); setWorkspaceVersion((v) => v + 1); reload(); };
@@ -740,6 +750,19 @@ export default function TaskCenter() {
               <FileText size={13} />
               {t("tasks.templates.button")}
             </button>
+            <button
+              type="button"
+              onClick={() => setShowReminderCenter(true)}
+              className="flex items-center gap-1 px-2 py-1 text-xs text-tx-tertiary hover:text-accent-primary rounded-md hover:bg-accent-primary/5 transition-colors relative"
+            >
+              <Bell size={13} />
+              {t("tasks.reminderCenter.open")}
+              {reminderBadgeCount > 0 && (
+                <span className="absolute -top-1 -right-1 text-[9px] min-w-[14px] h-[14px] px-0.5 rounded-full bg-amber-500 text-white flex items-center justify-center">
+                  {reminderBadgeCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
@@ -949,11 +972,17 @@ export default function TaskCenter() {
           />
         )}
       </AnimatePresence>
+
+      {/* Reminder Center */}
+      <AnimatePresence>
+        {showReminderCenter && (
+          <ReminderCenter
+            open={showReminderCenter}
+            onClose={() => setShowReminderCenter(false)}
+            onSelectTask={(taskId) => setSelectedTaskId(taskId)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
-
-
-
-
-

@@ -1244,6 +1244,25 @@
       "suggestReschedule": "建议顺延",
       "applySuggestion": "应用建议",
       "rescheduleReason": "前置任务未完成"
+    },
+    "reminderCenter": {
+      "title": "提醒中心",
+      "refresh": "刷新",
+      "missed": "已错过",
+      "today": "今日",
+      "upcoming": "即将到来",
+      "disabled": "已关闭",
+      "empty": "暂无提醒",
+      "loadFailed": "加载提醒失败",
+      "open": "提醒",
+      "permissionEnabled": "浏览器通知已启用",
+      "permissionDenied": "浏览器通知已被拒绝，请在浏览器设置中开启",
+      "permissionDefault": "未开启通知",
+      "enableNotification": "开启浏览器通知",
+      "desktopNotificationEnabled": "桌面通知已启用",
+      "reminderAt": "提醒时间",
+      "dueAt": "截止时间",
+      "offset": "提前"
     }
   },
   "tags": {

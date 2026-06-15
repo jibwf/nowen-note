@@ -1233,6 +1233,25 @@
       "suggestReschedule": "Suggest reschedule",
       "applySuggestion": "Apply suggestion",
       "rescheduleReason": "Predecessor incomplete"
+    },
+    "reminderCenter": {
+      "title": "Reminder Center",
+      "refresh": "Refresh",
+      "missed": "Missed",
+      "today": "Today",
+      "upcoming": "Upcoming",
+      "disabled": "Disabled",
+      "empty": "No reminders",
+      "loadFailed": "Failed to load reminders",
+      "open": "Reminders",
+      "permissionEnabled": "Browser notifications enabled",
+      "permissionDenied": "Browser notifications blocked. Please enable in browser settings.",
+      "permissionDefault": "Notifications not enabled",
+      "enableNotification": "Enable browser notifications",
+      "desktopNotificationEnabled": "Desktop notifications enabled",
+      "reminderAt": "Reminder",
+      "dueAt": "Due",
+      "offset": "Offset"
     }
   },
   "tags": {

@@ -1198,6 +1198,14 @@ export const api = {
     request<import("@/types").TaskReminder>(`/task-reminders/${reminderId}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteTaskReminder: (reminderId: string) =>
     request(`/task-reminders/${reminderId}`, { method: "DELETE" }),
+  getReminderOverview: (days?: number) => {
+    const ws = getCurrentWorkspace();
+    const params: string[] = [];
+    if (ws && ws !== "personal") params.push(`workspaceId=${encodeURIComponent(ws)}`);
+    if (days) params.push(`days=${days}`);
+    const qs = params.length > 0 ? "?" + params.join("&") : "";
+    return request<import("@/types").ReminderOverview>(`/task-reminders/overview${qs}`);
+  },
   getTaskStats: () => {
     const ws = getCurrentWorkspace();
     const qs = ws && ws !== "personal" ? `?workspaceId=${encodeURIComponent(ws)}` : "";

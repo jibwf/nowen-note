@@ -26,6 +26,117 @@ function resolveScope(
 }
 
 // 获取某任务的所有提醒配置
+// ---------------------------------------------------------------------------
+// GET /overview  -- reminder overview grouped by missed/today/upcoming/disabled
+// ---------------------------------------------------------------------------
+taskReminders.get("/overview", (c) => {
+  const db = getDb();
+  const userId = c.req.header("X-User-Id")!;
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+
+  const scope = resolveScope(c, userId);
+  if (scope.error) return c.json({ error: scope.error }, 403);
+
+  const rawDays = Number(c.req.query("days") || "7");
+  const days = Math.min(Math.max(1, isNaN(rawDays) ? 7 : rawDays), 30);
+
+  const now = Date.now();
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 999);
+  const todayEndMs = todayEnd.getTime();
+  const horizonMs = todayEndMs + days * 86400000;
+
+  let rows: any[];
+  if (scope.workspaceId) {
+    rows = db.prepare(`
+      SELECT r.id AS reminderId, r.taskId, r.offsetMinutes, r.enabled, r.lastNotifiedAt,
+             t.title AS taskTitle, t.status AS taskStatus, t.isCompleted,
+             t.dueDate, t.dueAt
+      FROM task_reminders r
+      JOIN tasks t ON t.id = r.taskId
+      WHERE r.userId = ? AND t.workspaceId = ?
+      ORDER BY r.createdAt DESC
+    `).all(userId, scope.workspaceId) as any[];
+  } else {
+    rows = db.prepare(`
+      SELECT r.id AS reminderId, r.taskId, r.offsetMinutes, r.enabled, r.lastNotifiedAt,
+             t.title AS taskTitle, t.status AS taskStatus, t.isCompleted,
+             t.dueDate, t.dueAt
+      FROM task_reminders r
+      JOIN tasks t ON t.id = r.taskId
+      WHERE r.userId = ? AND t.workspaceId IS NULL
+      ORDER BY r.createdAt DESC
+    `).all(userId) as any[];
+  }
+
+  const missed: any[] = [];
+  const today: any[] = [];
+  const upcoming: any[] = [];
+  const disabled: any[] = [];
+
+  for (const row of rows) {
+    let reminderAt: string | null = null;
+    if (row.dueAt) {
+      const dueMs = new Date(row.dueAt).getTime();
+      const rMs = dueMs - row.offsetMinutes * 60000;
+      reminderAt = new Date(rMs).toISOString();
+    } else if (row.dueDate) {
+      const dueMs = new Date(row.dueDate + "T23:59:59").getTime();
+      const rMs = dueMs - row.offsetMinutes * 60000;
+      reminderAt = new Date(rMs).toISOString();
+    }
+
+    const item: any = {
+      reminderId: row.reminderId,
+      taskId: row.taskId,
+      taskTitle: row.taskTitle,
+      taskStatus: row.taskStatus,
+      isCompleted: row.isCompleted,
+      dueDate: row.dueDate,
+      dueAt: row.dueAt,
+      offsetMinutes: row.offsetMinutes,
+      enabled: row.enabled,
+      lastNotifiedAt: row.lastNotifiedAt,
+      reminderAt,
+      group: "",
+    };
+
+    if (row.enabled !== 1 || row.isCompleted === 1) {
+      item.group = "disabled";
+      disabled.push(item);
+      continue;
+    }
+
+    if (!reminderAt) {
+      item.group = "disabled";
+      disabled.push(item);
+      continue;
+    }
+
+    const reminderMs = new Date(reminderAt).getTime();
+
+    if (reminderMs < now) {
+      item.group = "missed";
+      missed.push(item);
+      continue;
+    }
+
+    if (reminderMs <= todayEndMs) {
+      item.group = "today";
+      today.push(item);
+      continue;
+    }
+
+    if (reminderMs <= horizonMs) {
+      item.group = "upcoming";
+      upcoming.push(item);
+      continue;
+    }
+  }
+
+  return c.json({ missed, today, upcoming, disabled });
+});
+
 taskReminders.get("/:taskId", (c) => {
   const db = getDb();
   const userId = c.req.header("X-User-Id")!;

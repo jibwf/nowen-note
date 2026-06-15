@@ -418,6 +418,28 @@ export interface TaskReminder {
   updatedAt: string;
 }
 
+export interface ReminderOverviewItem {
+  reminderId: string;
+  taskId: string;
+  taskTitle: string;
+  taskStatus: TaskStatus;
+  isCompleted: number;
+  dueDate: string | null;
+  dueAt: string | null;
+  offsetMinutes: number;
+  enabled: number;
+  lastNotifiedAt: string | null;
+  reminderAt: string | null;
+  group: "missed" | "today" | "upcoming" | "disabled";
+}
+
+export interface ReminderOverview {
+  missed: ReminderOverviewItem[];
+  today: ReminderOverviewItem[];
+  upcoming: ReminderOverviewItem[];
+  disabled: ReminderOverviewItem[];
+}
+
 /** Task status for kanban board */
 export type TaskStatus = "todo" | "doing" | "done" | "blocked";
 

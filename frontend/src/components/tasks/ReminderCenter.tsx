@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { motion } from "framer-motion";
-import { X, Bell, BellOff, Clock, AlertTriangle, Loader2, RefreshCw, Monitor } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { X, Bell, BellOff, Clock, AlertTriangle, Loader2, RefreshCw, Monitor, MoreHorizontal, ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -29,6 +29,12 @@ function formatOffset(minutes: number, t: (key: string, opts?: any) => string): 
     : t("tasks.reminderCenter.hoursBefore", { hours: h });
 }
 
+const SNOOZE_OPTIONS = [
+  { key: "10min", minutes: 10 },
+  { key: "1hour", minutes: 60 },
+  { key: "tomorrow", minutes: 24 * 60 },
+];
+
 export function ReminderCenter({ open, onClose, onSelectTask }: ReminderCenterProps) {
   const { t } = useTranslation();
   const [overview, setOverview] = useState<ReminderOverview | null>(null);
@@ -40,6 +46,9 @@ export function ReminderCenter({ open, onClose, onSelectTask }: ReminderCenterPr
     if ((window as any).nowenDesktop?.taskNotify || (window as any).nowenDesktop?.taskNotifyPermission) return "electron";
     return typeof Notification !== "undefined" ? Notification.permission : "default";
   });
+  const [actionMenuId, setActionMenuId] = useState<string | null>(null);
+  const [snoozeMenuId, setSnoozeMenuId] = useState<string | null>(null);
+  const [acting, setActing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -78,6 +87,49 @@ export function ReminderCenter({ open, onClose, onSelectTask }: ReminderCenterPr
   const handleClickItem = (item: ReminderOverviewItem) => {
     onClose();
     onSelectTask(item.taskId);
+  };
+
+  const handleDisableReminder = async (item: ReminderOverviewItem) => {
+    setActing(item.reminderId);
+    try {
+      await api.updateTaskReminder(item.reminderId, { enabled: false });
+      await load();
+    } catch { /* ignore */ }
+    finally { setActing(null); setActionMenuId(null); }
+  };
+
+  const handleEnableReminder = async (item: ReminderOverviewItem) => {
+    setActing(item.reminderId);
+    try {
+      await api.updateTaskReminder(item.reminderId, { enabled: true });
+      await load();
+    } catch { /* ignore */ }
+    finally { setActing(null); setActionMenuId(null); }
+  };
+
+  const handleSnooze = async (item: ReminderOverviewItem, minutes: number) => {
+    setActing(item.reminderId);
+    try {
+      // Create a new reminder with the snooze offset from now
+      // The snooze means: remind me in `minutes` from now
+      // We update the existing reminder's offsetMinutes to represent "minutes before due"
+      // For snooze we need to compute a new offsetMinutes based on remaining time to due
+      const dueStr = item.dueAt || (item.dueDate ? item.dueDate + "T23:59:59" : null);
+      if (dueStr) {
+        const dueMs = new Date(dueStr).getTime();
+        const snoozeUntilMs = Date.now() + minutes * 60000;
+        // If snooze time is after due, just set offset to 0 (notify at due)
+        const newOffset = Math.max(0, Math.round((dueMs - snoozeUntilMs) / 60000));
+        await api.updateTaskReminder(item.reminderId, { offsetMinutes: newOffset, enabled: true });
+      } else {
+        // No due date - just update offsetMinutes to snooze value
+        // We need to use createTaskReminder since we can't meaningfully set offset without due
+        // Instead, just toggle back on and set a sensible offset
+        await api.updateTaskReminder(item.reminderId, { offsetMinutes: minutes, enabled: true });
+      }
+      await load();
+    } catch { /* ignore */ }
+    finally { setActing(null); setSnoozeMenuId(null); }
   };
 
   if (!open) return null;
@@ -210,33 +262,136 @@ export function ReminderCenter({ open, onClose, onSelectTask }: ReminderCenterPr
                     {!isCollapsed && items.length > 0 && (
                       <div>
                         {items.map((item) => (
-                          <button
+                          <div
                             key={item.reminderId}
-                            type="button"
-                            onClick={() => handleClickItem(item)}
-                            className="w-full text-left px-4 py-2 hover:bg-bg-hover transition-colors border-b border-app-border/50"
+                            className="relative border-b border-app-border/50"
                           >
-                            <div className="text-sm text-tx-primary truncate">
-                              {item.taskTitle}
-                            </div>
-                            <div className="flex items-center gap-2 mt-0.5 text-[11px] text-tx-tertiary">
-                              {item.reminderAt && (
-                                <span>
-                                  {t("tasks.reminderCenter.reminderAt")}:{" "}
-                                  {new Date(item.reminderAt).toLocaleString()}
-                                </span>
+                            <button
+                              type="button"
+                              onClick={() => handleClickItem(item)}
+                              className="w-full text-left px-4 py-2 hover:bg-bg-hover transition-colors"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="text-sm text-tx-primary truncate flex-1">
+                                  {item.taskTitle}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActionMenuId(actionMenuId === item.reminderId ? null : item.reminderId);
+                                    setSnoozeMenuId(null);
+                                  }}
+                                  className="ml-2 p-1 rounded text-tx-tertiary hover:text-tx-secondary hover:bg-bg-hover transition-colors"
+                                  disabled={acting === item.reminderId}
+                                >
+                                  <MoreHorizontal size={14} />
+                                </button>
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5 text-[11px] text-tx-tertiary">
+                                {item.reminderAt && (
+                                  <span>
+                                    {t("tasks.reminderCenter.reminderAt")}:{" "}
+                                    {new Date(item.reminderAt).toLocaleString()}
+                                  </span>
+                                )}
+                                {(item.dueAt || item.dueDate) && (
+                                  <span>
+                                    {t("tasks.reminderCenter.dueAt")}:{" "}
+                                    {item.dueAt
+                                      ? new Date(item.dueAt).toLocaleString()
+                                      : item.dueDate}
+                                  </span>
+                                )}
+                                <span>{formatOffset(item.offsetMinutes, t)}</span>
+                              </div>
+                            </button>
+
+                            {/* Action menu */}
+                            <AnimatePresence>
+                              {actionMenuId === item.reminderId && (
+                                <motion.div
+                                  initial={{ opacity: 0, y: -4 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={{ opacity: 0, y: -4 }}
+                                  transition={{ duration: 0.12 }}
+                                  className="absolute right-3 top-full z-10 bg-bg-primary border border-app-border rounded-lg shadow-lg py-1 min-w-[140px]"
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); handleClickItem(item); }}
+                                    className="w-full text-left px-3 py-1.5 text-xs text-tx-secondary hover:bg-bg-hover flex items-center gap-2"
+                                  >
+                                    <ExternalLink size={12} />
+                                    {t("tasks.reminderCenter.goToTask")}
+                                  </button>
+
+                                  {(key === "missed" || key === "today" || key === "upcoming") && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSnoozeMenuId(snoozeMenuId === item.reminderId ? null : item.reminderId);
+                                      }}
+                                      className="w-full text-left px-3 py-1.5 text-xs text-tx-secondary hover:bg-bg-hover flex items-center gap-2"
+                                    >
+                                      <Clock size={12} />
+                                      {t("tasks.reminderCenter.snooze")}
+                                    </button>
+                                  )}
+
+                                  {(key === "missed" || key === "today" || key === "upcoming") && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); handleDisableReminder(item); }}
+                                      disabled={acting === item.reminderId}
+                                      className="w-full text-left px-3 py-1.5 text-xs text-tx-secondary hover:bg-bg-hover flex items-center gap-2"
+                                    >
+                                      <BellOff size={12} />
+                                      {t("tasks.reminderCenter.disableReminder")}
+                                    </button>
+                                  )}
+
+                                  {key === "disabled" && item.enabled !== 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); handleEnableReminder(item); }}
+                                      disabled={acting === item.reminderId}
+                                      className="w-full text-left px-3 py-1.5 text-xs text-tx-secondary hover:bg-bg-hover flex items-center gap-2"
+                                    >
+                                      <Bell size={12} />
+                                      {t("tasks.reminderCenter.enableReminder")}
+                                    </button>
+                                  )}
+                                </motion.div>
                               )}
-                              {(item.dueAt || item.dueDate) && (
-                                <span>
-                                  {t("tasks.reminderCenter.dueAt")}:{" "}
-                                  {item.dueAt
-                                    ? new Date(item.dueAt).toLocaleString()
-                                    : item.dueDate}
-                                </span>
+                            </AnimatePresence>
+
+                            {/* Snooze submenu */}
+                            <AnimatePresence>
+                              {snoozeMenuId === item.reminderId && (
+                                <motion.div
+                                  initial={{ opacity: 0, y: -4 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={{ opacity: 0, y: -4 }}
+                                  transition={{ duration: 0.12 }}
+                                  className="absolute right-3 top-full mt-[60px] z-10 bg-bg-primary border border-app-border rounded-lg shadow-lg py-1 min-w-[120px]"
+                                >
+                                  {SNOOZE_OPTIONS.map((opt) => (
+                                    <button
+                                      key={opt.key}
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); handleSnooze(item, opt.minutes); }}
+                                      disabled={acting === item.reminderId}
+                                      className="w-full text-left px-3 py-1.5 text-xs text-tx-secondary hover:bg-bg-hover"
+                                    >
+                                      {t(`tasks.reminderCenter.snooze${opt.key}`)}
+                                    </button>
+                                  ))}
+                                </motion.div>
                               )}
-                              <span>{formatOffset(item.offsetMinutes, t)}</span>
-                            </div>
-                          </button>
+                            </AnimatePresence>
+                          </div>
                         ))}
                       </div>
                     )}

@@ -1255,7 +1255,14 @@
       "atDue": "At due time",
       "minutesBefore": "{{minutes}} min before",
       "hoursBefore": "{{hours}}h before",
-      "hoursMinutesBefore": "{{hours}}h {{minutes}}m before"
+      "hoursMinutesBefore": "{{hours}}h {{minutes}}m before",
+      "goToTask": "Go to task",
+      "snooze": "Snooze",
+      "snooze10min": "10 minutes",
+      "snooze1hour": "1 hour",
+      "snoozeTomorrow": "Tomorrow",
+      "disableReminder": "Disable reminder",
+      "enableReminder": "Enable reminder"
     }
   },
   "tags": {

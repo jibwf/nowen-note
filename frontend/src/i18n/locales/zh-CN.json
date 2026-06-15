@@ -1266,7 +1266,14 @@
       "atDue": "准时提醒",
       "minutesBefore": "提前 {{minutes}} 分钟",
       "hoursBefore": "提前 {{hours}} 小时",
-      "hoursMinutesBefore": "提前 {{hours}} 小时 {{minutes}} 分钟"
+      "hoursMinutesBefore": "提前 {{hours}} 小时 {{minutes}} 分钟",
+      "goToTask": "跳转任务",
+      "snooze": "稍后提醒",
+      "snooze10min": "10 分钟后",
+      "snooze1hour": "1 小时后",
+      "snoozeTomorrow": "明天",
+      "disableReminder": "关闭提醒",
+      "enableReminder": "开启提醒"
     }
   },
   "tags": {

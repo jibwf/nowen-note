@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import i18n from "i18next";
 import { api } from "@/lib/api";
 
 /**
@@ -86,14 +87,14 @@ export function useReminderNotifier() {
               let title: string;
               let body: string;
               if (notifType === "dependency_ready") {
-                title = `\u2705 ${r.taskTitle}`;
-                body = "Predecessor completed. You can start this task.";
+                title = `\u2705 ${i18n.t("tasks.notifications.dependencyReadyTitle")}`;
+                body = i18n.t("tasks.notifications.dependencyReadyBody", { taskTitle: r.taskTitle });
               } else if (notifType === "overdue_daily") {
-                title = `\u26A0\uFE0F ${r.taskTitle}`;
-                body = "This task is overdue.";
+                title = `\u26A0\uFE0F ${i18n.t("tasks.notifications.overdueDailyTitle")}`;
+                body = i18n.t("tasks.notifications.overdueDailyBody", { taskTitle: r.taskTitle });
               } else {
-                title = `\u23F0 ${r.taskTitle}`;
-                body = r.taskTitle;
+                title = `\u23F0 ${i18n.t("tasks.notifications.taskReminderTitle")}`;
+                body = i18n.t("tasks.notifications.taskReminderBody", { taskTitle: r.taskTitle });
               }
               sendNotification(title, body);
             }

@@ -1,4 +1,4 @@
-﻿import { format, isToday, isPast, isTomorrow, isThisWeek, parseISO } from "date-fns";
+import { format, isToday, isPast, isTomorrow, isThisWeek, parseISO } from "date-fns";
 import { zhCN, enUS } from "date-fns/locale";
 import { Calendar } from "lucide-react";
 import { useTranslation } from "react-i18next";

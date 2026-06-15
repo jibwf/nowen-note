@@ -1264,6 +1264,14 @@
       "disableReminder": "Disable reminder",
       "enableReminder": "Enable reminder",
       "snoozedUntil": "Snoozed until"
+    },
+    "notifications": {
+      "taskReminderTitle": "Task reminder",
+      "taskReminderBody": "{{taskTitle}}",
+      "dependencyReadyTitle": "Task is ready to start",
+      "dependencyReadyBody": "Predecessor completed. You can start: {{taskTitle}}",
+      "overdueDailyTitle": "Task overdue",
+      "overdueDailyBody": "{{taskTitle}} is overdue."
     }
   },
   "tags": {

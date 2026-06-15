@@ -1275,6 +1275,14 @@
       "disableReminder": "关闭提醒",
       "enableReminder": "开启提醒",
       "snoozedUntil": "稍后提醒至"
+    },
+    "notifications": {
+      "taskReminderTitle": "任务提醒",
+      "taskReminderBody": "{{taskTitle}}",
+      "dependencyReadyTitle": "后续任务可以开始",
+      "dependencyReadyBody": "前置任务已完成，可以开始：{{taskTitle}}",
+      "overdueDailyTitle": "任务已逾期",
+      "overdueDailyBody": "{{taskTitle}} 已逾期，请及时处理"
     }
   },
   "tags": {

@@ -1,0 +1,84 @@
+import { describe, it, expect } from "vitest";
+import { wouldCreateCycle, buildTaskRowIndex, getDependencyLinePoints } from "../taskDependencyUtils";
+import type { TaskDependency } from "../../../types";
+
+function dep(pre: string, suc: string): TaskDependency {
+  return {
+    id: `${pre}->${suc}`,
+    userId: "u1",
+    workspaceId: null,
+    predecessorTaskId: pre,
+    successorTaskId: suc,
+    type: "finish_to_start",
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
+describe("wouldCreateCycle", () => {
+  it("A -> B is not a cycle", () => {
+    expect(wouldCreateCycle([dep("A", "B")], "A", "B")).toBe(false);
+  });
+
+  it("A -> B, then B -> A would be a cycle", () => {
+    expect(wouldCreateCycle([dep("A", "B")], "B", "A")).toBe(true);
+  });
+
+  it("A -> B -> C, then C -> A would be a cycle", () => {
+    const deps = [dep("A", "B"), dep("B", "C")];
+    expect(wouldCreateCycle(deps, "C", "A")).toBe(true);
+  });
+
+  it("unrelated chain does not cycle", () => {
+    const deps = [dep("A", "B"), dep("C", "D")];
+    expect(wouldCreateCycle(deps, "A", "D")).toBe(false);
+  });
+
+  it("self dependency is always a cycle", () => {
+    expect(wouldCreateCycle([], "A", "A")).toBe(true);
+  });
+
+  it("empty dependencies never cycle", () => {
+    expect(wouldCreateCycle([], "A", "B")).toBe(false);
+  });
+
+  it("deep chain A->B->C->D, then D->A cycles", () => {
+    const deps = [dep("A", "B"), dep("B", "C"), dep("C", "D")];
+    expect(wouldCreateCycle(deps, "D", "A")).toBe(true);
+  });
+
+  it("deep chain A->B->C->D, then D->B cycles", () => {
+    const deps = [dep("A", "B"), dep("B", "C"), dep("C", "D")];
+    expect(wouldCreateCycle(deps, "D", "B")).toBe(true);
+  });
+});
+
+describe("buildTaskRowIndex", () => {
+  it("maps task ids to array indices", () => {
+    const tasks = [{ id: "a" }, { id: "b" }, { id: "c" }] as any;
+    const map = buildTaskRowIndex(tasks);
+    expect(map.get("a")).toBe(0);
+    expect(map.get("b")).toBe(1);
+    expect(map.get("c")).toBe(2);
+  });
+});
+
+describe("getDependencyLinePoints", () => {
+  it("returns elbow connector for different rows", () => {
+    const points = getDependencyLinePoints(
+      { left: 0, width: 5, row: 0 },
+      { left: 3, width: 5, row: 2 }
+    );
+    expect(points.length).toBe(4);
+    expect(points[0].x).toBe(5); // right edge of predecessor
+    expect(points[3].x).toBe(3); // left edge of successor
+  });
+
+  it("returns horizontal line for same row", () => {
+    const points = getDependencyLinePoints(
+      { left: 0, width: 5, row: 1 },
+      { left: 6, width: 5, row: 1 }
+    );
+    expect(points.length).toBe(2);
+  });
+});

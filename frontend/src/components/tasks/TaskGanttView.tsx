@@ -1,7 +1,8 @@
 import { useState, useMemo, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import type { Task, TaskProject } from "../../types";
+import type { Task, TaskProject, TaskDependency } from "../../types";
 import { getTaskStartDate, getTaskEndDate, moveTaskDateRange, isTaskScheduled, buildTimelineDays, getVisibleTaskBar, resizeTaskDateRange } from "./taskGanttUtils";
+import { buildTaskRowIndex, getDependencyLinePoints } from "./taskDependencyUtils";
 import { format, addDays, startOfWeek, startOfMonth, addWeeks, addMonths, isToday, isBefore } from "date-fns";
 
 interface Props {
@@ -9,9 +10,10 @@ interface Props {
   projects: TaskProject[];
   onSelect: (task: Task) => void;
   onUpdateTaskDateRange: (taskId: string, patch: { startDate?: string | null; dueDate?: string | null }) => void;
+  dependencies?: TaskDependency[];
 }
 
-export default function TaskGanttView({ tasks, projects, onSelect, onUpdateTaskDateRange }: Props) {
+export default function TaskGanttView({ tasks, projects, onSelect, onUpdateTaskDateRange, dependencies = [] }: Props) {
   const { t } = useTranslation();
   const [zoom, setZoom] = useState<"week" | "month">("week");
   const [cursor, setCursor] = useState(startOfWeek(new Date()));
@@ -25,6 +27,7 @@ export default function TaskGanttView({ tasks, projects, onSelect, onUpdateTaskD
   const gridRef = useRef<HTMLDivElement>(null);
 
   const scheduledTasks = useMemo(() => tasks.filter(isTaskScheduled), [tasks]);
+  const rowIndexMap = useMemo(() => buildTaskRowIndex(scheduledTasks), [scheduledTasks]);
   const unscheduledTasks = useMemo(() => tasks.filter((t) => !isTaskScheduled(t)), [tasks]);
 
   const days = useMemo(() => {
@@ -193,6 +196,48 @@ export default function TaskGanttView({ tasks, projects, onSelect, onUpdateTaskD
             const todayIdx = days.findIndex((d) => isToday(d));
             if (todayIdx === -1) return null;
             return <div className="absolute top-0 bottom-0 w-px bg-accent-primary/30 pointer-events-none" style={{ left: `${(todayIdx / days.length) * 100}%` }} />;
+
+          {/* Dependency lines */}
+          {dependencies.length > 0 && (() => {
+            const dayW = 100 / days.length;
+            const rowH = 32;
+            return (
+              <svg className="absolute inset-0 pointer-events-none" style={{ width: "100%", height: scheduledTasks.length * rowH }}>
+                <defs>
+                  <marker id="arrowhead" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
+                    <polygon points="0 0, 6 2, 0 4" className="fill-accent-primary/40" />
+                  </marker>
+                </defs>
+                {dependencies.map((dep) => {
+                  const predRow = rowIndexMap.get(dep.predecessorTaskId);
+                  const succRow = rowIndexMap.get(dep.successorTaskId);
+                  if (predRow === undefined || succRow === undefined) return null;
+                  const pred = scheduledTasks[predRow];
+                  const succ = scheduledTasks[succRow];
+                  if (!pred || !succ) return null;
+                  const predBar = getBar(pred);
+                  const succBar = getBar(succ);
+                  if (!predBar || !succBar) return null;
+                  const points = getDependencyLinePoints(
+                    { left: (predBar.left / days.length) * 100, width: (predBar.width / days.length) * 100, row: predRow },
+                    { left: (succBar.left / days.length) * 100, width: (succBar.width / days.length) * 100, row: succRow }
+                  );
+                  const pathStr = points.map((p) => `${p.x * dayW / 100 * (days.length)},${p.y}`).join(" ");
+                  const allCompleted = pred.isCompleted && succ.isCompleted;
+                  return (
+                    <polyline
+                      key={dep.id}
+                      points={pathStr}
+                      fill="none"
+                      className={allCompleted ? "stroke-gray-300/40" : "stroke-accent-primary/40"}
+                      strokeWidth="1.5"
+                      markerEnd="url(#arrowhead)"
+                    />
+                  );
+                })}
+              </svg>
+            );
+          })()}
           })()}
         </div>
       </div>

@@ -1169,6 +1169,22 @@ export const api = {
     request(`/task-templates/${id}`, { method: "DELETE" }),
   applyTaskTemplate: (id: string, options: { projectId?: string | null; parentId?: string | null; baseDate?: string | null }) =>
     request<{ createdTasks: any[]; count: number }>(`/task-templates/${id}/apply`, { method: "POST", body: JSON.stringify(options) }),
+
+  // Task dependencies
+  getTaskDependencies: (taskId?: string) => {
+    const ws = getCurrentWorkspace();
+    const params: string[] = [];
+    if (ws && ws !== "personal") params.push("workspaceId=" + encodeURIComponent(ws));
+    if (taskId) params.push("taskId=" + encodeURIComponent(taskId));
+    const qs = params.length > 0 ? "?" + params.join("&") : "";
+    return request<import("@/types").TaskDependency[]>(`/task-dependencies${qs}`);
+  },
+  createTaskDependency: (data: { predecessorTaskId: string; successorTaskId: string; type?: string }) => {
+    return request<import("@/types").TaskDependency>("/task-dependencies", { method: "POST", body: JSON.stringify(data) });
+  },
+  deleteTaskDependency: (id: string) => {
+    return request<{ success: boolean }>(`/task-dependencies/${id}`, { method: "DELETE" });
+  },
     // Task reminders
   getRecentReminders: (since: number) =>
     request<{ reminders: Array<{ reminderId: string; taskId: string; taskTitle: string; triggeredAt: number }> }>(

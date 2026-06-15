@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api";
-import { Task, TaskFilter, TaskStats, TaskStatus, TaskProject } from "@/types";
+import { Task, TaskFilter, TaskStats, TaskStatus, TaskProject, TaskDependency } from "@/types";
 import { cn } from "@/lib/utils";
 import {
   TASK_CENTER_MAIN_CLASS,
@@ -61,6 +61,9 @@ export default function TaskCenter() {
   // Phase 4: search
   const [searchQuery, setSearchQuery] = useState("");
   const [workspaceVersion, setWorkspaceVersion] = useState(0);
+
+  // Phase 5.2: dependencies
+  const [dependencies, setDependencies] = useState<TaskDependency[]>([]);
 
   // Phase 4: projects
   const {
@@ -167,7 +170,16 @@ export default function TaskCenter() {
     }
   }, [filter, selectedProjectId, workspaceVersion]);
 
+  const loadDependencies = useCallback(async () => {
+    try {
+      const deps = await api.getTaskDependencies();
+      setDependencies(deps);
+    } catch (e) { /* ignore */ }
+  }, []);
+
+
   useEffect(() => { loadTasks(); }, [loadTasks]);
+    loadDependencies();
 
   useEffect(() => {
     const onWs = () => { setSelectedTaskId(null); setSearchQuery(""); setSelectedIds(new Set()); setSelectMode(false); setSelectedProjectId(null); setWorkspaceVersion((v) => v + 1); reload(); };

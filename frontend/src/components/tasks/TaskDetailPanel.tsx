@@ -6,10 +6,11 @@ import { zhCN, enUS } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import type { Task, TaskPriority, TaskReminder } from "@/types";
+import type { Task, TaskPriority, TaskReminder, TaskDependency } from "@/types";
 import { isRepeatingTask } from "./taskRepeatUtils";
 import { TaskAIBreakdown } from "./TaskAIBreakdown";
 import { TaskTemplateEditor } from "./TaskTemplateEditor";
+import { TaskDependencyEditor } from "./TaskDependencyEditor";
 import type { TaskTreeNode } from "./taskProgress";
 import { calculateTaskProgress } from "./taskProgress";
 import { parseTaskTitle, TitleView } from "./taskTitleTokens";
@@ -58,7 +59,10 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
   onToggle?: (id: string) => void;
   onSelectTask?: (taskId: string) => void;
   onCreated?: () => void;
-}>(({ task, treeNode, allTasks, onClose, onUpdate, onDelete, onToggle, onSelectTask , onCreated }, ref) => {
+  dependencies?: TaskDependency[];
+  onCreateDependency?: (predecessorTaskId: string, successorTaskId: string) => Promise<void>;
+  onDeleteDependency?: (id: string) => Promise<void>;
+}>(({ task, treeNode, allTasks, onClose, onUpdate, onDelete, onToggle, onSelectTask, onCreated, dependencies = [], onCreateDependency, onDeleteDependency }, ref) => {
   const { t, i18n } = useTranslation();
   const lang = i18n.resolvedLanguage || i18n.language;
   const isZh = lang.toLowerCase().startsWith("zh");
@@ -396,6 +400,19 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
               {t("tasks.repeat.title")}
             </span>
           </div>
+
+          {/* Dependencies */}
+          {onCreateDependency && onDeleteDependency && allTasks && (
+            <div className="border-t border-app-border pt-3 mt-3">
+              <TaskDependencyEditor
+                task={task}
+                allTasks={allTasks}
+                dependencies={dependencies}
+                onCreateDependency={onCreateDependency}
+                onDeleteDependency={onDeleteDependency}
+              />
+            </div>
+          )}
           <select
             value={repeatRule}
             onChange={(e) => {

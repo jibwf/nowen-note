@@ -1,4 +1,4 @@
-﻿export interface User {
+export interface User {
   id: string;
   username: string;
   email: string | null;
@@ -462,6 +462,17 @@ export interface TaskTemplate {
   updatedAt: string;
 }
 
+
+export interface TaskDependency {
+  id: string;
+  userId: string;
+  workspaceId: string | null;
+  predecessorTaskId: string;
+  successorTaskId: string;
+  type: "finish_to_start";
+  createdAt: string;
+  updatedAt: string;
+}
 export interface CustomFont {
   id: string;
   name: string;

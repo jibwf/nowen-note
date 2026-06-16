@@ -39,6 +39,7 @@ import { moveTaskToDate } from "./tasks/taskDateUtils";
 import { TaskTemplatePicker } from "./tasks/TaskTemplatePicker";
 import { ReminderCenter } from "./tasks/ReminderCenter";
 import { MobileProjectTrigger, MobileProjectPicker } from "./tasks/MobileProjectPicker";
+import { taskMatchesSearch } from "./tasks/taskSearch";
 
 /* ===== Main Component ===== */
 export default function TaskCenter() {
@@ -150,15 +151,13 @@ export default function TaskCenter() {
   // filtered tasks by search query
   const displayTasks = useMemo(() => {
     if (!searchQuery.trim()) return tasks;
-    const q = searchQuery.trim().toLowerCase();
-    return tasks.filter((t) => t.title.toLowerCase().includes(q));
+    return tasks.filter((t) => taskMatchesSearch(t, searchQuery));
   }, [tasks, searchQuery]);
 
   // recompute flatOrdered for display (search-filtered)
   const displayFlatOrdered = useMemo(() => {
     if (!searchQuery.trim()) return flatOrderedTasks;
-    const q = searchQuery.trim().toLowerCase();
-    return flatOrderedTasks.filter((item) => item.node.title.toLowerCase().includes(q));
+    return flatOrderedTasks.filter((item) => taskMatchesSearch(item.node, searchQuery));
   }, [flatOrderedTasks, searchQuery]);
 
   const loadTasks = useCallback(async () => {
@@ -302,6 +301,7 @@ export default function TaskCenter() {
   };
 
   const handleUpdate = async (id: string, data: Partial<Task>) => {
+    const isDescriptionUpdate = Object.prototype.hasOwnProperty.call(data, "description");
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...data } : t)));
     try {
       const res = await api.updateTask(id, data);
@@ -313,7 +313,11 @@ export default function TaskCenter() {
       const s = await api.getTaskStats();
       setStats(s);
       refreshCounts();
-    } catch { loadTasks(); }
+      if (isDescriptionUpdate) toast.success(t("tasks.toast.descriptionUpdated"));
+    } catch {
+      if (isDescriptionUpdate) toast.error(t("tasks.toast.descriptionUpdateFailed"));
+      loadTasks();
+    }
   };
 
   // === Status change (kanban) ===

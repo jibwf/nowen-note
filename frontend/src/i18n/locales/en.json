@@ -220,6 +220,14 @@
     "multiSelectHint": "Ctrl/Cmd-click to multi-select, Shift-click for range",
     "restoreNotebookTrashed": "The original notebook has been deleted. Please restore or create a notebook first, then try again."
   },
+  "share": {
+    "outline": {
+      "title": "Outline",
+      "empty": "No outline available",
+      "open": "Open outline",
+      "close": "Close outline"
+    }
+  },
   "editor": {
     "selectNote": "Select a note to start editing",
     "orCreateNew": "or create a new note",
@@ -1071,6 +1079,10 @@
     "overdueLabel": "{{count}} days overdue",
     "taskDetail": "Task Details",
     "taskTitle": "Title",
+    "fields": {
+      "description": "Description",
+      "descriptionPlaceholder": "Add task details, steps, notes, or acceptance criteria..."
+    },
     "priority": "Priority",
     "dueDate": "Due Date",
     "dueAt": "Due Time",
@@ -1242,8 +1254,11 @@
       "upcoming": "Upcoming",
       "disabled": "Disabled",
       "empty": "No reminders",
+      "emptyTitle": "No reminders",
+      "emptyDescription": "There are no task reminders to handle right now.",
       "loadFailed": "Failed to load reminders",
       "open": "Reminders",
+      "close": "Close",
       "permissionEnabled": "Browser notifications enabled",
       "permissionDenied": "Browser notifications blocked. Please enable in browser settings.",
       "permissionDefault": "Notifications not enabled",
@@ -1264,6 +1279,7 @@
       "disableReminder": "Disable reminder",
       "enableReminder": "Enable reminder",
       "snoozedUntil": "Snoozed until",
+      "moreActions": "More actions",
       "retry": "Retry"
     },
     "notifications": {
@@ -1316,6 +1332,8 @@
       "createFailed": "Failed to create task",
       "updated": "Task updated",
       "updateFailed": "Failed to update task",
+      "descriptionUpdated": "Description updated",
+      "descriptionUpdateFailed": "Failed to update description",
       "completed": "Task completed",
       "completeFailed": "Failed to complete task",
       "deleted": "Task deleted",

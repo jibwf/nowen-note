@@ -373,6 +373,7 @@ export interface Task {
   /** Y3: 任务归属的工作区 id；null = 个人空间。 */
   workspaceId: string | null;
   title: string;
+  description: string;
   isCompleted: number;
   priority: TaskPriority;
   dueDate: string | null;
@@ -467,6 +468,7 @@ export interface TaskProject {
 /** Task template item */
 export interface TaskTemplateItem {
   title: string;
+  description?: string;
   priority: number;
   relativeDueDays: number | null;
   parentIndex: number | null;

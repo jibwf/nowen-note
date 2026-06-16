@@ -217,6 +217,7 @@ tasks.post("/", requireWorkspaceFeature("tasks"), async (c) => {
   const body: any = await c.req.json();
   const id = crypto.randomUUID();
   const { title, priority = 2, dueDate = null, dueAt = null, startDate = null, noteId = null, parentId = null } = body;
+  const description = typeof body.description === "string" ? body.description : "";
   const repeatRule = body.repeatRule || "none";
   const repeatInterval = body.repeatInterval ?? 1;
   const repeatEndDate = body.repeatEndDate ?? null;
@@ -283,9 +284,9 @@ tasks.post("/", requireWorkspaceFeature("tasks"), async (c) => {
   const effectiveIsCompleted = status === "done" ? 1 : 0;
 
   db.prepare(`
-    INSERT INTO tasks (id, userId, workspaceId, title, isCompleted, priority, dueDate, dueAt, startDate, noteId, parentId, projectId, status, repeatRule, repeatInterval, repeatEndDate, repeatGroupId, repeatGeneratedFromId)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, userId, effectiveWorkspaceId, title.trim(), effectiveIsCompleted, priority, dueDate, dueAt, startDate, noteId, parentId, projectId, status, repeatRule, repeatInterval, repeatEndDate, repeatGroupId, repeatGeneratedFromId);
+    INSERT INTO tasks (id, userId, workspaceId, title, description, isCompleted, priority, dueDate, dueAt, startDate, noteId, parentId, projectId, status, repeatRule, repeatInterval, repeatEndDate, repeatGroupId, repeatGeneratedFromId)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, userId, effectiveWorkspaceId, title.trim(), description, effectiveIsCompleted, priority, dueDate, dueAt, startDate, noteId, parentId, projectId, status, repeatRule, repeatInterval, repeatEndDate, repeatGroupId, repeatGeneratedFromId);
 
   const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
   return c.json(task, 201);
@@ -313,6 +314,9 @@ tasks.put("/:id", (c) => {
     const dueDate = body.dueDate !== undefined ? body.dueDate : existing.dueDate;
     const dueAt = body.dueAt !== undefined ? body.dueAt : existing.dueAt;
     const startDate = body.startDate !== undefined ? body.startDate : existing.startDate;
+    const description = Object.prototype.hasOwnProperty.call(body, "description")
+      ? (typeof body.description === "string" ? body.description : "")
+      : (existing.description || "");
     const noteId = body.noteId !== undefined ? body.noteId : existing.noteId;
     const parentId = body.parentId !== undefined ? body.parentId : existing.parentId;
     const sortOrder = body.sortOrder ?? existing.sortOrder;
@@ -409,9 +413,9 @@ tasks.put("/:id", (c) => {
 
     db.prepare(`
       UPDATE tasks SET title = ?, isCompleted = ?, priority = ?, dueDate = ?, dueAt = ?, startDate = ?,
-        noteId = ?, parentId = ?, sortOrder = ?, projectId = ?, status = ?, repeatRule = ?, repeatInterval = ?, repeatEndDate = ?, updatedAt = datetime('now')
+        description = ?, noteId = ?, parentId = ?, sortOrder = ?, projectId = ?, status = ?, repeatRule = ?, repeatInterval = ?, repeatEndDate = ?, updatedAt = datetime('now')
       WHERE id = ?
-    `).run(title, isCompleted, priority, dueDate, dueAt, startDate, noteId, parentId, sortOrder, projectId, status, repeatRule, repeatInterval, repeatEndDate, id);
+    `).run(title, isCompleted, priority, dueDate, dueAt, startDate, description, noteId, parentId, sortOrder, projectId, status, repeatRule, repeatInterval, repeatEndDate, id);
 
     let generatedTask = null;
     // Generate next repeated task when marking as done via PUT
@@ -470,9 +474,9 @@ function generateNextRepeatedTask(db: any, task: any): any {
   const newId = crypto.randomUUID();
   const groupId = task.repeatGroupId || task.id;
   db.prepare(`
-    INSERT INTO tasks (id, userId, workspaceId, title, isCompleted, priority, dueDate, dueAt, startDate, noteId, parentId, projectId, status, repeatRule, repeatInterval, repeatEndDate, repeatGroupId, repeatGeneratedFromId)
-    VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(newId, task.userId, task.workspaceId, task.title, task.priority, nextDueDate, nextDueAt, null, task.noteId, task.parentId, task.projectId, 'todo', task.repeatRule, task.repeatInterval, task.repeatEndDate, groupId, task.id);
+    INSERT INTO tasks (id, userId, workspaceId, title, description, isCompleted, priority, dueDate, dueAt, startDate, noteId, parentId, projectId, status, repeatRule, repeatInterval, repeatEndDate, repeatGroupId, repeatGeneratedFromId)
+    VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(newId, task.userId, task.workspaceId, task.title, task.description || "", task.priority, nextDueDate, nextDueAt, null, task.noteId, task.parentId, task.projectId, 'todo', task.repeatRule, task.repeatInterval, task.repeatEndDate, groupId, task.id);
 
   db.prepare("UPDATE tasks SET repeatNextGeneratedId = ? WHERE id = ?").run(newId, task.id);
 
@@ -684,4 +688,3 @@ tasks.post("/:id/ai-breakdown", async (c) => {
 });
 
 export default tasks;
-

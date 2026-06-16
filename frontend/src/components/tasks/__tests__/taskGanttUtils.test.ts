@@ -7,6 +7,7 @@ const baseTask: Task = {
   userId: "u1",
   workspaceId: null,
   title: "Test",
+  description: "",
   isCompleted: 0,
   priority: 2,
   dueDate: null,

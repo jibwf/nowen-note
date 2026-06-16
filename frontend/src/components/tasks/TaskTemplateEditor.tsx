@@ -18,7 +18,7 @@ interface TaskTemplateEditorProps {
  * Convert a task tree (task + children from allTasks) into TaskTemplateItem[].
  * Uses the task's dueDate as the base and computes relativeDueDays for each item.
  */
-function buildTemplateItems(task: Task, allTasks: Task[]): TaskTemplateItem[] {
+export function buildTemplateItems(task: Task, allTasks: Task[]): TaskTemplateItem[] {
   const items: TaskTemplateItem[] = [];
   const baseDate = task.dueDate ? new Date(task.dueDate) : null;
 
@@ -31,6 +31,7 @@ function buildTemplateItems(task: Task, allTasks: Task[]): TaskTemplateItem[] {
     }
     items.push({
       title: t.title,
+      description: t.description ?? "",
       priority: t.priority,
       relativeDueDays,
       parentIndex,

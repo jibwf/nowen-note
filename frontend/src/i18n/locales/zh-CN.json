@@ -225,6 +225,14 @@
     "multiSelectHint": "Ctrl/Cmd 点击多选，Shift 点击范围选择",
     "restoreNotebookTrashed": "原笔记本已删除，请先还原或重建一个笔记本后再重试"
   },
+  "share": {
+    "outline": {
+      "title": "大纲",
+      "empty": "当前分享内容暂无大纲",
+      "open": "打开大纲",
+      "close": "关闭大纲"
+    }
+  },
   "editor": {
     "selectNote": "选择一条笔记开始编辑",
     "orCreateNew": "或创建新笔记",
@@ -1082,6 +1090,10 @@
     "overdueLabel": "逾期 {{count}} 天",
     "taskDetail": "任务详情",
     "taskTitle": "标题",
+    "fields": {
+      "description": "详情",
+      "descriptionPlaceholder": "添加任务详情、步骤、备注或验收标准..."
+    },
     "priority": "优先级",
     "dueDate": "截止日期",
     "dueAt": "截止时间",
@@ -1253,8 +1265,11 @@
       "upcoming": "即将到来",
       "disabled": "已关闭",
       "empty": "暂无提醒",
+      "emptyTitle": "暂无提醒",
+      "emptyDescription": "当前没有需要处理的任务提醒",
       "loadFailed": "加载提醒失败",
       "open": "提醒",
+      "close": "关闭",
       "permissionEnabled": "浏览器通知已启用",
       "permissionDenied": "浏览器通知已被拒绝，请在浏览器设置中开启",
       "permissionDefault": "未开启通知",
@@ -1275,6 +1290,7 @@
       "disableReminder": "关闭提醒",
       "enableReminder": "开启提醒",
       "snoozedUntil": "稍后提醒至",
+      "moreActions": "更多操作",
       "retry": "重试"
     },
     "notifications": {
@@ -1327,6 +1343,8 @@
       "createFailed": "创建任务失败",
       "updated": "任务已更新",
       "updateFailed": "更新任务失败",
+      "descriptionUpdated": "详情已更新",
+      "descriptionUpdateFailed": "详情更新失败",
       "completed": "任务已完成",
       "completeFailed": "完成任务失败",
       "deleted": "任务已删除",

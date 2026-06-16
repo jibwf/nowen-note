@@ -49,6 +49,7 @@ export const TaskTreeRow = React.forwardRef<HTMLDivElement, {
     1: { label: t('tasks.low'), color: "text-blue-400", flagClass: "text-blue-400" },
   };
   const pri = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG[2];
+  const descriptionPreview = (task.description ?? "").trim();
 
   const showCreator =
     !!task.creatorName && getCurrentWorkspace() !== "personal";
@@ -111,6 +112,11 @@ export const TaskTreeRow = React.forwardRef<HTMLDivElement, {
           >
             <TitleView title={task.title} compact isCompleted={isCompleted} />
           </span>
+          {descriptionPreview && (
+            <p className="text-xs text-tx-tertiary leading-snug line-clamp-1 break-words [overflow-wrap:anywhere]">
+              {descriptionPreview}
+            </p>
+          )}
           {(task.dueDate || showCreator) && (
             <div className="md:hidden flex items-center flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
               <DateBadge dateStr={task.dueDate} dueAt={task.dueAt} />

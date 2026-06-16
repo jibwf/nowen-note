@@ -9,6 +9,7 @@ function normalizeTemplateItems(items: any[]): any[] {
   if (!Array.isArray(items)) return [];
   return items.slice(0, 50).map((item, i) => ({
     title: typeof item.title === 'string' ? item.title.trim().slice(0, 200) : '',
+    description: typeof item.description === 'string' ? item.description : '',
     priority: [1, 2, 3].includes(item.priority) ? item.priority : 2,
     relativeDueDays: typeof item.relativeDueDays === 'number' ? item.relativeDueDays : null,
     parentIndex: typeof item.parentIndex === 'number' && item.parentIndex >= 0 ? item.parentIndex : null,
@@ -171,7 +172,7 @@ taskTemplates.post('/:id/apply', async (c) => {
   }
 
   const items = JSON.parse(row.items || '[]') as Array<{
-    title: string; priority: number; relativeDueDays: number; parentIndex: number | null; sortOrder: number;
+    title: string; description?: string; priority: number; relativeDueDays: number; parentIndex: number | null; sortOrder: number;
   }>;
 
   if (items.length === 0) return c.json({ createdTasks: [] });
@@ -181,7 +182,7 @@ taskTemplates.post('/:id/apply', async (c) => {
   const createdTasks: any[] = [];
 
   const insertStmt = db.prepare(
-    'INSERT INTO tasks (id, userId, workspaceId, title, priority, isCompleted, status, sortOrder, projectId, parentId, dueDate, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, 0, \'todo\', ?, ?, ?, ?, datetime(\'now\'), datetime(\'now\'))'
+    'INSERT INTO tasks (id, userId, workspaceId, title, description, priority, isCompleted, status, sortOrder, projectId, parentId, dueDate, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, 0, \'todo\', ?, ?, ?, ?, datetime(\'now\'), datetime(\'now\'))'
   );
 
   const createAll = db.transaction(() => {
@@ -202,10 +203,11 @@ taskTemplates.post('/:id/apply', async (c) => {
           ? createdIds[item.parentIndex]
           : parentId;
 
-      insertStmt.run(taskId, userId, row.workspaceId || null, item.title.trim(), item.priority || 2, item.sortOrder || i, projectId, resolvedParentId, dueDate);
+      const description = typeof item.description === 'string' ? item.description : '';
+      insertStmt.run(taskId, userId, row.workspaceId || null, item.title.trim(), description, item.priority || 2, item.sortOrder || i, projectId, resolvedParentId, dueDate);
 
       createdIds.push(taskId);
-      createdTasks.push({ id: taskId, title: item.title.trim(), priority: item.priority || 2, dueDate, projectId, parentId: resolvedParentId, status: 'todo', isCompleted: 0 });
+      createdTasks.push({ id: taskId, title: item.title.trim(), description, priority: item.priority || 2, dueDate, projectId, parentId: resolvedParentId, status: 'todo', isCompleted: 0 });
     }
   });
 

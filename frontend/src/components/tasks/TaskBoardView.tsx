@@ -134,6 +134,7 @@ export function TaskBoardView({
               {columnTasks.map((task) => {
                 const pri = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG[2];
                 const childInfo = childCountMap.get(task.id);
+                const descriptionPreview = (task.description ?? "").trim();
                 return (
                   <motion.div
                     key={task.id}
@@ -157,6 +158,11 @@ export function TaskBoardView({
                       </span>
                       <Flag size={12} className={cn("shrink-0 mt-0.5", pri.flagClass)} />
                     </div>
+                    {descriptionPreview && (
+                      <p className="mb-2 text-xs text-tx-tertiary leading-snug line-clamp-2 break-words [overflow-wrap:anywhere]">
+                        {descriptionPreview}
+                      </p>
+                    )}
 
                     {/* Meta row */}
                     <div className="flex items-center gap-2 flex-wrap">

@@ -8,6 +8,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     userId: "user1",
     workspaceId: null,
     title: overrides.title || "Test task",
+    description: overrides.description ?? "",
     isCompleted: overrides.isCompleted ?? 0,
     priority: overrides.priority ?? 2,
     dueDate: overrides.dueDate ?? null,

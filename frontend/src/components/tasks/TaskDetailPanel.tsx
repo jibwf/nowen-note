@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Flag, Trash2, X, Bell, BellOff, CheckCircle2, Circle, Plus, Clock, Repeat, Link2, CalendarDays } from "lucide-react";
+import { Flag, Trash2, X, Bell, BellOff, CheckCircle2, Circle, Plus, Clock, Repeat, Link2, CalendarDays, Loader2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { zhCN, enUS } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { toast } from "@/lib/toast";
 import type { Task, TaskPriority, TaskReminder, TaskDependency } from "@/types";
 import { isRepeatingTask } from "./taskRepeatUtils";
 import { TaskAIBreakdown } from "./TaskAIBreakdown";
@@ -14,7 +15,7 @@ import { TaskDependencyEditor } from "./TaskDependencyEditor";
 import { isTaskBlockedByDependency, getDependencyScheduleWarnings } from "./taskDependencyUtils";
 import type { TaskTreeNode } from "./taskProgress";
 import { calculateTaskProgress } from "./taskProgress";
-import { parseTaskTitle, TitleView } from "./taskTitleTokens";
+import { insertTaskTitleSnippet, parseTaskTitle, TitleView } from "./taskTitleTokens";
 
 /** Shows a warning badge if notifications are not available */
 function NotificationStatusBadge({ t }: { t: (key: string) => string }) {
@@ -69,6 +70,7 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
   const isZh = lang.toLowerCase().startsWith("zh");
   const dateLocale = isZh ? zhCN : enUS;
   const [title, setTitle] = useState(task.title);
+  const [description, setDescription] = useState(task.description ?? "");
   const [priority, setPriority] = useState<TaskPriority>(task.priority);
   const [dueDate, setDueDate] = useState(task.dueDate || "");
   const [dueAt, setDueAt] = useState(task.dueAt || "");
@@ -76,6 +78,7 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
   const [repeatRule, setRepeatRule] = useState<"none" | "daily" | "weekly" | "monthly" | "yearly">(task.repeatRule || "none");
   const [repeatInterval, setRepeatInterval] = useState(task.repeatInterval || 1);
   const [repeatEndDate, setRepeatEndDate] = useState(task.repeatEndDate || "");
+  const [uploadingTitleAttachment, setUploadingTitleAttachment] = useState(false);
   const titleRef = useRef<HTMLTextAreaElement>(null);
 
   // date range validation error
@@ -94,6 +97,7 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
 
   useEffect(() => {
     setTitle(task.title);
+    setDescription(task.description ?? "");
     setPriority(task.priority);
     setDueDate(task.dueDate || "");
     setDueAt(task.dueAt || "");
@@ -120,6 +124,48 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
 
   const handleSave = () => {
     onUpdate(task.id, { title: title.trim() || task.title, priority, dueDate: dueDate || null, dueAt: dueAt || null, startDate: startDate || null });
+  };
+
+  const handleDescriptionSave = () => {
+    if (description === (task.description ?? "")) return;
+    onUpdate(task.id, { description });
+  };
+
+  const handleTitlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(e.clipboardData.items)
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => !!file);
+    if (!files.length) return;
+
+    e.preventDefault();
+    setUploadingTitleAttachment(true);
+    let nextTitle = title;
+    let nextCaret = titleRef.current?.selectionStart ?? title.length;
+    try {
+      for (const file of files) {
+        if (file.size > 50 * 1024 * 1024) {
+          toast.error(t("tasks.imageTooLarge"));
+          continue;
+        }
+        const res = await api.taskAttachments.upload(file, task.id);
+        const snippet = `![${res.filename}](${res.url})`;
+        nextTitle = insertTaskTitleSnippet(nextTitle, snippet, nextCaret, nextCaret);
+        nextCaret += snippet.length;
+      }
+      if (nextTitle !== title) {
+        setTitle(nextTitle);
+        onUpdate(task.id, { title: nextTitle.trim() || task.title });
+        requestAnimationFrame(() => {
+          titleRef.current?.focus();
+          titleRef.current?.setSelectionRange(nextCaret, nextCaret);
+        });
+      }
+    } catch (err: any) {
+      toast.error(err?.message || t("tasks.uploadFailed"));
+    } finally {
+      setUploadingTitleAttachment(false);
+    }
   };
 
   const hasRichTokens = parseTaskTitle(task.title).some((tok) => tok.kind !== "text");
@@ -199,19 +245,38 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
         {/* Title */}
         <div>
           <label className="text-xs text-tx-tertiary uppercase tracking-wider mb-1.5 block">{t("tasks.taskTitle")}</label>
-          <textarea
-            ref={titleRef}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={handleSave}
-            rows={Math.min(4, Math.max(2, title.split("\n").length))}
-            className="w-full px-3 py-2 rounded-md bg-app-bg border border-app-border text-sm text-tx-primary focus:outline-none focus:border-accent-primary transition-colors resize-y font-mono"
-          />
+          <div className="relative">
+            <textarea
+              ref={titleRef}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={handleSave}
+              onPaste={handleTitlePaste}
+              rows={Math.min(4, Math.max(2, title.split("\n").length))}
+              className="w-full px-3 py-2 rounded-md bg-app-bg border border-app-border text-sm text-tx-primary focus:outline-none focus:border-accent-primary transition-colors resize-y font-mono"
+            />
+            {uploadingTitleAttachment && (
+              <Loader2 size={14} className="absolute right-2 top-2 animate-spin text-accent-primary" />
+            )}
+          </div>
           {hasRichTokens && (
             <div className="mt-2 px-3 py-2 rounded-md bg-app-elevated border border-app-border text-sm text-tx-primary leading-relaxed break-all">
               <TitleView title={title} compact={false} isCompleted={task.isCompleted === 1} />
             </div>
           )}
+        </div>
+
+        {/* Description */}
+        <div>
+          <label className="text-xs text-tx-tertiary uppercase tracking-wider mb-1.5 block">{t("tasks.fields.description")}</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            onBlur={handleDescriptionSave}
+            placeholder={t("tasks.fields.descriptionPlaceholder")}
+            rows={4}
+            className="w-full px-3 py-2 rounded-md bg-app-bg border border-app-border text-sm text-tx-primary placeholder:text-tx-tertiary focus:outline-none focus:border-accent-primary transition-colors resize-y"
+          />
         </div>
 
         {/* Priority */}

@@ -1488,6 +1488,17 @@ export const MIGRATIONS: Migration[] = [
       db.exec(`ALTER TABLE task_reminders ADD COLUMN snoozedUntil TEXT`);
     },
   },
+  {
+    version: 28,
+    name: "tasks-add-description",
+    up: (db) => {
+      const cols = db.prepare("PRAGMA table_info(tasks)").all() as { name: string }[];
+      const colNames = new Set(cols.map((c) => c.name));
+      if (!colNames.has("description")) {
+        db.exec("ALTER TABLE tasks ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+      }
+    },
+  },
 ];
 
 /** 当前代码已知的最高 schema 版本（== MIGRATIONS 里 max(version)）。 */

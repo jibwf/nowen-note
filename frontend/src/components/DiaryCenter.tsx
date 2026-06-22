@@ -16,6 +16,7 @@ import {
   Edit2,
   Check,
   Search,
+  Play,
 } from "lucide-react";
 import { api, getCurrentWorkspace } from "@/lib/api";
 import { Diary, DiaryMediaItem, DiaryStats } from "@/types";
@@ -23,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/lib/toast";
+import DiaryVideoFeed from "@/components/DiaryVideoFeed";
 import {
   loadDiaryDraft,
   saveDiaryDraft,
@@ -1904,6 +1906,14 @@ export default function DiaryCenter() {
   const [hasMore, setHasMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [stats, setStats] = useState<DiaryStats | null>(null);
+  // 视频沉浸流状态
+  const [videoFeedOpen, setVideoFeedOpen] = useState(false);
+  const [videoFeedItems, setVideoFeedItems] = useState<Diary[]>([]);
+  const [videoFeedIndex, setVideoFeedIndex] = useState(0);
+  const [videoFeedLoading, setVideoFeedLoading] = useState(false);
+  const [videoFeedLoadingMore, setVideoFeedLoadingMore] = useState(false);
+  const [videoFeedHasMore, setVideoFeedHasMore] = useState(false);
+  const [videoFeedNextCursor, setVideoFeedNextCursor] = useState<string | null>(null);
   const [mediaFilter, setMediaFilter] = useState<string>("all");
   const [moodFilter, setMoodFilter] = useState<string>("");
   const [showMoodFilter, setShowMoodFilter] = useState(false);
@@ -2023,6 +2033,58 @@ export default function DiaryCenter() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rangeKey]);
 
+  // 去重工具
+  function dedupeDiaries(items: Diary[]): Diary[] {
+    const seen = new Set<string>();
+    return items.filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  }
+
+  // 打开视频流
+  const openVideoFeed = useCallback(async () => {
+    setVideoFeedOpen(true);
+    setVideoFeedLoading(true);
+    setVideoFeedIndex(0);
+    try {
+      const data = await api.getDiaryTimeline(undefined, 20, {
+        mediaType: "video",
+        ...(activeRange || {}),
+      });
+      setVideoFeedItems(data.items);
+      setVideoFeedHasMore(data.hasMore);
+      setVideoFeedNextCursor(data.nextCursor);
+    } catch (e) {
+      console.error("Load video feed failed:", e);
+    } finally {
+      setVideoFeedLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRange]);
+
+  // 视频流加载更多
+  const loadMoreVideoFeed = useCallback(async () => {
+    if (!videoFeedHasMore || videoFeedLoadingMore || !videoFeedNextCursor) return;
+    setVideoFeedLoadingMore(true);
+    try {
+      const data = await api.getDiaryTimeline(videoFeedNextCursor, 20, {
+        mediaType: "video",
+        ...(activeRange || {}),
+      });
+      setVideoFeedItems((prev) => dedupeDiaries([...prev, ...data.items]));
+      setVideoFeedHasMore(data.hasMore);
+      setVideoFeedNextCursor(data.nextCursor);
+    } catch (e) {
+      console.error("Load more video feed failed:", e);
+    } finally {
+      setVideoFeedLoadingMore(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoFeedHasMore, videoFeedLoadingMore, videoFeedNextCursor, activeRange]);
+
+  // 发布后刷新
   // 发布后刷新
   const handlePost = useCallback(() => {
     setNextCursor(null);
@@ -2174,6 +2236,16 @@ export default function DiaryCenter() {
               )}
             </div>
 
+            {/* 视频流入口 */}
+            <button
+              onClick={openVideoFeed}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all bg-app-hover/60 text-tx-tertiary hover:text-tx-secondary hover:bg-app-hover"
+              title={t("diary.videoFeed")}
+            >
+              <Play size={12} />
+              <span className="hidden sm:inline">{t("diary.enterVideoFeed")}</span>
+            </button>
+
             {/* 搜索框 */}
             <div className="relative flex-1 min-w-[120px] max-w-[200px]">
               <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-tx-tertiary" />
@@ -2264,6 +2336,19 @@ export default function DiaryCenter() {
           )}
         </div>
       </ScrollArea>
+
+      {/* 沉浸式视频流 Overlay */}
+      <DiaryVideoFeed
+        open={videoFeedOpen}
+        items={videoFeedItems}
+        index={videoFeedIndex}
+        hasMore={videoFeedHasMore}
+        loadingMore={videoFeedLoadingMore}
+        loading={videoFeedLoading}
+        onClose={() => setVideoFeedOpen(false)}
+        onIndexChange={setVideoFeedIndex}
+        onLoadMore={loadMoreVideoFeed}
+      />
     </div>
   );
 }

@@ -1874,7 +1874,17 @@
     "draftRestored": "已恢复上次未发布的草稿",
     "draftClear": "清空草稿",
     "draftDismiss": "关闭",
-    "draftExpired": "草稿已过期，已自动清理"
+    "draftExpired": "草稿已过期，已自动清理",
+    "videoFeed": "视频流",
+    "enterVideoFeed": "沉浸观看",
+    "exitVideoFeed": "退出视频流",
+    "noVideoPosts": "暂无视频说说",
+    "noMoreVideos": "没有更多视频了",
+    "loadingVideos": "正在加载视频",
+    "muted": "已静音",
+    "unmuted": "已取消静音",
+    "previousVideo": "上一个视频",
+    "nextVideo": "下一个视频"
   },
   "download": {
     "title": "下载客户端",

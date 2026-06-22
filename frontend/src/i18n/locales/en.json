@@ -1705,7 +1705,17 @@
     "draftRestored": "Restored your unsent draft",
     "draftClear": "Clear draft",
     "draftDismiss": "Dismiss",
-    "draftExpired": "Draft expired and was cleared"
+    "draftExpired": "Draft expired and was cleared",
+    "videoFeed": "Video feed",
+    "enterVideoFeed": "Watch",
+    "exitVideoFeed": "Exit video feed",
+    "noVideoPosts": "No video posts yet",
+    "noMoreVideos": "No more videos",
+    "loadingVideos": "Loading videos",
+    "muted": "Muted",
+    "unmuted": "Unmuted",
+    "previousVideo": "Previous video",
+    "nextVideo": "Next video"
   },
   "download": {
     "title": "Downloads",

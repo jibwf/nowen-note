@@ -175,7 +175,7 @@ export const FlatTaskRow = React.forwardRef<HTMLDivElement, {
           <Flag size={14} className={pri.flagClass} />
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}
-            className="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-tx-tertiary hover:text-accent-danger transition-all"
+            className="hidden md:inline-flex md:opacity-0 md:group-hover:opacity-100 text-tx-tertiary hover:text-accent-danger transition-all"
           >
             <Trash2 size={14} />
           </button>

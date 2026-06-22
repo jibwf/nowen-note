@@ -196,7 +196,7 @@ export function TaskQuickAdd({
           onClick={() => fileRef.current?.click()}
           disabled={uploading}
           title={t('tasks.insertImage')}
-          className="flex-shrink-0 p-1 rounded hover:bg-app-hover text-tx-tertiary hover:text-accent-primary transition-colors disabled:opacity-50 hidden md:block"
+          className="flex-shrink-0 p-1 rounded hover:bg-app-hover text-tx-tertiary hover:text-accent-primary transition-colors disabled:opacity-50"
         >
           {uploading
             ? <Loader2 size={16} className="animate-spin" />

@@ -190,6 +190,7 @@ async function signedFetch(
   cfg: S3Config,
   body?: Buffer,
   contentType?: string,
+  extraHeaders?: Record<string, string>,
 ): Promise<Response> {
   const url = objectUrl(relPath, cfg);
   const now = new Date();
@@ -201,6 +202,11 @@ async function signedFetch(
     "x-amz-date": amzDate(now),
   };
   if (contentType) headers["content-type"] = contentType;
+    if (extraHeaders) {
+      for (const [k, v] of Object.entries(extraHeaders)) {
+        headers[k.toLowerCase()] = v;
+      }
+    }
 
   const sorted = Object.keys(headers).sort();
   const canonicalHeaders = sorted.map((k) => `${k}:${headers[k]}\n`).join("");
@@ -434,4 +440,69 @@ export function readLocalAttachmentIfExists(relPath: string): Buffer | null {
   const abs = getLocalAttachmentPath(relPath);
   if (!fs.existsSync(abs)) return null;
   return fs.readFileSync(abs);
+}
+
+/**
+ * 获取附件对象的字节大小。本地模式用 fs.stat，对象存储用 HEAD。
+ * 用于视频 Range 请求前获取 Content-Length。
+ */
+export async function getAttachmentSize(relPath: string): Promise<number | null> {
+  const cfg = getS3Config();
+  if (!cfg) {
+    const abs = getLocalAttachmentPath(relPath);
+    if (!fs.existsSync(abs)) return null;
+    const stat = fs.statSync(abs);
+    return stat.size;
+  }
+  try {
+    const res = await signedFetch("HEAD", relPath, cfg);
+    if (!res.ok) return null;
+    const cl = res.headers.get("content-length");
+    return cl ? parseInt(cl, 10) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 读取附件对象的指定字节范围 [start, end]（闭区间）。
+ * 本地模式用 fs.createReadStream，对象存储用 S3 GET + Range header。
+ */
+export async function readAttachmentRange(
+  relPath: string,
+  start: number,
+  end: number,
+): Promise<Buffer | null> {
+  const cfg = getS3Config();
+  if (!cfg) {
+    const abs = getLocalAttachmentPath(relPath);
+    if (!fs.existsSync(abs)) return null;
+    const stat = fs.statSync(abs);
+    const actualEnd = Math.min(end, stat.size - 1);
+    const len = actualEnd - start + 1;
+    const buf = Buffer.alloc(len);
+    const fd = fs.openSync(abs, 'r');
+    try {
+      fs.readSync(fd, buf, 0, len, start);
+    } finally {
+      fs.closeSync(fd);
+    }
+    return buf;
+  }
+  // 对象存储：GET + Range header
+  const rangeValue = `bytes=${start}-${end}`;
+  try {
+    const res = await signedFetch("GET", relPath, cfg, undefined, undefined, {
+      range: rangeValue,
+    });
+    if (res.status === 416) return null;
+    if (!res.ok) {
+      console.warn(`[attachment-storage] S3 Range GET failed: ${res.status}`);
+      return null;
+    }
+    return Buffer.from(await res.arrayBuffer());
+  } catch (err: any) {
+    console.warn(`[attachment-storage] S3 Range GET error:`, err?.message || err);
+    return null;
+  }
 }

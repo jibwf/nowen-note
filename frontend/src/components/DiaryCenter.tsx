@@ -773,6 +773,14 @@ function VideoBlock({ id }: { id: string }) {
         controls
         preload="metadata"
         playsInline
+        onError={(e) => {
+          const el = e.currentTarget;
+          el.style.display = "none";
+          const hint = document.createElement("div");
+          hint.className = "flex items-center justify-center h-40 text-tx-tertiary text-sm";
+          hint.textContent = "视频加载失败";
+          el.parentElement?.appendChild(hint);
+        }}
       />
     </div>
   );

@@ -32,6 +32,8 @@ import {
   deleteAttachmentObject,
   readAttachmentObject,
   writeAttachmentObject,
+  getAttachmentSize,
+  readAttachmentRange,
 } from "../services/attachment-storage";
 import {
   getUserWorkspaceRole,
@@ -902,16 +904,93 @@ export async function handleDownloadDiaryImage(c: Context): Promise<Response> {
     .get(id) as { id: string; mimeType: string; path: string } | undefined;
   if (!row) return c.json({ error: "媒体不存在" }, 404);
 
-  const buffer = await readAttachmentObject(row.path);
-  if (!buffer) {
+  const isVideo = row.mimeType.startsWith("video/");
+  const cacheHeaders: Record<string, string> = {
+    "Content-Type": row.mimeType || "application/octet-stream",
+    "Cache-Control": "public, max-age=31536000, immutable",
+  };
+
+  // 非视频文件（图片等）：保持原逻辑，完整读取返回
+  if (!isVideo) {
+    const buffer = await readAttachmentObject(row.path);
+    if (!buffer) {
+      return c.json({ error: "media file missing" }, 404);
+    }
+    return new Response(new Uint8Array(buffer), { headers: cacheHeaders });
+  }
+
+  // 视频文件：支持 Range 请求
+  const size = await getAttachmentSize(row.path);
+  if (size === null || size <= 0) {
     return c.json({ error: "media file missing" }, 404);
   }
-  return new Response(new Uint8Array(buffer), {
+
+  const rangeHeader = c.req.header("Range");
+  cacheHeaders["Accept-Ranges"] = "bytes";
+
+  // 无 Range 请求：返回完整文件（带 Accept-Ranges 提示浏览器可以分段请求）
+  if (!rangeHeader) {
+    const buffer = await readAttachmentObject(row.path);
+    if (!buffer) {
+      return c.json({ error: "media file missing" }, 404);
+    }
+    cacheHeaders["Content-Length"] = String(size);
+    return new Response(new Uint8Array(buffer), { headers: cacheHeaders });
+  }
+
+  // 解析 Range header
+  const parsed = parseRangeHeader(rangeHeader, size);
+  if (!parsed) {
+    return new Response(null, {
+      status: 416,
+      headers: {
+        ...cacheHeaders,
+        "Content-Range": `bytes */${size}`,
+      },
+    });
+  }
+
+  const { start, end, contentLength } = parsed;
+  const rangeBuffer = await readAttachmentRange(row.path, start, end);
+  if (!rangeBuffer) {
+    return c.json({ error: "failed to read media range" }, 500);
+  }
+
+  return new Response(new Uint8Array(rangeBuffer), {
+    status: 206,
     headers: {
-      "Content-Type": row.mimeType || "application/octet-stream",
-      "Cache-Control": "public, max-age=31536000, immutable",
+      ...cacheHeaders,
+      "Content-Range": `bytes ${start}-${end}/${size}`,
+      "Content-Length": String(contentLength),
     },
   });
+}
+
+/**
+ * 解析 HTTP Range header，仅支持单段 Range。
+ * 支持格式：bytes=0-99, bytes=100-, bytes=-500
+ */
+function parseRangeHeader(
+  rangeHeader: string,
+  size: number,
+): { start: number; end: number; contentLength: number } | null {
+  const match = rangeHeader.trim().match(/^bytes=(\d+)-(\d*)$/);
+  if (match) {
+    const start = parseInt(match[1], 10);
+    const endPart = match[2];
+    const end = endPart ? parseInt(endPart, 10) : size - 1;
+    if (start > end || start >= size) return null;
+    return { start, end: Math.min(end, size - 1), contentLength: Math.min(end, size - 1) - start + 1 };
+  }
+  // bytes=-N (suffix range: 最后 N 个字节)
+  const suffixMatch = rangeHeader.trim().match(/^bytes=-(\d+)$/);
+  if (suffixMatch) {
+    const n = parseInt(suffixMatch[1], 10);
+    if (n <= 0) return null;
+    const start = Math.max(0, size - n);
+    return { start, end: size - 1, contentLength: size - start };
+  }
+  return null;
 }
 
 // ===========================================================================

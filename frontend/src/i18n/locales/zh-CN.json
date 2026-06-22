@@ -1849,7 +1849,8 @@
       "noMixImageVideo": "暂不支持图片和视频混发",
       "remove": "删除",
       "preview": "预览",
-      "unsupportedType": "{{name}} 不支持该文件类型"
+      "unsupportedType": "{{name}} 不支持该文件类型",
+      "videoLoadFailed": "视频加载失败"
     },
     "filterAll": "全部",
     "filterToday": "今天",

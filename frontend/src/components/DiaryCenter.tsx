@@ -765,6 +765,15 @@ function ImageGrid({
 }
 
 function VideoBlock({ id }: { id: string }) {
+  const { t } = useTranslation();
+  const [hasError, setHasError] = useState(false);
+  if (hasError) {
+    return (
+      <div className="mt-3 flex items-center justify-center h-40 rounded-xl border border-app-border bg-app-hover text-tx-tertiary text-sm">
+        {t("diary.media.videoLoadFailed")}
+      </div>
+    );
+  }
   return (
     <div className="mt-3 overflow-hidden rounded-xl border border-app-border bg-black">
       <video
@@ -773,14 +782,7 @@ function VideoBlock({ id }: { id: string }) {
         controls
         preload="metadata"
         playsInline
-        onError={(e) => {
-          const el = e.currentTarget;
-          el.style.display = "none";
-          const hint = document.createElement("div");
-          hint.className = "flex items-center justify-center h-40 text-tx-tertiary text-sm";
-          hint.textContent = "视频加载失败";
-          el.parentElement?.appendChild(hint);
-        }}
+        onError={() => setHasError(true)}
       />
     </div>
   );

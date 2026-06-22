@@ -1693,7 +1693,15 @@
     "filterApply": "Apply",
     "filterClear": "Clear",
     "emptyFiltered": "Nothing in this time range",
-    "emptyFilteredHint": "Try a different range"
+    "emptyFilteredHint": "Try a different range",
+    "filterMediaAll": "All",
+    "filterMediaText": "Text",
+    "filterMediaImage": "Image",
+    "filterMediaVideo": "Video",
+    "filterMoodAll": "All moods",
+    "searchPlaceholder": "Search posts",
+    "emptySearch": "No matching posts",
+    "emptySearchHint": "Try different keywords"
   },
   "download": {
     "title": "Downloads",

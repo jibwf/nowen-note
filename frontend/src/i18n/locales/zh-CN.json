@@ -1862,7 +1862,15 @@
     "filterApply": "应用",
     "filterClear": "清除",
     "emptyFiltered": "该时间范围内没有内容",
-    "emptyFilteredHint": "试试切换其他时间范围"
+    "emptyFilteredHint": "试试切换其他时间范围",
+    "filterMediaAll": "全部",
+    "filterMediaText": "纯文字",
+    "filterMediaImage": "图片",
+    "filterMediaVideo": "视频",
+    "filterMoodAll": "全部心情",
+    "searchPlaceholder": "搜索说说",
+    "emptySearch": "没有匹配的说说",
+    "emptySearchHint": "试试其他关键词"
   },
   "download": {
     "title": "下载客户端",

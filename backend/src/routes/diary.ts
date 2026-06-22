@@ -422,30 +422,78 @@ function normalizeDateBound(raw: string | undefined, kind: "from" | "to"): strin
 //   涉及双表都有的列（这里只有 createdAt）一律带 `diaries.` 表前缀。
 //   `userId` 仅 diaries 有（users 叫 `id`），不需要前缀；
 //   `workspaceId` 仅 diaries 有，同上。
+type DiaryMediaFilter = "all" | "text" | "image" | "video";
+
+function normalizeMediaType(raw?: string): DiaryMediaFilter {
+  return raw === "text" || raw === "image" || raw === "video" ? raw : "all";
+}
+
+function normalizeSearchQuery(raw?: string): string | null {
+  const q = raw?.trim();
+  if (!q) return null;
+  return q.slice(0, 100);
+}
+
+function escapeLike(input: string): string {
+  return input.replace(/[\\%_]/g, "\\$&");
+}
+
+function buildDiaryFilterWhere(opts: {
+  scope: { scope: "personal" | "workspace"; workspaceId: string | null };
+  userId: string;
+  from: string | null;
+  to: string | null;
+  mediaType?: string;
+  mood?: string;
+  q?: string;
+}): { sql: string; args: unknown[] } {
+  let sql: string;
+  const args: unknown[] = [];
+  if (opts.scope.scope === "workspace") {
+    sql = "diaries.workspaceId = ?";
+    args.push(opts.scope.workspaceId);
+  } else {
+    sql = "diaries.userId = ? AND diaries.workspaceId IS NULL";
+    args.push(opts.userId);
+  }
+  if (opts.from) {
+    sql += " AND diaries.createdAt >= ?";
+    args.push(opts.from);
+  }
+  if (opts.to) {
+    sql += " AND diaries.createdAt <= ?";
+    args.push(opts.to);
+  }
+  const mt = normalizeMediaType(opts.mediaType);
+  if (mt === "video") {
+    sql += " AND diaries.media LIKE ?";
+    args.push('%"type":"video"%');
+  } else if (mt === "image") {
+    sql += " AND (diaries.media LIKE ? OR (diaries.images IS NOT NULL AND diaries.images != '[]'))";
+    args.push('%"type":"image"%');
+  } else if (mt === "text") {
+    sql += " AND (diaries.media IS NULL OR diaries.media = '[]') AND (diaries.images IS NULL OR diaries.images = '[]')";
+  }
+  if (opts.mood) {
+    sql += " AND diaries.mood = ?";
+    args.push(opts.mood);
+  }
+  const searchQ = normalizeSearchQuery(opts.q);
+  if (searchQ) {
+    sql += " AND diaries.contentText LIKE ? ESCAPE ?";
+    args.push("%" + escapeLike(searchQ) + "%");
+    args.push("\\");
+  }
+  return { sql, args };
+}
+
 function buildTimeRangeWhere(
   scope: { scope: "personal" | "workspace"; workspaceId: string | null },
   userId: string,
   from: string | null,
   to: string | null,
 ): { sql: string; args: unknown[] } {
-  let sql: string;
-  const args: unknown[] = [];
-  if (scope.scope === "workspace") {
-    sql = "diaries.workspaceId = ?";
-    args.push(scope.workspaceId);
-  } else {
-    sql = "diaries.userId = ? AND diaries.workspaceId IS NULL";
-    args.push(userId);
-  }
-  if (from) {
-    sql += " AND diaries.createdAt >= ?";
-    args.push(from);
-  }
-  if (to) {
-    sql += " AND diaries.createdAt <= ?";
-    args.push(to);
-  }
-  return { sql, args };
+  return buildDiaryFilterWhere({ scope, userId, from, to });
 }
 
 // 获取时间线（分页，按时间倒序，可按 from/to 过滤）
@@ -460,7 +508,11 @@ diary.get("/timeline", requireWorkspaceFeature("diaries"), (c) => {
   const scope = resolveDiaryScope(c, userId);
   if (scope.error) return c.json({ error: scope.error, code: "FORBIDDEN" }, 403);
 
-  const { sql: whereSql, args } = buildTimeRangeWhere(scope, userId, from, to);
+  const mediaType = c.req.query("mediaType");
+  const mood = c.req.query("mood");
+  const q = c.req.query("q");
+
+  const { sql: whereSql, args } = buildDiaryFilterWhere({ scope, userId, from, to, mediaType, mood, q });
   let finalWhere = whereSql;
   const finalArgs = [...args];
   if (cursor) {
@@ -701,7 +753,11 @@ diary.get("/stats", requireWorkspaceFeature("diaries"), (c) => {
   const scope = resolveDiaryScope(c, userId);
   if (scope.error) return c.json({ error: scope.error, code: "FORBIDDEN" }, 403);
 
-  const { sql: whereSql, args } = buildTimeRangeWhere(scope, userId, from, to);
+  const mediaType = c.req.query("mediaType");
+  const mood = c.req.query("mood");
+  const q = c.req.query("q");
+
+  const { sql: whereSql, args } = buildDiaryFilterWhere({ scope, userId, from, to, mediaType, mood, q });
   const total = (
     db
       .prepare(`SELECT COUNT(*) as count FROM diaries WHERE ${whereSql}`)

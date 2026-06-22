@@ -1639,11 +1639,14 @@ export const api = {
   getDiaryTimeline: (
     cursor?: string,
     limit?: number,
-    range?: { from?: string; to?: string },
+    range?: { from?: string; to?: string; mediaType?: string; mood?: string; q?: string },
   ) => {
     const params = new URLSearchParams();
     if (cursor) params.set("cursor", cursor);
     if (limit) params.set("limit", String(limit));
+    if (range?.mediaType && range.mediaType !== "all") params.set("mediaType", range.mediaType);
+    if (range?.mood) params.set("mood", range.mood);
+    if (range?.q) params.set("q", range.q);
     // from/to 接收 "YYYY-MM-DD" 或完整 ISO 时间；后端会做 normalize
     if (range?.from) params.set("from", range.from);
     if (range?.to) params.set("to", range.to);
@@ -1666,10 +1669,13 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(data),
     }),
-  getDiaryStats: (range?: { from?: string; to?: string }) => {
+  getDiaryStats: (range?: { from?: string; to?: string; mediaType?: string; mood?: string; q?: string }) => {
     const params = new URLSearchParams();
     if (range?.from) params.set("from", range.from);
     if (range?.to) params.set("to", range.to);
+    if (range?.mediaType && range.mediaType !== "all") params.set("mediaType", range.mediaType);
+    if (range?.mood) params.set("mood", range.mood);
+    if (range?.q) params.set("q", range.q);
     const ws = getCurrentWorkspace();
     if (ws && ws !== "personal") params.set("workspaceId", ws);
     const qs = params.toString();

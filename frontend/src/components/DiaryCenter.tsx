@@ -15,6 +15,7 @@ import {
   User as UserIcon,
   Edit2,
   Check,
+  Search,
 } from "lucide-react";
 import { api, getCurrentWorkspace } from "@/lib/api";
 import { Diary, DiaryMediaItem, DiaryStats } from "@/types";
@@ -1799,6 +1800,10 @@ export default function DiaryCenter() {
   const [hasMore, setHasMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [stats, setStats] = useState<DiaryStats | null>(null);
+  const [mediaFilter, setMediaFilter] = useState<string>("all");
+  const [moodFilter, setMoodFilter] = useState<string>("");
+  const [searchText, setSearchText] = useState("");
+  const [debouncedSearchText, setDebouncedSearchText] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // 时间筛选状态。preset = 当前激活的快捷范围；customRange 仅在 preset === 'custom' 时
@@ -1809,6 +1814,14 @@ export default function DiaryCenter() {
     () => presetToRange(preset, customRange),
     [preset, customRange],
   );
+
+  // 合并日期筛选 + 内容筛选为完整筛选参数
+  const activeFilters = useMemo(() => ({
+    ...(activeRange || {}),
+    mediaType: mediaFilter,
+    mood: moodFilter || undefined,
+    q: debouncedSearchText.trim() || undefined,
+  }), [activeRange, mediaFilter, moodFilter, debouncedSearchText]);
 
   // 加载时间线。注意：cursor 仍来自 state（翻页），但 range 是当前筛选；
   // 切换筛选时 reset=true 会自动丢弃旧 cursor 重新拉首屏。
@@ -1822,7 +1835,7 @@ export default function DiaryCenter() {
         const data = await api.getDiaryTimeline(
           cursor,
           20,
-          activeRange || undefined,
+          activeFilters || undefined,
         );
         if (reset) {
           setItems(data.items);
@@ -1838,18 +1851,24 @@ export default function DiaryCenter() {
         setLoadingMore(false);
       }
     },
-    [nextCursor, activeRange],
+    [nextCursor, activeFilters],
   );
 
   // 加载统计：跟着筛选走，让"共 N 条"反映当前范围
   const loadStats = useCallback(async () => {
     try {
-      const s = await api.getDiaryStats(activeRange || undefined);
+      const s = await api.getDiaryStats(activeFilters || undefined);
       setStats(s);
     } catch {
       /* ignore */
     }
-  }, [activeRange]);
+  }, [activeFilters]);
+
+  // 搜索防抖
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearchText(searchText), 300);
+    return () => clearTimeout(timer);
+  }, [searchText]);
 
   // 初始化
   useEffect(() => {
@@ -1872,7 +1891,7 @@ export default function DiaryCenter() {
   // 筛选变化 → 重新拉首屏 + 重新算统计。
   // 用 activeRange 的 from/to 字符串做依赖（而非对象引用），避免 useMemo 引用换了
   // 但内容没换时多余触发；JSON.stringify 简单可靠且数据量极小。
-  const rangeKey = useMemo(() => JSON.stringify(activeRange), [activeRange]);
+  const rangeKey = useMemo(() => JSON.stringify(activeFilters), [activeFilters]);
   const isFirstRender = useRef(true);
   useEffect(() => {
     if (isFirstRender.current) {
@@ -1958,6 +1977,94 @@ export default function DiaryCenter() {
             customRange={customRange}
             onChange={handleFilterChange}
           />
+
+          {/* 内容筛选栏 */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {/* 媒体类型 chip */}
+            {(["all", "text", "image", "video"] as const).map((mt) => (
+              <button
+                key={mt}
+                onClick={() => setMediaFilter(mt)}
+                className={cn(
+                  "px-2.5 py-1 rounded-full text-[11px] font-medium transition-all",
+                  mediaFilter === mt
+                    ? "bg-accent-primary text-white shadow-sm shadow-accent-primary/20"
+                    : "bg-app-hover/60 text-tx-tertiary hover:text-tx-secondary hover:bg-app-hover",
+                )}
+              >
+                {t(`diary.filterMedia${mt.charAt(0).toUpperCase() + mt.slice(1)}`)}
+              </button>
+            ))}
+
+            {/* 心情筛选 */}
+            <div className="relative">
+              <button
+                onClick={() => setMoodFilter(moodFilter ? "" : MOODS[0].value)}
+                className={cn(
+                  "flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all",
+                  moodFilter
+                    ? "bg-accent-primary/10 text-accent-primary"
+                    : "bg-app-hover/60 text-tx-tertiary hover:text-tx-secondary hover:bg-app-hover",
+                )}
+              >
+                {moodFilter ? (
+                  <>
+                    <span>{getMoodEmoji(moodFilter)}</span>
+                    <X
+                      size={11}
+                      className="ml-0.5 hover:text-accent-primary"
+                      onClick={(e) => { e.stopPropagation(); setMoodFilter(""); }}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Smile size={12} />
+                    <span>{t("diary.filterMoodAll")}</span>
+                  </>
+                )}
+              </button>
+              {moodFilter && (
+                <div className="absolute top-full left-0 mt-1 p-2 bg-app-elevated rounded-xl border border-app-border shadow-lg z-20 w-[200px]">
+                  <div className="grid grid-cols-6 gap-1">
+                    {MOODS.map(({ value: v, emoji }) => (
+                      <button
+                        key={v}
+                        onClick={() => setMoodFilter(moodFilter === v ? "" : v)}
+                        className={cn(
+                          "w-7 h-7 rounded-lg flex items-center justify-center text-sm transition-all",
+                          moodFilter === v
+                            ? "bg-accent-primary/15 scale-110 ring-1 ring-accent-primary/30"
+                            : "hover:bg-app-hover hover:scale-110",
+                        )}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 搜索框 */}
+            <div className="relative flex-1 min-w-[120px] max-w-[200px]">
+              <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-tx-tertiary" />
+              <input
+                type="text"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder={t("diary.searchPlaceholder")}
+                className="w-full pl-7 pr-7 py-1 rounded-full text-[11px] bg-app-hover/60 text-tx-secondary placeholder:text-tx-tertiary outline-none focus:ring-1 focus:ring-accent-primary/30"
+              />
+              {searchText && (
+                <button
+                  onClick={() => setSearchText("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-tx-tertiary hover:text-tx-secondary"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          </div>
 
           {/* 发布框 */}
           <ComposeBox onPost={handlePost} />

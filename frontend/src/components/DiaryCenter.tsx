@@ -1908,6 +1908,7 @@ export default function DiaryCenter() {
   const [stats, setStats] = useState<DiaryStats | null>(null);
   // 视频沉浸流状态
   const [videoFeedOpen, setVideoFeedOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [videoFeedItems, setVideoFeedItems] = useState<Diary[]>([]);
   const [videoFeedIndex, setVideoFeedIndex] = useState(0);
   const [videoFeedLoading, setVideoFeedLoading] = useState(false);

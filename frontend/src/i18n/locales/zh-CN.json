@@ -1886,7 +1886,13 @@
     "muted": "已静音",
     "unmuted": "已取消静音",
     "previousVideo": "上一个视频",
-    "nextVideo": "下一个视频"
+    "nextVideo": "下一个视频",
+    "enterCalendar": "日历",
+    "exitCalendar": "返回时间线",
+    "calendarNoRecords": "这一天还没有记录",
+    "calendarWriteEntry": "写一条说说",
+    "calendarToday": "今天",
+    "calendarEntryCount": "{{count}} 条记录"
   },
   "download": {
     "title": "下载客户端",
@@ -2062,6 +2068,31 @@
       "chartAria": "每日令牌调用量柱状图",
       "topTitle": "活跃令牌排行",
       "empty": "过去 {{n}} 天还没有任何令牌调用。让你的应用开始干活吧 ✨"
+    }
+  },
+  "calendar": {
+    "week": {
+      "mon": "一",
+      "tue": "二",
+      "wed": "三",
+      "thu": "四",
+      "fri": "五",
+      "sat": "六",
+      "sun": "日"
+    },
+    "months": {
+      "0": "1月",
+      "1": "2月",
+      "2": "3月",
+      "3": "4月",
+      "4": "5月",
+      "5": "6月",
+      "6": "7月",
+      "7": "8月",
+      "8": "9月",
+      "9": "10月",
+      "10": "11月",
+      "11": "12月"
     }
   }
 }

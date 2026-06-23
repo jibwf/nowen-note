@@ -2129,7 +2129,23 @@ export default function DiaryCenter() {
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-app-bg">
-      <ScrollArea className="flex-1" ref={scrollRef}>
+      {calendarOpen ? (
+        <SayCalendarView
+          onClose={() => setCalendarOpen(false)}
+          onWriteEntry={() => setCalendarOpen(false)}
+          onLocateItem={(id) => {
+            const found = items.find((x) => x.id === id);
+            if (found) {
+              setItems((prev) => {
+                if (prev.some((x) => x.id === id)) return prev;
+                return [found, ...prev];
+              });
+            }
+            setCalendarOpen(false);
+          }}
+        />
+      ) : (
+        <ScrollArea className="flex-1" ref={scrollRef}>
         <div className="max-w-[640px] mx-auto px-4 py-6 space-y-6">
           {/* 顶部标题 + 统计 */}
           <div className="flex items-center justify-between">
@@ -2335,6 +2351,7 @@ export default function DiaryCenter() {
           )}
         </div>
       </ScrollArea>
+      )}
 
       {/* 沉浸式视频流 Overlay */}
       <DiaryVideoFeed

@@ -1717,7 +1717,13 @@
     "muted": "Muted",
     "unmuted": "Unmuted",
     "previousVideo": "Previous video",
-    "nextVideo": "Next video"
+    "nextVideo": "Next video",
+    "enterCalendar": "Calendar",
+    "exitCalendar": "Back to timeline",
+    "calendarNoRecords": "No entries this day",
+    "calendarWriteEntry": "Write an entry",
+    "calendarToday": "Today",
+    "calendarEntryCount": "{{count}} entries"
   },
   "download": {
     "title": "Downloads",
@@ -1893,6 +1899,31 @@
       "chartAria": "Daily token call volume bar chart",
       "topTitle": "Most active tokens",
       "empty": "No token calls in the past {{n}} days. Time to put your apps to work ?"
+    }
+  },
+  "calendar": {
+    "week": {
+      "mon": "Mon",
+      "tue": "Tue",
+      "wed": "Wed",
+      "thu": "Thu",
+      "fri": "Fri",
+      "sat": "Sat",
+      "sun": "Sun"
+    },
+    "months": {
+      "0": "Jan",
+      "1": "Feb",
+      "2": "Mar",
+      "3": "Apr",
+      "4": "May",
+      "5": "Jun",
+      "6": "Jul",
+      "7": "Aug",
+      "8": "Sep",
+      "9": "Oct",
+      "10": "Nov",
+      "11": "Dec"
     }
   }
 }

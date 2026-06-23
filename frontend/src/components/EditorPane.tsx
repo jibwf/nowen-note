@@ -14,7 +14,11 @@ import { cn } from "@/lib/utils";
 import { Tag, Notebook, MindMapData, MindMapNode } from "@/types";
 import { useTranslation } from "react-i18next";
 import { haptic } from "@/hooks/useCapacitor";
-import { toast } from "@/lib/toast";
+import { toast } from "@/lib/toast";
+
+import { extractFinalAnswer } from "@/lib/aiOutput";
+
+import { buildAiContext } from "@/lib/aiContextBuilder";
 import ShareModal from "@/components/ShareModal";
 import VersionHistoryPanel from "@/components/VersionHistoryPanel";
 import CommentPanel from "@/components/CommentPanel";

@@ -171,7 +171,12 @@ export default function NavRail({ variant = "desktop" }: { variant?: "desktop" |
   const handleClick = useCallback((mode: ViewMode) => {
     actions.setViewMode(mode);
     actions.setSelectedNotebook(null);
-  }, [actions]);
+
+    // 移动端切换模块后自动关闭抽屉，露出对应内容区
+    if (isMobile) {
+      actions.setMobileSidebar(false);
+    }
+  }, [actions, isMobile]);
 
   const handleDesktopCloudButton = useCallback(async () => {
     if (!canSwitchBackToLocal) {

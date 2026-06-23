@@ -1365,6 +1365,12 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
       }
       void loadNotesForNotebook(id);
     }
+
+    // 移动端从抽屉里选择笔记本后，切到列表并关闭抽屉
+    if (!isDesktop) {
+      actions.setMobileView("list");
+      actions.setMobileSidebar(false);
+    }
   };
 
   const handleToggle = (id: string) => {
@@ -1390,6 +1396,9 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
       actions.setSelectedTag(null);
       actions.setViewMode("notebook");
       actions.setMobileView("editor");
+      if (!isDesktop) {
+        actions.setMobileSidebar(false);
+      }
     } catch (err: any) {
       console.error("Failed to open note:", err);
       toast.error(err?.message || t("noteList.loadFailed") || "打开笔记失败");
@@ -1502,6 +1511,9 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
       actions.setSelectedTag(null);
       actions.setViewMode("notebook");
       actions.setMobileView("editor");
+      if (!isDesktop) {
+        actions.setMobileSidebar(false);
+      }
       setNotesByNotebookId((prev) => {
         return addNoteToNotebookCache(prev, notebookId, noteToListItem(note));
       });

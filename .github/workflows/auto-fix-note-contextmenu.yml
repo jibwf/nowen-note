@@ -1,0 +1,402 @@
+name: Auto Fix Notebook Tree Note Context Menu
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/auto-fix-note-contextmenu.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Patch Sidebar note context menu
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('frontend/src/components/Sidebar.tsx')
+          text = path.read_text(encoding='utf-8-sig')
+
+          def replace_once(src: str, old: str, new: str, label: str) -> str:
+              if old not in src:
+                  raise SystemExit(f'Marker not found: {label}')
+              return src.replace(old, new, 1)
+
+          text = replace_once(
+              text,
+              '  Columns2, Columns3, FileType2, Link2, FileText,\n  Pin, PinOff, StarOff, Lock, Unlock,\n} from "lucide-react";',
+              '  Columns2, Columns3, FileType2, Link2, FileText,\n  Pin, PinOff, StarOff, Lock, Unlock,\n  Image as ImageIcon, Printer,\n} from "lucide-react";',
+              'lucide imports',
+          )
+          text = replace_once(
+              text,
+              'import { exportNotebook } from "@/lib/exportService";',
+              'import { exportNotebook, exportSingleNote, exportSingleNoteAsPDF, exportSingleNoteAsImage } from "@/lib/exportService";',
+              'export service imports',
+          )
+
+          move_note_modal = r'''
+function MoveSidebarNoteModal({
+  isOpen, note, allNotebooks, onMove, onClose,
+}: {
+  isOpen: boolean;
+  note: NoteListItem | null;
+  allNotebooks: Notebook[];
+  onMove: (targetNotebookId: string) => void;
+  onClose: () => void;
+}) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { t } = useTranslation();
+
+  useEffect(() => {
+    if (isOpen) setSelectedId(null);
+  }, [isOpen, note?.id]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [isOpen, onClose]);
+
+  if (!isOpen || !note) return null;
+
+  const sourceWorkspaceId = note.workspaceId || null;
+  const availableNotebooks = allNotebooks.filter((nb) => (nb.workspaceId || null) === sourceWorkspaceId);
+  const tree = buildTree(availableNotebooks);
+  const disabledIds = new Set<string>([note.notebookId]);
+  const isChanged = !!selectedId && selectedId !== note.notebookId;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className="relative w-full max-w-[360px] mx-4 max-h-[80vh] bg-app-elevated border border-app-border rounded-xl shadow-2xl flex flex-col overflow-hidden"
+        style={{ animation: "contextMenuIn 0.15s ease-out" }}
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-app-border">
+          <div className="flex items-center gap-2 min-w-0">
+            <FolderInput size={16} className="text-accent-primary shrink-0" />
+            <span className="text-sm font-medium text-tx-primary truncate">
+              {t("noteList.moveNote")}
+            </span>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-md hover:bg-app-hover text-tx-tertiary">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="px-4 py-2 text-xs text-tx-tertiary truncate border-b border-app-border">
+          {note.title || t("common.untitledNote") || "无标题笔记"}
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+          <div className="p-2">
+            {tree.map((nb) => (
+              <NotebookMoveTreeItem
+                key={nb.id}
+                notebook={nb}
+                depth={0}
+                selectedId={selectedId}
+                disabledIds={disabledIds}
+                currentParentId={note.notebookId}
+                onSelect={setSelectedId}
+              />
+            ))}
+            {tree.length === 0 && (
+              <p className="text-xs text-tx-tertiary text-center py-4">{t("noteList.noNotebooks")}</p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-app-border">
+          <Button variant="ghost" size="sm" onClick={onClose}>{t("common.cancel")}</Button>
+          <Button
+            size="sm"
+            disabled={!isChanged}
+            onClick={() => selectedId && onMove(selectedId)}
+            className="bg-accent-primary text-white hover:bg-accent-primary/90 disabled:opacity-40"
+          >
+            {t("noteList.moveButton")}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+'''
+          text = replace_once(text, 'function noteToListItem(note: Note): NoteListItem {', move_note_modal + 'function noteToListItem(note: Note): NoteListItem {', 'insert MoveSidebarNoteModal')
+
+          old_menu = '''  const noteMenuItems: ContextMenuItem[] = useMemo(() => {
+    const note = getCachedNote(menu.targetId);
+    if (!note) return [];
+    return [
+      { id: "open", label: t("common.open", { defaultValue: "打开" }), icon: <FileText size={14} /> },
+      { id: "sep0", label: "", separator: true },
+      {
+        id: "toggle_pin",
+        label: note.isPinned === 1 ? t("noteList.unpin") || "取消置顶" : t("noteList.pin") || "置顶",
+        icon: note.isPinned === 1 ? <PinOff size={14} /> : <Pin size={14} />,
+      },
+      {
+        id: "toggle_fav",
+        label: note.isFavorite === 1 ? t("noteList.unfavorite") || "取消收藏" : t("noteList.favorite") || "收藏",
+        icon: note.isFavorite === 1 ? <StarOff size={14} /> : <Star size={14} />,
+      },
+      {
+        id: "toggle_lock",
+        label: note.isLocked === 1 ? t("noteList.unlock") || "解锁" : t("noteList.lock") || "锁定",
+        icon: note.isLocked === 1 ? <Unlock size={14} /> : <Lock size={14} />,
+      },
+      { id: "sep1", label: "", separator: true },
+      {
+        id: "trash",
+        label: t("noteList.moveToTrash") || "移到回收站",
+        icon: <Trash2 size={14} />,
+        danger: true,
+        disabled: note.isLocked === 1,
+      },
+    ];
+  }, [getCachedNote, menu.targetId, t]);'''
+          new_menu = '''  const noteMenuItems: ContextMenuItem[] = useMemo(() => {
+    const note = getCachedNote(menu.targetId);
+    if (!note) return [];
+    return [
+      { id: "open", label: t("common.open", { defaultValue: "打开" }), icon: <FileText size={14} /> },
+      { id: "sep0", label: "", separator: true },
+      {
+        id: "toggle_pin",
+        label: note.isPinned === 1 ? t("noteList.unpin") || "取消置顶" : t("noteList.pin") || "置顶",
+        icon: note.isPinned === 1 ? <PinOff size={14} /> : <Pin size={14} />,
+      },
+      {
+        id: "toggle_fav",
+        label: note.isFavorite === 1 ? t("noteList.unfavorite") || "取消收藏" : t("noteList.favorite") || "收藏",
+        icon: note.isFavorite === 1 ? <StarOff size={14} /> : <Star size={14} />,
+      },
+      {
+        id: "toggle_lock",
+        label: note.isLocked === 1 ? t("noteList.unlock") || "解锁" : t("noteList.lock") || "锁定",
+        icon: note.isLocked === 1 ? <Unlock size={14} /> : <Lock size={14} />,
+      },
+      { id: "sep1", label: "", separator: true },
+      {
+        id: "move",
+        label: t("noteList.moveTo") || "移动到...",
+        icon: <FolderInput size={14} />,
+        disabled: note.isLocked === 1,
+      },
+      {
+        id: "export_md",
+        label: t("noteList.exportAsMarkdown") || "导出为 Markdown",
+        icon: <Download size={14} />,
+      },
+      {
+        id: "export_pdf",
+        label: t("noteList.exportAsPDF") || "导出为 PDF",
+        icon: <Printer size={14} />,
+      },
+      {
+        id: "export_image",
+        label: t("noteList.exportAsImage") || "导出为图片",
+        icon: <ImageIcon size={14} />,
+      },
+      {
+        id: "export_word",
+        label: t("noteList.exportAsWord") || "导出为 Word",
+        icon: <FileType2 size={14} />,
+      },
+      { id: "sep2", label: "", separator: true },
+      {
+        id: "trash",
+        label: t("noteList.moveToTrash") || "移到回收站",
+        icon: <Trash2 size={14} />,
+        danger: true,
+        disabled: note.isLocked === 1,
+      },
+    ];
+  }, [getCachedNote, menu.targetId, t]);'''
+          text = replace_once(text, old_menu, new_menu, 'noteMenuItems')
+
+          text = replace_once(
+              text,
+              '  // 移动笔记本模态框\n  const [moveNbTarget, setMoveNbTarget] = useState<Notebook | null>(null);',
+              '  // 移动笔记本模态框\n  const [moveNbTarget, setMoveNbTarget] = useState<Notebook | null>(null);\n  // 笔记本目录内直属笔记的移动目标。\n  const [moveNoteTarget, setMoveNoteTarget] = useState<NoteListItem | null>(null);',
+              'move note target state',
+          )
+
+          old_cases = '''        case "toggle_lock": {
+          const next = targetNote.isLocked === 1 ? 0 : 1;
+          await api.updateNote(targetId, { isLocked: next } as any);
+          updateCachedNote(targetId, { isLocked: next });
+          if (state.activeNote?.id === targetId) {
+            actions.setActiveNote({ ...state.activeNote, isLocked: next });
+          }
+          break;
+        }
+        case "trash": {'''
+          new_cases = '''        case "toggle_lock": {
+          const next = targetNote.isLocked === 1 ? 0 : 1;
+          await api.updateNote(targetId, { isLocked: next } as any);
+          updateCachedNote(targetId, { isLocked: next });
+          if (state.activeNote?.id === targetId) {
+            actions.setActiveNote({ ...state.activeNote, isLocked: next });
+          }
+          break;
+        }
+        case "move": {
+          if (targetNote.isLocked === 1) {
+            toast.warning(t("common.noteLockedCannotEdit") || t("editor.lockedBanner") || "笔记已锁定");
+            break;
+          }
+          setMoveNoteTarget(targetNote);
+          break;
+        }
+        case "export_md": {
+          const toastId = toast.info(t("export.exportingNote", { name: targetNote.title }), 0);
+          try {
+            const ok = await exportSingleNote(targetId);
+            toast.dismiss(toastId);
+            ok ? toast.success(t("export.exportComplete")) : toast.error(t("export.exportFailed", { error: "" }));
+          } catch (err: any) {
+            toast.dismiss(toastId);
+            toast.error(err?.message || t("export.exportFailed", { error: String(err) }));
+          }
+          break;
+        }
+        case "export_pdf": {
+          const toastId = toast.info(t("export.exportingNote", { name: targetNote.title }), 0);
+          try {
+            const res = await exportSingleNoteAsPDF(targetId);
+            toast.dismiss(toastId);
+            if (res.ok && (res.mode === "desktop" || res.mode === "web")) {
+              toast.success(t("export.exportComplete"));
+            } else if (!res.ok && res.mode !== "canceled") {
+              toast.error(t("export.exportFailed", { error: (res as { error?: string }).error || "" }));
+            }
+          } catch (err: any) {
+            toast.dismiss(toastId);
+            toast.error(err?.message || t("export.exportFailed", { error: String(err) }));
+          }
+          break;
+        }
+        case "export_image": {
+          const toastId = toast.info(t("export.exportingNote", { name: targetNote.title }), 0);
+          try {
+            const ok = await exportSingleNoteAsImage(targetId);
+            toast.dismiss(toastId);
+            ok ? toast.success(t("export.exportComplete")) : toast.error(t("export.exportFailed", { error: "" }));
+          } catch (err: any) {
+            toast.dismiss(toastId);
+            toast.error(err?.message || t("export.exportFailed", { error: String(err) }));
+          }
+          break;
+        }
+        case "export_word": {
+          const toastId = toast.info(t("export.exportingNote", { name: targetNote.title }), 0);
+          try {
+            const fresh = await api.getNote(targetId);
+            const { exportNoteAsDocx, downloadDocxBlob } = await import("@/lib/wordNoteService");
+            const title = fresh.title || t("common.untitledNote") || "未命名笔记";
+            const blob = await exportNoteAsDocx(fresh.content || "", title);
+            downloadDocxBlob(blob, title);
+            toast.dismiss(toastId);
+            toast.success(t("export.exportComplete"));
+          } catch (err: any) {
+            toast.dismiss(toastId);
+            toast.error(err?.message || t("export.exportFailed", { error: String(err) }));
+          }
+          break;
+        }
+        case "trash": {'''
+          text = replace_once(text, old_cases, new_cases, 'sidebar note action cases')
+
+          move_confirm = r'''
+  const handleMoveSidebarNoteConfirm = useCallback(async (targetNotebookId: string) => {
+    if (!moveNoteTarget) return;
+    const sourceNote = moveNoteTarget;
+    setMoveNoteTarget(null);
+
+    if (targetNotebookId === sourceNote.notebookId) return;
+    if (sourceNote.isLocked === 1) {
+      toast.warning(t("common.noteLockedCannotEdit") || t("editor.lockedBanner") || "笔记已锁定");
+      return;
+    }
+
+    const movedNote = { ...sourceNote, notebookId: targetNotebookId };
+    setNotesByNotebookId((prev) => moveNoteInNotebookCache(prev, sourceNote.id, targetNotebookId, movedNote));
+    actions.updateNoteInList({ id: sourceNote.id, notebookId: targetNotebookId });
+    if (state.activeNote?.id === sourceNote.id) {
+      actions.setActiveNote({ ...state.activeNote, notebookId: targetNotebookId });
+      actions.setSelectedNotebook(targetNotebookId);
+    }
+
+    try {
+      await api.updateNote(sourceNote.id, { notebookId: targetNotebookId } as any);
+      actions.refreshNotebooks();
+      actions.refreshNotes();
+      void loadNotesForNotebook(sourceNote.notebookId, true);
+      void loadNotesForNotebook(targetNotebookId, true);
+    } catch (err: any) {
+      console.error("Failed to move sidebar note:", err);
+      toast.error(err?.message || t("noteList.bulkMoveFailed", { error: "" }) || "移动笔记失败");
+      actions.refreshNotes();
+      actions.refreshNotebooks();
+      void loadNotesForNotebook(sourceNote.notebookId, true);
+      void loadNotesForNotebook(targetNotebookId, true);
+    }
+  }, [actions, loadNotesForNotebook, moveNoteTarget, state.activeNote, t]);
+
+'''
+          text = replace_once(text, '  const handleCreateSidebarNote = useCallback(async (notebookId: string) => {', move_confirm + '  const handleCreateSidebarNote = useCallback(async (notebookId: string) => {', 'handleMoveSidebarNoteConfirm')
+
+          modal_render = '''      {/* Move Notebook Modal */}
+      <MoveNotebookModal
+        isOpen={!!moveNbTarget}
+        notebook={moveNbTarget}
+        allNotebooks={state.notebooks}
+        onMove={handleMoveNotebookConfirm}
+        onClose={() => setMoveNbTarget(null)}
+      />'''
+          modal_render_new = '''      {/* Move Notebook Modal */}
+      <MoveNotebookModal
+        isOpen={!!moveNbTarget}
+        notebook={moveNbTarget}
+        allNotebooks={state.notebooks}
+        onMove={handleMoveNotebookConfirm}
+        onClose={() => setMoveNbTarget(null)}
+      />
+
+      {/* Move inline note Modal */}
+      <MoveSidebarNoteModal
+        isOpen={!!moveNoteTarget}
+        note={moveNoteTarget}
+        allNotebooks={state.notebooks}
+        onMove={handleMoveSidebarNoteConfirm}
+        onClose={() => setMoveNoteTarget(null)}
+      />'''
+          text = replace_once(text, modal_render, modal_render_new, 'render MoveSidebarNoteModal')
+
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Validate frontend
+        run: |
+          cd frontend
+          npm install
+          npx tsc -b
+          npx vite build
+      - name: Commit fix and remove temporary workflow
+        run: |
+          rm .github/workflows/auto-fix-note-contextmenu.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/components/Sidebar.tsx .github/workflows/auto-fix-note-contextmenu.yml
+          git commit -m "fix: unify notebook tree note context menu (NOTEBOOK-TREE-NOTE-CONTEXTMENU-01)"
+          git push

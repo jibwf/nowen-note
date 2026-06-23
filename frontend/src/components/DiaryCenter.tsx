@@ -1755,16 +1755,23 @@ function FilterBar({
   const [draftTo, setDraftTo] = useState(customRange.to || "");
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  // 点外部关闭弹层
+  // 点外部关闭弹层 + Esc 关闭
   useEffect(() => {
     if (!showCustom) return;
-    const handler = (e: MouseEvent) => {
+    const handleClick = (e: MouseEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
         setShowCustom(false);
       }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowCustom(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
   }, [showCustom]);
 
   // 同步外部 customRange → 草稿（比如父组件被重置时）
@@ -1842,7 +1849,7 @@ function FilterBar({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: -4 }}
               transition={{ duration: 0.15 }}
-              className="absolute right-0 top-full mt-2 p-3 bg-app-elevated rounded-xl border border-app-border shadow-lg z-30 w-[260px]"
+              className="absolute right-0 top-full mt-2 p-3 bg-app-elevated rounded-xl border border-app-border shadow-lg z-50 w-[260px]"
             >
               <div className="space-y-2">
                 <div>

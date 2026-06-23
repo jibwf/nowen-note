@@ -1509,6 +1509,30 @@ export const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    version: 30,
+    name: "task-calendar-feeds",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS task_calendar_feeds (
+          id TEXT PRIMARY KEY,
+          userId TEXT NOT NULL,
+          workspaceId TEXT,
+          token TEXT NOT NULL UNIQUE,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          includeCompleted INTEGER NOT NULL DEFAULT 0,
+          includeDescription INTEGER NOT NULL DEFAULT 1,
+          defaultAlarmMinutes INTEGER NOT NULL DEFAULT 30,
+          lastAccessedAt TEXT,
+          createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+          updatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_task_calendar_feeds_token ON task_calendar_feeds(token);
+        CREATE INDEX IF NOT EXISTS idx_task_calendar_feeds_user ON task_calendar_feeds(userId);
+      `);
+    },
+  },
 ];
 
 /** 当前代码已知的最高 schema 版本（== MIGRATIONS 里 max(version)）。 */

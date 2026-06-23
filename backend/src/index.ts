@@ -21,6 +21,7 @@ import taskRemindersRouter from "./routes/task-reminders";
 import taskProjectsRouter from "./routes/task-projects";
 import taskTemplatesRouter from "./routes/task-templates";
 import taskDependenciesRouter from "./routes/task-dependencies";
+import taskCalendarRouter from "./routes/task-calendar";
 import filesRouter from "./routes/files";
 import micloudRouter from "./routes/micloud";
 import oppoCloudRouter from "./routes/oppocloud";
@@ -415,6 +416,7 @@ app.route("/api/task-reminders", taskRemindersRouter);
 app.route("/api/task-projects", taskProjectsRouter);
 app.route("/api/task-templates", taskTemplatesRouter);
 app.route("/api/task-dependencies", taskDependenciesRouter);
+app.route("/api/task-calendar", taskCalendarRouter);
 app.route("/api/files", filesRouter);
 
 

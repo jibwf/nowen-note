@@ -1214,6 +1214,16 @@ export const api = {
     return request<TaskStats>(`/tasks/stats/summary${qs}`);
   },
 
+
+  // Task calendar subscription (ICS feed)
+  taskCalendarFeed: {
+    get: () => request<{ feed: any }>(`/task-calendar/feed`),
+    create: () => request<{ feed: any }>(`/task-calendar/feed`, { method: "POST" }),
+    update: (data: { enabled?: boolean; includeCompleted?: boolean; includeDescription?: boolean; defaultAlarmMinutes?: number }) =>
+      request<{ feed: any }>(`/task-calendar/feed`, { method: "PATCH", body: JSON.stringify(data) }),
+    rotateToken: () => request<{ success: boolean }>(`/task-calendar/feed/rotate-token`, { method: "POST" }),
+  },
+
   // Security
   // 注意：后端在修改密码成功后会 bump tokenVersion，让其它端旧 token 立即失效，
   //      同时下发一张新 token 给当前请求方。前端必须把新 token 写回 localStorage，

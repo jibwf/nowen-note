@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen, Plus, Star, Trash2, Search, ChevronRight,
@@ -434,6 +434,7 @@ function SidebarNoteItem({
   onDragStart,
   onDragEnd,
   constrainWidth = false,
+  showNoteTime = true,
 }: {
   note: NoteListItem;
   depth: number;
@@ -443,6 +444,7 @@ function SidebarNoteItem({
   onDragStart?: (e: React.DragEvent, id: string) => void;
   onDragEnd?: () => void;
   constrainWidth?: boolean;
+  showNoteTime?: boolean;
 }) {
   return (
     <button
@@ -480,7 +482,7 @@ function SidebarNoteItem({
       <FileText size={13} className={cn("shrink-0", active ? "text-accent-primary" : "text-tx-tertiary")} />
       <span className="flex-1 min-w-0">
         <span className="block truncate leading-tight">{note.title || "无标题笔记"}</span>
-        <span className="block text-[10px] text-tx-tertiary truncate leading-tight mt-0.5">{noteTimeLabel(note.updatedAt)}</span>
+        {showNoteTime && <span className="block text-[10px] text-tx-tertiary truncate leading-tight mt-0.5">{noteTimeLabel(note.updatedAt)}</span>}
       </span>
     </button>
   );
@@ -495,6 +497,7 @@ function NotebookItem({
   showNotes, notesByNotebookId, loadingNotebookIds, activeNoteId, onSelectNote, onNoteContextMenu,
   onNoteDragStart, onNoteDragOver, onNoteDragEnd, onNoteDrop, onCreateNote,
   constrainWidth = false,
+  showNoteTime = true,
 }: {
   notebook: Notebook; depth: number; onSelect: (id: string) => void;
   selectedId: string | null; onToggle: (id: string) => void;
@@ -528,6 +531,7 @@ function NotebookItem({
   onNoteDrop?: (e: React.DragEvent, notebookId: string) => void;
   onCreateNote?: (notebookId: string) => void;
   constrainWidth?: boolean;
+  showNoteTime?: boolean;
 }) {
   const { t } = useTranslation();
   const isSelected = selectedId === notebook.id;
@@ -779,6 +783,7 @@ function NotebookItem({
                 onNoteDrop={onNoteDrop}
                 onCreateNote={onCreateNote}
                 constrainWidth={constrainWidth}
+                showNoteTime={showNoteTime}
               />
             ))}
             {showNotes && notes?.map((note) => (
@@ -792,6 +797,7 @@ function NotebookItem({
                 onDragStart={onNoteDragStart}
                 onDragEnd={onNoteDragEnd}
                 constrainWidth={constrainWidth}
+                showNoteTime={showNoteTime}
               />
             ))}
           </motion.div>
@@ -2127,6 +2133,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
                     onNoteDrop={handleSidebarNoteDrop}
                     onCreateNote={handleCreateSidebarNote}
                     constrainWidth={constrainNotebookTreeWidth}
+                    showNoteTime={userPrefs.showNoteListUpdatedTime}
                   />
                 ))}
               </div>
@@ -2555,3 +2562,4 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
     </div>
   );
 }
+

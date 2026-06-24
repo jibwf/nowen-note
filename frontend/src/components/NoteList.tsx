@@ -1903,6 +1903,19 @@ export default function NoteList() {
       } else {
         note = await api.createNote({ notebookId, title: t('common.untitledNote') });
       }
+
+      // BUG-FAVORITE-CREATE-01: 收藏视图中新建笔记默认设为收藏
+      let isFavorite = note.isFavorite || 0;
+      if (state.viewMode === "favorites" && !isFavorite) {
+        try {
+          const updated = await api.updateNote(note.id, { isFavorite: 1 } as any);
+          note = updated;
+          isFavorite = 1;
+        } catch {
+          // 收藏设置失败不阻断创建流程
+        }
+      }
+
       actions.setActiveNote(note);
       actions.addNoteToList({
         id: note.id,
@@ -1912,7 +1925,7 @@ export default function NoteList() {
         notebookId: note.notebookId,
         workspaceId: note.workspaceId ?? null,
         isPinned: note.isPinned || 0,
-        isFavorite: note.isFavorite || 0,
+        isFavorite,
         isLocked: note.isLocked || 0,
         isArchived: note.isArchived || 0,
         isTrashed: note.isTrashed || 0,

@@ -106,12 +106,38 @@ Backup policy: auto-backups are written to `/app/data/backups` by default, shari
 
 - Browser clipper extension (Chrome / Edge): [Chrome Web Store](https://chromewebstore.google.com/detail/nowen-note-web-clipper/nglkodhfdbnfielchjpkjhenfaecafpg)
 - Deployment guide (Local / Docker / Desktop / Mobile / Synology / UGREEN / QNAP / fnOS / ZSpace / ARM64): [docs/deployment.md](./docs/deployment.md)
+- Attachment object storage (S3 / R2 / MinIO): [docs/object-storage.md](./docs/object-storage.md)
 - fnOS .fpk packaging: [scripts/fpk/README.md](./scripts/fpk/README.md)
 - ARM64 details: [docs/deploy-arm64.md](./docs/deploy-arm64.md)
 - Email backup configuration: [docs/backup-email-smtp.md](./docs/backup-email-smtp.md)
 - Editor mode switch: [docs/editor-mode-switch.md](./docs/editor-mode-switch.md)
 - Privacy policy: [docs/PRIVACY.md](./docs/PRIVACY.md)
 - OpenAPI: once running, visit `/api/openapi.json`
+
+> 📚 **Tutorial Center**: [docs/tutorials/](./docs/tutorials/) — complete tutorials from quick start to advanced features
+
+- **Getting Started**: [5-Minute Quick Start](./docs/tutorials/quick-start.md) · [UI Overview](./docs/tutorials/ui-overview.md) · [Create Your First Note](./docs/tutorials/first-note.md)
+- **Note Management**: [Document Tree / Notebooks](./docs/tree-tutorial.md) · [Tags & Favorites](./docs/tutorials/tags-favorites.md) · [Search](./docs/tutorials/search.md)
+- **Editor**: [Rich Text Editor](./docs/tutorials/editor-rich-text.md) · [Markdown Editor](./docs/tutorials/editor-markdown.md) · [Slash Commands](./docs/tutorials/slash-commands.md)
+- **AI Features**: [AI Configuration](./docs/tutorials/ai-setup.md) · [AI Title & Tag Generation](./docs/tutorials/ai-title-tags.md) · [AI Summary](./docs/tutorials/ai-summary.md)
+- **Mind Maps**: [Getting Started](./docs/tutorials/mindmap-intro.md) · [Generate from Note](./docs/tutorials/mindmap-from-note.md) · [Export](./docs/tutorials/mindmap-export.md)
+- **Deployment**: [Docker](./docs/tutorials/docker-deploy.md) · [NAS](./docs/tutorials/nas-deploy.md) · [Backup & Migration](./docs/tutorials/backup-migrate.md)
+
+## FAQ
+
+### macOS: first launch error / won't start / "ERR_DLOPEN_FAILED"
+
+Because this app is not Apple-notarized, macOS applies a quarantine attribute to the `.app` downloaded from the DMG, which causes the native `better-sqlite3` module to fail loading. The backend then hangs for 30 seconds and reports a startup timeout.
+
+Run this one-liner in Terminal to remove the quarantine (adjust the path to wherever you placed the app):
+
+```bash
+sudo xattr -dr com.apple.quarantine "/Applications/Nowen Note.app"
+# or
+sudo xattr -dr com.apple.quarantine ~/Downloads/Nowen\ Note.app
+```
+
+After that, double-click to open it again. Apple Silicon users who downloaded the x64 build will need Rosetta 2 (the system will prompt you to install it automatically).
 
 ## Support
 

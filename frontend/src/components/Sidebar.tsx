@@ -955,6 +955,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
   const noteMenuItems: ContextMenuItem[] = useMemo(() => {
     const note = getCachedNote(menu.targetId);
     if (!note) return [];
+    const isTrashed = note.isTrashed === 1;
     return [
       { id: "open", label: t("common.open", { defaultValue: "打开" }), icon: <FileText size={14} /> },
       { id: "sep0", label: "", separator: true },
@@ -962,16 +963,19 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
         id: "toggle_pin",
         label: note.isPinned === 1 ? t("noteList.unpin") || "取消置顶" : t("noteList.pin") || "置顶",
         icon: note.isPinned === 1 ? <PinOff size={14} /> : <Pin size={14} />,
+        disabled: isTrashed,
       },
       {
         id: "toggle_fav",
         label: note.isFavorite === 1 ? t("noteList.unfavorite") || "取消收藏" : t("noteList.favorite") || "收藏",
         icon: note.isFavorite === 1 ? <StarOff size={14} /> : <Star size={14} />,
+        disabled: isTrashed,
       },
       {
         id: "toggle_lock",
         label: note.isLocked === 1 ? t("noteList.unlock") || "解锁" : t("noteList.lock") || "锁定",
         icon: note.isLocked === 1 ? <Unlock size={14} /> : <Lock size={14} />,
+        disabled: isTrashed,
       },
       { id: "sep1", label: "", separator: true },
       {
@@ -979,7 +983,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
         label: t("noteList.moveToTrash") || "移到回收站",
         icon: <Trash2 size={14} />,
         danger: true,
-        disabled: note.isLocked === 1,
+        disabled: note.isLocked === 1 || isTrashed,
       },
     ];
   }, [getCachedNote, menu.targetId, t]);
@@ -1452,6 +1456,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
           break;
         }
         case "toggle_pin": {
+          if (targetNote.isTrashed === 1) break;
           const next = targetNote.isPinned === 1 ? 0 : 1;
           await api.updateNote(targetId, { isPinned: next } as any);
           updateCachedNote(targetId, { isPinned: next });
@@ -1461,6 +1466,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
           break;
         }
         case "toggle_fav": {
+          if (targetNote.isTrashed === 1) break;
           const next = targetNote.isFavorite === 1 ? 0 : 1;
           await api.updateNote(targetId, { isFavorite: next } as any);
           updateCachedNote(targetId, { isFavorite: next });
@@ -1470,6 +1476,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
           break;
         }
         case "toggle_lock": {
+          if (targetNote.isTrashed === 1) break;
           const next = targetNote.isLocked === 1 ? 0 : 1;
           await api.updateNote(targetId, { isLocked: next } as any);
           updateCachedNote(targetId, { isLocked: next });
@@ -1508,6 +1515,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
             toast.warning(t("common.noteLockedCannotEdit") || t("editor.lockedBanner") || "笔记已锁定");
             break;
           }
+          if (targetNote.isTrashed === 1) break;
           if (state.activeNote?.id === targetId) actions.setActiveNote(null);
           removeCachedNote(targetId);
           await api.updateNote(targetId, { isTrashed: 1 } as any);

@@ -56,19 +56,19 @@ import {
 import { useUserPreferences } from "@/hooks/useUserPreferences";
 
 // ---------------------------------------------------------------------------
-// �༭��ģʽ�л���MD vs Tiptap��
+// 编辑器模式切换（MD vs Tiptap）
 // ---------------------------------------------------------------------------
-// URL `?md=1|0` ǿ�ƣ������ localStorage["nowen.editor_mode"]��
-// ��дЭ���빤�ߣ�frontend/src/lib/editorMode.ts
-// �л��������̣�docs/editor-mode-switch.md
+// URL `?md=1|0` 强制，否则读 localStorage["nowen.editor_mode"]。
+// 底层协议与工具：frontend/src/lib/editorMode.ts
+// 切换流程与文档：docs/editor-mode-switch.md
 //
-// UI ��ڲ��ԣ�2026-04 �𣩣�
-//   ������ `MD / RTE` �ձ갴ť����ͨ�û����� ���� ����������ò���˫���棬
-//   ��ťռλ + tooltip �����������˫����**������û��ɾ��**��
-//     - `?md=1` / `?md=0` URL ������Ȼ��Ч�����߼��û����Զ������������ӣ�
-//     - `localStorage["nowen.editor_mode"]` ��Ȼ����ȡ
-//     - toggleEditorMode �����л�Э�鱣����δ���������Ǩ������ҳ��һ�п��ؼ��ɻָ�
-//   ��Ҫ�ڿ�������ʱ��ʾ��ť�����·�������Ϊ true����ʽ�����뱣�� false��
+// UI 已隐藏（内部测试，2026-04 暂时）：
+//   顶栏 `MD / RTE` 切换按钮，对普通用户 隐藏 隐藏。设置里双击可调出，
+//   按钮占位 + tooltip 仍然存在，双击即可**临时让用户删除**。
+//     - `?md=1` / `?md=0` URL 参数仍然生效（逻辑没删，只是用户看不到链接）
+//     - `localStorage["nowen.editor_mode"]` 仍然可读取
+//     - toggleEditorMode 会切换并保存，但未完成自动迁移，刷新页面后一切可恢复
+//   需要在开发调试时显示按钮，把下方变量改为 true；正式发布请保持 false。
 const SHOW_EDITOR_MODE_TOGGLE = false;
 
 export default function EditorPane() {
@@ -78,20 +78,20 @@ export default function EditorPane() {
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showMoveDropdown, setShowMoveDropdown] = useState(false);
   const moveDropdownRef = useRef<HTMLDivElement | null>(null);
-  // ������Ĭ�Ͽ�/�����û�ƫ�þ��������� �� ��� �� "Ĭ����ʾ���"����
-  // �л��ʼ�ʱ��δ����"���°�ƫ��ˢ��"�����·� lockOnOpen ��ͬһ�� effect ��
-  // һ�� reset ���ɣ�Ŀǰ����"�û��ڱ༭�ڼ��ֶ��л���״̬���бʼ�ʱҲ����"��
-  // ��Ϊ�Գ�פʹ�ô�ٵ��û���˵��ÿ���бʼǶ����𷴶��ȱ���ϰ�߸����ˡ�
+  // 大纲默认开/关是用户偏好，不等于 "默认显示大纲"。
+  // 切换笔记时如果未触发"新版偏好刷新"，新路由 lockOnOpen 在同一个 effect 里
+  // 一起 reset 完成（目前是"用户在编辑期间手动切换状态，新笔记打开时也会保持"。
+  // 因为长期使用极少的用户来说，每次新笔记都反向丢失偏好会很不习惯。
   const { prefs: userPrefs, setPref: setUserPref } = useUserPreferences();
   const [showOutline, setShowOutline] = useState<boolean>(() => userPrefs.outlineDefaultOpen);
-  // ��ͼ��ֻ���������� isLocked �����"������"��
-  // ����ʼ�ʱ�������� lockOnOpen ƫ�ã��Ͱѵ�ǰ�ʼ� id ����������ϣ�
-  // �༭����Ϊֻ�����û��������ť���Ƴ����Ӷ����Ự�ָ��༭����
-  // �е���һ���ʼ�ʱ�ٴΰ�ƫ��Ӧ�ã�����Ӱ�졣
-  // ��д��ĺô���������Ⱦ�ʼǵ� isLocked �ֶΣ�Ҳ���ᴥ��Э���� / �����ˡ�
+  // 视图级只读：除了 DB 的 isLocked，还有用户偏好带来的"会话锁"。
+  // 新笔记打开时如果启用了 lockOnOpen 偏好，就把当前笔记 id 加入集合，
+  // 编辑器变为只读，用户需要点解锁按钮移除，从而恢复编辑能力。
+  // 下一次打开新笔记时再次按偏好应用，不影响其它笔记。
+  // 这样做的好处是：不污染笔记的 isLocked 字段，也不会触发协作广播 / 权限检查。
   const [viewLockedIds, setViewLockedIds] = useState<Set<string>>(() => new Set());
-  // ���� ref������ yDoc/snapshot/flushToLocal �ȳ��ڹ��صıհ��Ӻ���
-  // �����ܿ�������ֵ��������ƫ�øտ���֮�󻹻���"��Ӧ���ıʼ�"д�� / д yDoc��
+  // 用 ref 让 yDoc/snapshot/flushToLocal 等长驻闭包引用最新值。
+  // 否则可能读到旧值，导致偏好刚关之后还会往"已锁定的笔记"写 / 写 yDoc。
   const viewLockedIdsRef = useRef(viewLockedIds);
   viewLockedIdsRef.current = viewLockedIds;
   const [headings, setHeadings] = useState<HeadingItem[]>([]);
@@ -99,14 +99,15 @@ export default function EditorPane() {
   const { t } = useTranslation();
 
   /**
-   * ��ͼ����Ч����״̬��DB �� isLocked **��** �û�ƫ�ô�����"�Ự��"��
+   * 当前视图级有效锁定状态：DB 的 isLocked **加** 用户偏好带来的"会话锁"。
    *
-   * ��Ӱ������"ֻ���Ž�"�жϣ��༭�� editable��ɾ����ť��AI ��д���ƶ�������վ��
-   * Y.Doc Э����ʼ���ȣ���ע�� togglePin / �ղص�Ԫ������Ȼ������� isLocked
-   * �жϡ����Ự����Ӧ��ֹ�û���"�뱣������"�ıʼǴ� pin / �ķ��ࡣ
+   * 它影响所有"只读即禁用"判断：编辑器 editable、删除按钮、AI 写作、移动到回收站。
+   * Y.Doc 协作笔记优先，但 togglePin / 收藏等元素仍然走 isLocked
+   * 判断。会话锁也应阻止用户在"被保护笔记"上偷偷 pin / 收藏。
    */
   const isViewLocked = !!activeNote && viewLockedIds.has(activeNote.id);
-  const effectiveLocked = !!activeNote?.isLocked || isViewLocked;
+  const isTrashed = !!activeNote?.isTrashed;
+  const effectiveLocked = !!activeNote?.isLocked || isViewLocked || isTrashed;
   const showDesktopOutline = showOutline && !state.editorFullscreen;
 
   // �бʼ�ʱ��ƫ��Ӧ��"�򿪼�����"��
@@ -124,13 +125,13 @@ export default function EditorPane() {
         return next;
       });
     }
-    // ���Ĭ�Ͽ��أ�ÿ���бʼ�ʱ����ǰƫ������һ�Σ���֤�û������������
-    // ����ƫ�ú���һ�δ򿪱ʼ�������Ч���м���ֶ�������Ȼ�ڵ�ǰ�ʼ���
-    // ���֣�ֱ���ٴ��бʼ�ʱ��ƫ�ø��ǡ������Ǵ�����û����������塣
+    // 大纲默认开关：每次打开笔记时按当前偏好刷新一次，保证用户设置生效。
+    // 偏好更新后第一次打开笔记才生效，中途手动切换大纲仍然在当前笔记
+    // 保持，直到再次打开笔记时偏好覆盖。这是大多数用户期望的行为。
     setShowOutline(userPrefs.outlineDefaultOpen);
-    // ���� disable react-hooks/exhaustive-deps��lockOnOpen / outlineDefaultOpen
-    // ���ⲻ�������������û�����������������ʱ�������̷����� / ǿ��չ��
-    // ��ǰ�򿪵ıʼǣ���к���֡�����ֻ�ڡ����ʼǡ����ʱ����Ч��
+    // 这里 disable react-hooks/exhaustive-deps：lockOnOpen / outlineDefaultOpen
+    // 变化不应该触发重新应用，否则用户随时调整偏好时会造成意外抖动 / 强制展开。
+    // 当前打开的笔记，只有切换笔记、大纲只有在"打开笔记"时才生效。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeNote?.id]);
 
@@ -148,29 +149,29 @@ export default function EditorPane() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement | null>(null);
 
-  // ���� HTML Ԥ��ģʽ ����
-  // ���ʼ����ݱ����Ϊ HTML ��ʽ���� clipper ���أ�ʱ�Զ�����ֻ��Ԥ����
-  // �û����ֶ��л��� Tiptap �༭�����и�ʽ��ʧ���棩��
+  // 纯 HTML 预览模式：当
+  // 笔记内容被保存为 HTML 格式（如 clipper 导入）时自动进入只读预览，
+  // 用户需要手动切换到 Tiptap 编辑器（会有格式丢失风险）。
   const [htmlPreviewMode, setHtmlPreviewMode] = useState(false);
   const [showHtmlEditWarning, setShowHtmlEditWarning] = useState(false);
-  // ��ס��ǰ�ʼǵ�ԭʼ��ʽ�Ƿ�Ϊ HTML��
-  // �л����༭ģʽ��༭��������� normalize �� Markdown������ detectFormat ���� "md"��
-  // ������� detectFormat �жϣ��л���ť����ʧ���û����޷��л�Ԥ��ģʽ��
-  // �������������ְ�ťʼ�տɼ���
+  // 记住当前笔记的原始格式是否为 HTML。
+  // 切换到编辑模式后，内容会被 normalize 为 Markdown，此时 detectFormat 返回 "md"。
+  // 如果仅靠 detectFormat 判断，切换按钮会消失，用户无法切回预览模式。
+  // 所以需要单独记录，让按钮始终可见。
   const [noteIsHtml, setNoteIsHtml] = useState(false);
-  // ��ȫ��¡ģʽ������ HTML �ĵ����� <!DOCTYPE ...>����֧�ֱ༭������ʾ�л���ť��
+  // 全新只读模式：当笔记是完整 HTML 文档（含 <!DOCTYPE ...>）时，不支持编辑，只显示预览按钮。
   const [noteIsFullHtmlDoc, setNoteIsFullHtmlDoc] = useState(false);
 
-  // �༭��ģʽ��MD / Tiptap��������ֵ���� URL / localStorage������ʱ���л�
+  // 编辑器模式（MD / Tiptap）：初始值来自 URL / localStorage，可随时切换。
   const [editorMode, setEditorMode] = useState<EditorMode>(() => resolveEditorMode());
   /**
-   * ��ǰ�༭����Tiptap �� Markdown����¶������ʽ�����
-   * EditorPane ֻ����Ҫ"���� flush"���ٽ��ʹ�ã��л��༭�����л��ʼǡ�ж��ǰ����
-   * �ճ���������Ȼ�� onUpdate �ص���
+   * 当前编辑器（Tiptap 或 Markdown）暴露的命令式方法。
+   * EditorPane 只需要"命令 flush"等极简方法，切换编辑器、切换笔记、判断当前
+   * 粘贴行为等仍然走 onUpdate 回调。
    */
   const editorHandleRef = useRef<NoteEditorHandle | null>(null);
 
-  /** ���ڽ��б༭��ģʽ�л�����ֹ�û����㵼�²��� PUT/mount ��̬�� */
+  /** 用于在编辑器模式切换时，防止用户连点导致重复 PUT / mount 竞态。 */
   const modeSwitchInflightRef = useRef<boolean>(false);
   const [modeSwitching, setModeSwitching] = useState(false);
 
@@ -1272,7 +1273,7 @@ export default function EditorPane() {
   }, [activeNote, syncStatus, actions]);
 
   const toggleFavorite = useCallback(async () => {
-    if (!activeNote) return;
+    if (!activeNote || activeNote.isTrashed) return;
     haptic.light();
     const updated = await api.updateNote(activeNote.id, { isFavorite: activeNote.isFavorite ? 0 : 1 } as any);
     actions.setActiveNote(updated);
@@ -1280,7 +1281,7 @@ export default function EditorPane() {
   }, [activeNote, actions]);
 
   const togglePin = useCallback(async () => {
-    if (!activeNote) return;
+    if (!activeNote || activeNote.isTrashed) return;
     haptic.light();
     const updated = await api.updateNote(activeNote.id, { isPinned: activeNote.isPinned ? 0 : 1 } as any);
     actions.setActiveNote(updated);
@@ -1288,7 +1289,7 @@ export default function EditorPane() {
   }, [activeNote, actions]);
 
   const toggleLock = useCallback(async () => {
-    if (!activeNote) return;
+    if (!activeNote || activeNote.isTrashed) return;
     haptic.medium();
     // ���Ƚ��"�Ự��"���û�ƫ��"�򿪼�����"��ɵ���ʱֻ������
     //   - ���ﱾ�� isLocked=1���Ǿ������߼��� DB��
@@ -1342,7 +1343,7 @@ export default function EditorPane() {
   }, [activeNote, t]);
 const moveToTrash = useCallback(async () => {
     // ������������Ự�����ʼǲ�����������վ������"�������ʼ�"����ɾ��
-    if (!activeNote || activeNote.isLocked || viewLockedIdsRef.current.has(activeNote.id)) return;
+    if (!activeNote || activeNote.isLocked || activeNote.isTrashed || viewLockedIdsRef.current.has(activeNote.id)) return;
     haptic.heavy();
     const noteId = activeNote.id;
     actions.setActiveNote(null);
@@ -1913,8 +1914,9 @@ const moveToTrash = useCallback(async () => {
           <Button
             variant="ghost" size="icon" className="h-8 w-8 shrink-0"
             onClick={toggleLock}
+            disabled={isTrashed}
             aria-label={effectiveLocked ? t('editor.unlockTooltip') : t('editor.lockTooltip')}
-            title={effectiveLocked ? t('editor.unlockTooltip') : t('editor.lockTooltip')}
+            title={isTrashed ? t('editor.trashTooltip') : effectiveLocked ? t('editor.unlockTooltip') : t('editor.lockTooltip')}
           >
             {effectiveLocked
               ? <Lock size={17} className="text-orange-500" />
@@ -1931,6 +1933,7 @@ const moveToTrash = useCallback(async () => {
             <Search size={17} />
           </Button>
           <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={toggleFavorite}
+            disabled={isTrashed}
             aria-label={activeNote.isFavorite ? t('editor.unfavoriteTooltip') : t('editor.favoriteTooltip')}>
             <Star size={17} className={cn(activeNote.isFavorite && "text-amber-400 fill-amber-400")} />
           </Button>
@@ -1952,7 +1955,7 @@ const moveToTrash = useCallback(async () => {
                   {/* �ö� / ȡ���ö� */}
                   <button
                     onClick={() => { togglePin(); setShowMobileMenu(false); }}
-                    disabled={!!activeNote.isLocked}
+                    disabled={!!activeNote.isLocked || isTrashed}
                     className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-tx-secondary active:bg-app-hover transition-colors disabled:opacity-40"
                   >
                     <Pin size={15} className={cn(activeNote.isPinned ? "text-accent-primary fill-accent-primary" : "text-tx-tertiary")} />
@@ -1962,7 +1965,8 @@ const moveToTrash = useCallback(async () => {
                   {/* �ƶ��ʼǱ� */}
                   <button
                     onClick={() => setShowMobileMoveMenu(!showMobileMoveMenu)}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-tx-secondary active:bg-app-hover transition-colors"
+                    disabled={isTrashed}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-tx-secondary active:bg-app-hover transition-colors disabled:opacity-40"
                   >
                     <FolderInput size={15} className="text-tx-tertiary" />
                     <span className="flex-1 text-left">{t('editor.moveToNotebook')}</span>
@@ -2624,7 +2628,21 @@ const moveToTrash = useCallback(async () => {
           {/* ErrorBoundary �������ֱ༭�����бʼ�Ϊ key���������Զ����ã�
               �ײ㻹�ܴ� console �� [EditorErrorBoundary] ��־�� window.__lastDirtyDoc */}
           <EditorErrorBoundary resetKey={activeNote.id}>
-          {htmlPreviewMode ? (
+          {/* 原生 Markdown 笔记：contentFormat === "markdown" 时始终用 MarkdownEditor */}
+          {activeNote.contentFormat === "markdown" ? (
+            <MarkdownEditor
+              key={`md-native-${activeNote.id}`}
+              ref={editorHandleRef}
+              note={activeNote}
+              onUpdate={handleUpdate}
+              onTagsChange={handleTagsChange}
+              onHeadingsChange={setHeadings}
+              onEditorReady={(fn) => { scrollToRef.current = fn; }}
+              editable={!effectiveLocked && !modeSwitching}
+              yDoc={collabYDoc}
+              awareness={collabProvider?.awareness ?? null}
+            />
+          ) : htmlPreviewMode ? (
             <HtmlPreviewPane
               key={`html-${activeNote.id}`}
               ref={editorHandleRef}

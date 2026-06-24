@@ -1533,6 +1533,20 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  // v31: notes 增加 contentFormat 字段，区分原生 Markdown 笔记与富文本笔记。
+  //   - 'tiptap-json'（默认）：传统 Tiptap 富文本
+  //   - 'markdown'：原生 Markdown 笔记，content 直接存 Markdown 源码
+  //   - 'html'：HTML 格式（历史数据）
+  // 旧数据默认 tiptap-json，不迁移内容。
+  {
+    version: 31,
+    name: "notes-add-contentFormat",
+    up: (db) => {
+      const cols = db.prepare("PRAGMA table_info(notes)").all() as { name: string }[];
+      if (cols.some((c) => c.name === "contentFormat")) return;
+      db.prepare("ALTER TABLE notes ADD COLUMN contentFormat TEXT NOT NULL DEFAULT 'tiptap-json'").run();
+    },
+  },
 ];
 
 /** 当前代码已知的最高 schema 版本（== MIGRATIONS 里 max(version)）。 */

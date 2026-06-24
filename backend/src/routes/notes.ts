@@ -315,9 +315,9 @@ app.get("/:id", (c) => {
   const favExpr = `CASE WHEN EXISTS(SELECT 1 FROM favorites f WHERE f.noteId = notes.id AND f.userId = ?) THEN 1 ELSE 0 END AS isFavorite`;
   const selectCols = slim
     ? `id, userId, notebookId, workspaceId, title, isPinned, ${favExpr}, isLocked,
-       isArchived, isTrashed, version, sortOrder, createdAt, updatedAt, trashedAt`
+       isArchived, isTrashed, version, sortOrder, createdAt, updatedAt, trashedAt, contentFormat`
     : `id, userId, notebookId, workspaceId, title, content, contentText, isPinned, ${favExpr},
-       isLocked, isArchived, isTrashed, version, sortOrder, createdAt, updatedAt, trashedAt`;
+       isLocked, isArchived, isTrashed, version, sortOrder, createdAt, updatedAt, trashedAt, contentFormat`;
   const note = db.prepare(`SELECT ${selectCols} FROM notes WHERE id = ?`).get(userId, id);
   if (!note) return c.json({ error: "Note not found" }, 404);
 
@@ -370,12 +370,20 @@ app.post("/", async (c) => {
     id = uuid();
   }
   try {
+    // contentFormat: 区分原生 Markdown 笔记与富文本笔记
+    const contentFormat = body.contentFormat === "markdown" ? "markdown"
+      : body.contentFormat === "html" ? "html"
+      : "tiptap-json";
+    // Markdown 笔记默认 content 为空 Markdown；富文本默认为空 Tiptap JSON
+    const defaultContent = contentFormat === "markdown" ? "# 无标题 Markdown\n\n" : "{}";
+
     db.prepare(`
-      INSERT INTO notes (id, userId, workspaceId, notebookId, title, content, contentText)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO notes (id, userId, workspaceId, notebookId, title, content, contentText, contentFormat)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, userId, inheritedWorkspaceId, body.notebookId,
-      body.title || "无标题笔记", body.content || "{}", body.contentText || "",
+      body.title || "无标题笔记", body.content || defaultContent, body.contentText || "",
+      contentFormat,
     );
   } catch (e: any) {
     if (String(e?.code || "").startsWith("SQLITE_CONSTRAINT")) {
@@ -417,7 +425,7 @@ app.post("/", async (c) => {
   const note = db.prepare(`
     SELECT id, userId, notebookId, workspaceId, title, content, contentText, isPinned,
       CASE WHEN EXISTS(SELECT 1 FROM favorites f WHERE f.noteId = notes.id AND f.userId = ?) THEN 1 ELSE 0 END AS isFavorite,
-      isLocked, isArchived, isTrashed, version, sortOrder, createdAt, updatedAt, trashedAt
+      isLocked, isArchived, isTrashed, version, sortOrder, createdAt, updatedAt, trashedAt, contentFormat
     FROM notes WHERE id = ?
   `).get(userId, id);
   logAudit(userId, "note", "create", { noteId: id, title: body.title }, { targetType: "note", targetId: id });
@@ -436,7 +444,7 @@ app.put("/:id", async (c) => {
   const { permission, workspaceId: noteWorkspaceId } = resolveNotePermission(id, userId);
 
   // 根据变更字段决定所需权限
-  const writeFields = ["title", "content", "contentText", "notebookId", "isPinned", "isFavorite",
+  const writeFields = ["title", "content", "contentText", "contentFormat", "notebookId", "isPinned", "isFavorite",
                        "isArchived", "isTrashed", "sortOrder"];
   const manageFields = ["isLocked"]; // 锁定需要 manage 权限
   const needsManage = manageFields.some((f) => body[f] !== undefined);
@@ -632,6 +640,7 @@ app.put("/:id", async (c) => {
   if (body.title !== undefined) { fields.push("title = ?"); params.push(body.title); }
   if (body.content !== undefined) { fields.push("content = ?"); params.push(body.content); }
   if (body.contentText !== undefined) { fields.push("contentText = ?"); params.push(body.contentText); }
+  if (body.contentFormat !== undefined) { fields.push("contentFormat = ?"); params.push(body.contentFormat); }
   if (body.notebookId !== undefined) {
     fields.push("notebookId = ?"); params.push(body.notebookId);
     // 同步 workspaceId
@@ -749,7 +758,7 @@ app.put("/:id", async (c) => {
   const note = db.prepare(`
     SELECT id, userId, notebookId, workspaceId, title, content, contentText, isPinned,
       CASE WHEN EXISTS(SELECT 1 FROM favorites f WHERE f.noteId = notes.id AND f.userId = ?) THEN 1 ELSE 0 END AS isFavorite,
-      isLocked, isArchived, isTrashed, version, sortOrder, createdAt, updatedAt, trashedAt
+      isLocked, isArchived, isTrashed, version, sortOrder, createdAt, updatedAt, trashedAt, contentFormat
     FROM notes WHERE id = ?
   `).get(userId, id);
 

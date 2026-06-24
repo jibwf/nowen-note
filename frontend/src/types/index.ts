@@ -173,6 +173,8 @@ export interface Note {
   title: string;
   content: string;
   contentText: string;
+  /** 内容格式：tiptap-json | markdown | html。用于区分原生 Markdown 笔记与富文本笔记 */
+  contentFormat?: string;
   isPinned: number;
   isFavorite: number;
   isLocked: number;
@@ -194,6 +196,8 @@ export interface NoteListItem {
   workspaceId: string | null;   // Phase 1 新增
   title: string;
   contentText: string;
+  /** 内容格式：tiptap-json | markdown | html。用于区分原生 Markdown 笔记与富文本笔记 */
+  contentFormat?: string;
   isPinned: number;
   isFavorite: number;
   isLocked: number;

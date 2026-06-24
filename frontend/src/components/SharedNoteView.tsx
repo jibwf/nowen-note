@@ -134,21 +134,25 @@ export default function SharedNoteView({ shareToken }: SharedNoteViewProps) {
   }, [content?.content]);
 
   // 分享页正文图片：Ctrl + 滚轮缩放
-  // 按住 Ctrl/Cmd 时鼠标滚轮可以放大/缩小图片，松开后图片保持新宽度。
   useEffect(() => {
     const root = pmRenderRef.current;
     if (!root) return;
+    console.log("[ShareWheel] effect mounted, root =", root.tagName, "imgs =", root.querySelectorAll("img").length);
     const MIN_W = 60;
     const onWheel = (e: WheelEvent) => {
+      console.log("[ShareWheel] wheel event", { ctrl: e.ctrlKey, meta: e.metaKey, target: (e.target as HTMLElement).tagName });
       if (!e.ctrlKey && !e.metaKey) return;
       const target = e.target as HTMLElement;
       const img = target.closest("img") as HTMLImageElement | null;
-      if (!img || !root.contains(img)) return;
+      if (!img || !root.contains(img)) {
+        console.log("[ShareWheel] no img found");
+        return;
+      }
       e.preventDefault();
       const cur = img.getBoundingClientRect().width || parseFloat(img.style.width) || img.naturalWidth || 300;
-      // 向下滚动 deltaY>0 缩小，向上 deltaY<0 放大
       const factor = e.deltaY > 0 ? 0.9 : 1.1;
       const next = Math.max(MIN_W, Math.min(img.naturalWidth * 2, Math.round(cur * factor)));
+      console.log("[ShareWheel] zoom", { cur, factor, next, naturalW: img.naturalWidth });
       img.style.width = next + "px";
       img.style.maxWidth = "none";
       img.style.height = "auto";

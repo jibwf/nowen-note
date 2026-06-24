@@ -1,7 +1,7 @@
 ﻿import React, { useEffect, useCallback, useState, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Pin, PinOff, Star, StarOff, Clock, FileText, FileType2, Trash2, ArchiveRestore, Menu, FolderInput, ChevronRight, ChevronDown, ChevronLeft, Folder, X, Check, Lock, Unlock, CalendarDays, RefreshCw, Share2, GripVertical, Download, ArrowUpDown, ArrowUp, ArrowDown, Image as ImageIcon, Printer, User as UserIcon, Sparkles, Tag as TagIcon, Loader2, FileUp, PanelLeftClose } from "lucide-react";
+import { Plus, Pin, PinOff, Star, StarOff, Clock, FileText, FileCode, FileType2, Trash2, ArchiveRestore, Menu, FolderInput, ChevronRight, ChevronDown, ChevronLeft, Folder, X, Check, Lock, Unlock, CalendarDays, RefreshCw, Share2, GripVertical, Download, ArrowUpDown, ArrowUp, ArrowDown, Image as ImageIcon, Printer, User as UserIcon, Sparkles, Tag as TagIcon, Loader2, FileUp, PanelLeftClose } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import ContextMenu, { ContextMenuItem } from "@/components/ContextMenu";
@@ -298,6 +298,12 @@ function CreateMenu({
       label: "新建笔记",
       desc: "富文本 / Markdown",
       icon: <FileText size={14} />,
+    },
+    {
+      id: "markdown" as const,
+      label: "新建 Markdown 笔记",
+      desc: "原生 Markdown 编辑器",
+      icon: <FileCode size={14} />,
     },
     {
       id: "word" as const,
@@ -1164,6 +1170,7 @@ const NoteCard = React.memo(function NoteCard({
             )}
           </h3>
           <div className="flex items-center gap-1 shrink-0">
+            {note.contentFormat === "markdown" && <FileCode size={11} className="text-emerald-500" />}
             {isShared && <Share2 size={11} className="text-emerald-500" />}
             {note.isLocked === 1 && <Lock size={11} className="text-orange-500" />}
             {note.isPinned === 1 && <Pin size={11} className="text-accent-primary" />}
@@ -1376,7 +1383,7 @@ export default function NoteList() {
   const createMenuAnchorMobileRef = useRef<HTMLButtonElement>(null);
   const createMenuAnchorFabRef = useRef<HTMLButtonElement>(null);
   // picker 模式下记住即将创建的笔记类型；用户选 notebook 后据此分支。
-  const [pendingNoteType, setPendingNoteType] = useState<"normal" | "word">("normal");
+  const [pendingNoteType, setPendingNoteType] = useState<"normal" | "markdown" | "word">("normal");
   const [dateFilter, setDateFilter] = useState<string | null>(null); // YYYY-MM-DD
   const [showCalendar, setShowCalendar] = useState(false);
   const notesFetchSeqRef = useRef(0);
@@ -1851,7 +1858,7 @@ export default function NoteList() {
     }
   };
 
-  const handleCreateNote = async (noteType: "normal" | "word" = "normal") => {
+  const handleCreateNote = async (noteType: "normal" | "markdown" | "word" = "normal") => {
     haptic.light();
     // 回收站视图禁止新建笔记
     if (state.viewMode === "trash") {
@@ -1888,7 +1895,7 @@ export default function NoteList() {
   // noteType="word" 时：弹文件选择器，走 importDocxAsNote（解析 .docx 为富文本笔记）。
   const createNoteInNotebook = async (
     notebookId: string,
-    noteType: "normal" | "word" = "normal",
+    noteType: "normal" | "markdown" | "word" = "normal",
   ) => {
     try {
       let note: any;
@@ -1900,6 +1907,15 @@ export default function NoteList() {
         const result = await importDocxAsNote({ notebookId, file });
         note = result.note;
         toast.success("导入成功");
+      } else if (noteType === "markdown") {
+        // 新建原生 Markdown 笔记
+        note = await api.createNote({
+          notebookId,
+          title: "无标题 Markdown",
+          contentFormat: "markdown",
+          content: "# 无标题 Markdown\n\n",
+          contentText: "无标题 Markdown",
+        } as any);
       } else {
         note = await api.createNote({ notebookId, title: t('common.untitledNote') });
       }

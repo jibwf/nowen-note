@@ -2517,6 +2517,14 @@ const moveToTrash = useCallback(async () => {
             </button>
           )}
 
+          {/* 原生 Markdown 笔记标识 */}
+          {activeNote.contentFormat === "markdown" && (
+            <span className="flex items-center gap-1 h-7 px-1.5 rounded-md text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-500 border border-emerald-500/30">
+              <FileCode size={12} />
+              <span>Markdown</span>
+            </span>
+          )}
+
           {/* HTML Ԥ�� / �༭�л������ڱʼ�ԭʼ��ʽΪ HTML ʱ��ʾ */}
           {noteIsHtml && (
             <button

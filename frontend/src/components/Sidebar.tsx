@@ -6,7 +6,7 @@ import {
   Settings, LogOut, FilePlus, FolderPlus, Edit2, X, BrainCircuit,
   Sparkles, NotebookPen, Smile, GripVertical,
   FolderInput, Check, Home, Download, FolderOpen,
-  Columns2, Columns3, FileType2, Link2, FileText,
+  Columns2, Columns3, FileType2, Link2, FileText, FileCode,
   Pin, PinOff, StarOff, Lock, Unlock, Image,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -918,6 +918,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
     const showExport = !isPersonal || isAdmin || personalExportAllowed;
     const items: ContextMenuItem[] = [
       { id: "new_note", label: t('sidebar.newNote'), icon: <FilePlus size={14} /> },
+      { id: "new_markdown_note", label: t('sidebar.newMarkdownNote') || "新建 Markdown 笔记", icon: <FileCode size={14} /> },
       { id: "new_word_note", label: t('sidebar.importWordNote') || "导入 Word 文档", icon: <FileType2 size={14} /> },
       { id: "new_url_note", label: t('sidebar.importUrlNote') || "导入公众号文章", icon: <Link2 size={14} /> },
       { id: "new_sub", label: t('sidebar.newSubNotebook'), icon: <FolderPlus size={14} /> },
@@ -1583,6 +1584,24 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
     switch (actionId) {
       case "new_note": {
         const note = await api.createNote({ notebookId: targetId, title: t('common.untitledNote') });
+        actions.setActiveNote(note);
+        actions.setSelectedNotebook(targetId);
+        actions.setViewMode("notebook");
+        const item = noteToListItem(note);
+        actions.addNoteToList(item);
+        setNotesByNotebookId((prev) => addNoteToNotebookCache(prev, targetId, item));
+        actions.refreshNotebooks();
+        break;
+      }
+      case "new_markdown_note": {
+        // 新建原生 Markdown 笔记
+        const note = await api.createNote({
+          notebookId: targetId,
+          title: "无标题 Markdown",
+          contentFormat: "markdown",
+          content: "# 无标题 Markdown\n\n",
+          contentText: "无标题 Markdown",
+        } as any);
         actions.setActiveNote(note);
         actions.setSelectedNotebook(targetId);
         actions.setViewMode("notebook");

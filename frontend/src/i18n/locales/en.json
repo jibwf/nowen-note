@@ -89,6 +89,7 @@
   },
   "sidebar": {
     "newNote": "New Note",
+    "newMarkdownNote": "New Markdown Note",
     "importWordNote": "Import Word Document",
     "importUrlNote": "Import Article from URL",
     "importUrlPrompt": "Paste a WeChat article URL (https://mp.weixin.qq.com/s/...)",

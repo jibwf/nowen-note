@@ -45,6 +45,22 @@ function saveSortPref(pref: { by: SortBy; dir: SortDir }) {
   try { localStorage.setItem(SORT_STORAGE_KEY, JSON.stringify(pref)); } catch {}
 }
 
+const TIME_VISIBILITY_STORAGE_KEY = "nowen.noteList.showTime";
+
+function loadShowTimePref(): boolean {
+  try {
+    const raw = localStorage.getItem(TIME_VISIBILITY_STORAGE_KEY);
+    if (raw === null) return true;
+    return raw === "true";
+  } catch {
+    return true;
+  }
+}
+
+function saveShowTimePref(value: boolean) {
+  try { localStorage.setItem(TIME_VISIBILITY_STORAGE_KEY, String(value)); } catch {}
+}
+
 /* ===== 排序下拉菜单 =====
  * 设计要点（针对历史踩坑）：
  *   1) 用 createPortal 挂到 document.body，绕过任何祖先的 stacking context / overflow 限制；

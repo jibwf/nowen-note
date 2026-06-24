@@ -983,17 +983,11 @@ export default function EditorPane() {
       return;
     }
 
-    // P0: 空内容防护——如果笔记原本有内容，但本次保存的内容为空/纯空白，跳过保存。
-    // 这防止编辑器初始化、setContent、远程更新等场景误触发的空内容覆盖。
-    // 用户主动清空文档时，content 会是 Tiptap 的空 doc JSON（不是空字符串），不受影响。
-    if (data.content !== undefined) {
-      const contentStr = typeof data.content === "string" ? data.content.trim() : "";
-      const existingContent = currentNote.content?.trim() || "";
-      if (contentStr.length === 0 && existingContent.length > 0) {
-        console.warn("[handleUpdate] blocked suspicious empty content save", { noteId: currentNote.id });
-        return;
-      }
-    }
+    // P0: 空内容防护已移至后端（notes.ts suspicious_empty_update 拦截）。
+    // 前端不拦截空内容保存，因为：
+    //   1. Tiptap 空文档 JSON 不是空字符串，前端 guard 实际上不拦截 RTE 模式
+    //   2. Markdown 空文档是空字符串，前端 guard 会错误拦截用户主动清空
+    //   3. 后端 guard 同时检查 content 和 contentText，更准确
 
     // ������ P2-5: ���زݸ�˫���� ����������������������������
     // ÿ�� onUpdate fire ��**ͬ��**дһ�ݲݸ嵽 localStorage��ֻҪ�����κλ���

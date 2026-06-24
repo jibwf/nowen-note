@@ -474,29 +474,19 @@ app.put("/:id", async (c) => {
     }
   }
 
-  // P0: 空内容防护——非空内容被异常清空时拒绝，防止编辑器初始化/切换/同步竞态导致数据丢失。
-  // 用户主动清空文档时，前端会传 explicitClear=true。
-  // 放宽条件：同时检查 content 和 contentText，只有两者都为空时才拦截。
-  // 这样用户手动清空文档时，contentText 也会被清空，需要 explicitClear=true。
-  // 但如果只是 content 格式变化（如 Tiptap JSON 结构变化）而 contentText 不为空，不拦截。
-  if (body.content !== undefined && body.explicitClear !== true) {
+  // P0: 空内容监控——记录非空→空的内容更新，便于排查数据丢失问题。
+  // 前端已通过 noteId 快照 + isSettingContent 守卫防止竞态导致的误保存，
+  // 后端仅做日志监控，不拦截（避免阻塞用户主动清空文档的合法操作）。
+  if (body.content !== undefined) {
     const existing = db.prepare("SELECT content, contentText FROM notes WHERE id = ?").get(id) as { content: string; contentText: string } | undefined;
     if (existing) {
       const oldContentPlain = (existing.content || "").replace(/<[^>]+>/g, "").replace(/\s+/g, "").trim();
       const newContentPlain = (body.content || "").replace(/<[^>]+>/g, "").replace(/\s+/g, "").trim();
-      const oldTextPlain = (existing.contentText || "").replace(/\s+/g, "").trim();
-      const newTextPlain = (body.contentText || existing.contentText || "").replace(/\s+/g, "").trim();
-
-      // 只有当旧内容非空，且新内容和新文本都为空时，才拦截
-      if (oldContentPlain.length > 0 && newContentPlain.length === 0 && newTextPlain.length === 0) {
-        console.warn("[notes.put] Blocked suspicious empty content update", {
+      if (oldContentPlain.length > 0 && newContentPlain.length === 0) {
+        console.warn("[notes.put] Suspicious empty content update (allowed)", {
           noteId: id, userId, oldLen: existing.content.length, newLen: (body.content || "").length,
-          oldTextLen: oldTextPlain.length, newTextLen: newTextPlain.length,
+          contentTextLen: (body.contentText || "").length,
         });
-        return c.json(
-          { error: "Blocked suspicious empty content update", code: "SUSPICIOUS_EMPTY_UPDATE" },
-          409,
-        );
       }
     }
   }

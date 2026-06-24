@@ -502,18 +502,24 @@ app.post("/cleanup-orphans", (c) => {
       for (const r of rows) {
         if (r?.path) knownPaths.add(r.path);
       }
-      // 扫描目录
-      if (fs.existsSync(attachmentsDir)) {
-        const entries = fs.readdirSync(attachmentsDir, { withFileTypes: true });
+      // 递归扫描目录（兼容 YYYY/MM/uuid.ext 子目录结构）
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]+$/i;
+      function scanDir(dir: string, relPrefix: string) {
+        if (!fs.existsSync(dir)) return;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
         for (const ent of entries) {
-          if (!ent.isFile()) continue;
-          // 仅清理符合 "uuid.ext" 命名约定的文件，避免误删用户自己放进来的东西
-          // uuid v4: 8-4-4-4-12 hex
-          if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]+$/i.test(ent.name)) {
+          const relPath = relPrefix ? `${relPrefix}/${ent.name}` : ent.name;
+          if (ent.isDirectory()) {
+            // 仅递归 YYYY 格式的目录（年份）
+            if (/^\d{4}$/.test(ent.name)) {
+              scanDir(path.join(dir, ent.name), relPath);
+            }
             continue;
           }
-          if (knownPaths.has(ent.name)) continue;
-          const abs = path.join(attachmentsDir, ent.name);
+          if (!ent.isFile()) continue;
+          if (!UUID_RE.test(ent.name)) continue;
+          if (knownPaths.has(relPath)) continue;
+          const abs = path.join(attachmentsDir, relPath);
           try {
             const size = fs.statSync(abs).size;
             if (!dryRun) fs.unlinkSync(abs);
@@ -522,6 +528,7 @@ app.post("/cleanup-orphans", (c) => {
           } catch { /* ignore */ }
         }
       }
+      scanDir(attachmentsDir, "");
     } catch {
       diskScanSkipped = true;
     }

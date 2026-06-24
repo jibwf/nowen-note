@@ -63,6 +63,7 @@ import {
   testObjectStorageConfig,
   writeObjectStorageConfig,
   writeAttachmentObject,
+  getUploadMonthPath,
 } from "../services/attachment-storage";
 import {
   parseThumbnailWidth,
@@ -511,7 +512,8 @@ app.post("/", async (c) => {
   ensureAttachmentsDir();
   const id = uuid();
   const ext = pickExt(file.name, mime);
-  const storagePath = `${id}.${ext}`;
+  const monthPath = getUploadMonthPath();
+  const storagePath = `${monthPath}/${id}.${ext}`;
 
   let buffer: Buffer;
   try {
@@ -801,10 +803,12 @@ export function extractInlineBase64Images(
 
       const id = uuid();
       const ext = MIME_TO_EXT[mimeLower] || "bin";
-      const filename = `${id}.${ext}`;
+      const monthPath = getUploadMonthPath();
+      const filename = `${monthPath}/${id}.${ext}`;
       const savePath = path.join(ATTACHMENTS_DIR, filename);
 
       try {
+        fs.mkdirSync(path.dirname(savePath), { recursive: true });
         fs.writeFileSync(savePath, buffer);
       } catch {
         return _match;
@@ -1502,7 +1506,8 @@ app.post("/_repair/missing/:id/upload", async (c) => {
     .prepare("SELECT id, path FROM attachments WHERE id = ?")
     .get(id) as { id: string; path: string } | undefined;
   if (!row) return c.json({ error: "附件记录不存在" }, 404);
-  if (!row.path || path.basename(row.path) !== row.path || row.path.includes("..")) {
+  // 允许子目录路径（如 2026/06/xxx.jpg），拒绝 .. 穿越
+  if (!row.path || row.path.includes("..") || !/^[\w\-./]+\.\w+$/.test(row.path)) {
     return c.json({ error: "附件路径异常，拒绝写入" }, 400);
   }
 

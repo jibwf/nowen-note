@@ -245,6 +245,16 @@ async function signedFetch(
   return res;
 }
 
+/**
+ * 返回当前月份路径，格式 YYYY/MM。
+ * 用于新上传附件的子目录归档。
+ */
+export function getUploadMonthPath(date = new Date()): string {
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${year}/${month}`;
+}
+
 export function ensureAttachmentsDir(): string {
   if (!fs.existsSync(ATTACHMENTS_DIR)) {
     fs.mkdirSync(ATTACHMENTS_DIR, { recursive: true });
@@ -378,6 +388,8 @@ export async function writeAttachmentObject(
   const cfg = getS3Config();
   if (!cfg) {
     ensureAttachmentsDir();
+    // 子目录路径（如 2026/06/xxx.jpg）需确保父目录存在
+    fs.mkdirSync(path.dirname(getLocalAttachmentPath(relPath)), { recursive: true });
     fs.writeFileSync(getLocalAttachmentPath(relPath), buffer);
     return;
   }

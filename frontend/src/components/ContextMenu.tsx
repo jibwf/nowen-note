@@ -309,24 +309,16 @@ export default function ContextMenu({
         disabled: isLocked,
       },
       {
-        id: "export_md",
-        label: t("noteList.exportAsMarkdown") || "导出为 Markdown",
+        id: "export_submenu",
+        label: t("noteList.export") || "导出...",
         icon: <Download size={14} />,
-      },
-      {
-        id: "export_pdf",
-        label: t("noteList.exportAsPDF") || "导出为 PDF",
-        icon: <Printer size={14} />,
-      },
-      {
-        id: "export_image",
-        label: t("noteList.exportAsImage") || "导出为图片",
-        icon: <ImageIcon size={14} />,
-      },
-      {
-        id: "export_word",
-        label: t("noteList.exportAsWord") || "导出为 Word",
-        icon: <FileType2 size={14} />,
+        children: [
+          { id: "export_md", label: t("noteList.exportAsMarkdown") || "Markdown", icon: <Download size={14} /> },
+          { id: "export_pdf", label: t("noteList.exportAsPDF") || "PDF", icon: <Printer size={14} /> },
+          { id: "export_png", label: t("note.exportAsPng") || "PNG", icon: <ImageIcon size={14} /> },
+          { id: "export_jpg", label: t("note.exportAsJpg") || "JPG", icon: <ImageIcon size={14} /> },
+          { id: "export_word", label: t("noteList.exportAsWord") || "Word", icon: <FileType2 size={14} /> },
+        ],
       },
       { id: "sep_context_note_exports", label: "", separator: true },
       ...(trash ? [trash] : []),

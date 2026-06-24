@@ -82,7 +82,8 @@ export function ensureAttachmentsDir(): string {
 
 /** 校验附件相对路径是否合法：仅允许旧平铺 uuid.ext 和新 YYYY/MM/uuid.ext 两种格式 */
 function isSafeAttachmentRelPath(relPath: string): boolean {
-  const normalized = relPath.replace(/\\/g, "/");
+  if (relPath.includes("\\")) return false;
+  const normalized = relPath;
   if (!normalized || normalized.startsWith("/") || normalized.includes("..") || normalized.includes("//")) {
     return false;
   }

@@ -510,9 +510,10 @@ app.post("/cleanup-orphans", (c) => {
         for (const ent of entries) {
           const relPath = relPrefix ? `${relPrefix}/${ent.name}` : ent.name;
           if (ent.isDirectory()) {
-            // 跳过缩略图缓存目录，仅递归 YYYY 格式的年份目录
+            // 跳过缩略图缓存目录
             if (ent.name === ".thumbs") continue;
-            if (/^\d{4}$/.test(ent.name)) {
+            // 根目录下允许递归 YYYY 年份目录；YYYY 目录下允许递归 MM 月份目录
+            if (/^\d{4}$/.test(ent.name) || /^\d{2}$/.test(ent.name)) {
               scanDir(path.join(dir, ent.name), relPath);
             }
             continue;

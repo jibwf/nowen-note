@@ -33,6 +33,8 @@ export interface NoteEditorUpdatePayload {
   content?: string;
   contentText?: string;
   title: string;
+  /** P0: debounce 调度时快照的 noteId，防止切换笔记后写错目标 */
+  _noteId?: string;
 }
 
 /** 两个编辑器引擎统一的 props 契约 */

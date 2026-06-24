@@ -80,6 +80,18 @@ export function ensureAttachmentsDir(): string {
   return ensureStorageAttachmentsDir();
 }
 
+/** 校验附件相对路径是否合法：仅允许旧平铺 uuid.ext 和新 YYYY/MM/uuid.ext 两种格式 */
+function isSafeAttachmentRelPath(relPath: string): boolean {
+  const normalized = relPath.replace(/\\/g, "/");
+  if (!normalized || normalized.startsWith("/") || normalized.includes("..") || normalized.includes("//")) {
+    return false;
+  }
+  return (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-zA-Z0-9]{1,8}$/.test(normalized) ||
+    /^\d{4}\/\d{2}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-zA-Z0-9]{1,8}$/.test(normalized)
+  );
+}
+
 export function getAttachmentsDir(): string {
   return getStorageAttachmentsDir();
 }
@@ -1506,8 +1518,7 @@ app.post("/_repair/missing/:id/upload", async (c) => {
     .prepare("SELECT id, path FROM attachments WHERE id = ?")
     .get(id) as { id: string; path: string } | undefined;
   if (!row) return c.json({ error: "附件记录不存在" }, 404);
-  // 允许子目录路径（如 2026/06/xxx.jpg），拒绝 .. 穿越
-  if (!row.path || row.path.includes("..") || !/^[\w\-./]+\.\w+$/.test(row.path)) {
+  if (!isSafeAttachmentRelPath(row.path)) {
     return c.json({ error: "附件路径异常，拒绝写入" }, 400);
   }
 

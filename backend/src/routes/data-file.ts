@@ -510,7 +510,8 @@ app.post("/cleanup-orphans", (c) => {
         for (const ent of entries) {
           const relPath = relPrefix ? `${relPrefix}/${ent.name}` : ent.name;
           if (ent.isDirectory()) {
-            // 仅递归 YYYY 格式的目录（年份）
+            // 跳过缩略图缓存目录，仅递归 YYYY 格式的年份目录
+            if (ent.name === ".thumbs") continue;
             if (/^\d{4}$/.test(ent.name)) {
               scanDir(path.join(dir, ent.name), relPath);
             }

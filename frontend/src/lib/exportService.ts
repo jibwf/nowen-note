@@ -1,5 +1,6 @@
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
+import { isAndroidNative, saveImageToGallery } from "./nativeImageSave";
 import TurndownService from "turndown";
 import i18n from "i18next";
 import { generateHTML } from "@tiptap/core";
@@ -1861,7 +1862,20 @@ export async function exportNoteAsImage(
 
     const safeTitle = sanitizeFilename(note.title) || "note";
     const ext = format === "jpg" ? "jpg" : "png";
-    saveAs(blob, `${safeTitle}.${ext}`);
+    const fileName = `${safeTitle}.${ext}`;
+
+    // Android 原生环境：保存到系统相册
+    if (isAndroidNative()) {
+      try {
+        await saveImageToGallery({ blob, fileName, mimeType });
+        return true;
+      } catch (err) {
+        console.error("[exportNoteAsImage] save to gallery failed, fallback to download:", err);
+      }
+    }
+
+    // Web / Electron / Android fallback
+    saveAs(blob, fileName);
     return true;
   } catch (error) {
     console.error("??????:", error);

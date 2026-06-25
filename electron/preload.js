@@ -269,5 +269,8 @@ contextBridge.exposeInMainWorld("nowenDesktop", {
     markUploadResult(folderId, relativePath, result) {
       return ipcRenderer.invoke("folder-sync:mark-upload-result", folderId, relativePath, result);
     },
+    getUploadFile(folderId, relativePath) {
+      return ipcRenderer.invoke("folder-sync:get-upload-file", folderId, relativePath);
+    },
   },
 });

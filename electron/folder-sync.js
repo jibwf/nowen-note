@@ -574,6 +574,67 @@ function markUploadResult(folderId, relativePath, result) {
   return { ok: true };
 }
 
+// ---------- 安全文件读取（给 renderer 上传附件用） ----------
+
+const MAX_UPLOAD_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+
+function getUploadFile(folderId, relativePath) {
+  const configs = readConfigs();
+  const config = configs.find((c) => c.folderId === folderId);
+  if (!config) return { ok: false, code: "CONFIG_NOT_FOUND", message: "Sync config not found" };
+
+  // 安全校验：relativePath 不能是绝对路径或包含 ..
+  if (!relativePath || relativePath.includes("..") || /^[A-Za-z]:/.test(relativePath) || relativePath.startsWith("/")) {
+    return { ok: false, code: "UNSAFE_PATH", message: "Invalid relativePath" };
+  }
+
+  // 校验文件在 index 中存在且状态为 new/changed
+  const index = readIndex(folderId);
+  const item = index.find((i) => i.relativePath === relativePath);
+  if (!item) return { ok: false, code: "NOT_INDEXED", message: "File not found in index" };
+  if (item.status !== "new" && item.status !== "changed" && item.status !== "error") {
+    return { ok: false, code: "INVALID_STATUS", message: `File status is ${item.status}, not pending` };
+  }
+
+  // 构建完整路径并校验在 folderPath 内
+  const fullPath = path.join(config.folderPath, relativePath.replace(/\//g, path.sep));
+  const resolvedPath = path.resolve(fullPath);
+  const resolvedBase = path.resolve(config.folderPath);
+  if (!resolvedPath.startsWith(resolvedBase + path.sep) && resolvedPath !== resolvedBase) {
+    return { ok: false, code: "PATH_TRAVERSAL", message: "Path traversal detected" };
+  }
+
+  // 检查文件存在和大小
+  try {
+    const stat = fs.statSync(resolvedPath);
+    if (stat.size > MAX_UPLOAD_FILE_SIZE) {
+      return { ok: false, code: "FILE_TOO_LARGE", message: `File too large (${(stat.size / 1024 / 1024).toFixed(1)}MB > 50MB)` };
+    }
+
+    const buffer = fs.readFileSync(resolvedPath);
+    const ext = path.extname(item.filename || relativePath).toLowerCase();
+    const mimeTypes = {
+      ".pdf": "application/pdf",
+      ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ".doc": "application/msword",
+      ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ".xls": "application/vnd.ms-excel",
+      ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      ".ppt": "application/vnd.ms-powerpoint",
+    };
+
+    return {
+      ok: true,
+      filename: item.filename || path.basename(relativePath),
+      mimeType: mimeTypes[ext] || "application/octet-stream",
+      size: buffer.length,
+      buffer: buffer.toString("base64"),
+    };
+  } catch (e) {
+    return { ok: false, code: "READ_FAILED", message: `Failed to read file: ${e.message}` };
+  }
+}
+
 module.exports = {
   setDataDir,
   readConfigs,
@@ -584,4 +645,5 @@ module.exports = {
   runNow,
   getPendingUploads,
   markUploadResult,
+  getUploadFile,
 };

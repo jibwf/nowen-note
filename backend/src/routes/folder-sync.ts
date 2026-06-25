@@ -204,6 +204,134 @@ app.post("/import-file", async (c) => {
 });
 
 /**
+ * POST /api/folder-sync/import-attachment
+ * 导入 pdf/docx 等附件文件
+ */
+app.post("/import-attachment", async (c) => {
+  const db = getDb();
+  const userId = c.req.header("X-User-Id") || "";
+
+  // 解析 multipart form data
+  const body = await c.req.parseBody();
+  const file = body["file"];
+  const sourcePathHash = body["sourcePathHash"] as string;
+  const relativePath = body["relativePath"] as string;
+  const filename = body["filename"] as string;
+  const sha256 = body["sha256"] as string;
+  const targetNotebookId = body["targetNotebookId"] as string;
+  const existingNoteId = body["existingNoteId"] as string | undefined;
+
+  // 参数校验
+  if (!file || !(file instanceof File)) {
+    return c.json({ error: "未上传文件", code: "NO_FILE" }, 400);
+  }
+  if (!filename || !relativePath || !sha256 || !sourcePathHash || !targetNotebookId) {
+    return c.json({ error: "缺少必要参数", code: "MISSING_PARAMS" }, 400);
+  }
+  if (isUnsafePath(relativePath)) {
+    return c.json({ error: "relativePath 不安全", code: "UNSAFE_PATH" }, 400);
+  }
+
+  // 校验目标笔记本权限
+  const nb = db.prepare("SELECT id, workspaceId, isDeleted FROM notebooks WHERE id = ?").get(targetNotebookId) as any;
+  if (!nb) return c.json({ error: "目标笔记本不存在", code: "NOTEBOOK_NOT_FOUND" }, 404);
+  if (nb.isDeleted === 1) return c.json({ error: "目标笔记本已删除", code: "NOTEBOOK_TRASHED" }, 400);
+  const { permission } = resolveNotebookPermission(targetNotebookId, userId);
+  if (!hasPermission(permission, "write")) {
+    return c.json({ error: "无写入权限", code: "FORBIDDEN" }, 403);
+  }
+
+  // 查找已有同步映射
+  const syncRow = db.prepare("SELECT id, noteId, sha256 AS oldSha FROM folder_sync_files WHERE userId = ? AND sourcePathHash = ?")
+    .get(userId, sourcePathHash) as { id: string; noteId: string; oldSha: string } | undefined;
+
+  // sha256 去重
+  if (syncRow && syncRow.oldSha === sha256) {
+    return c.json({
+      success: true, created: false, updated: false, skipped: true,
+      reason: "unchanged", noteId: syncRow.noteId, sha256,
+    });
+  }
+
+  const title = filenameToTitle(filename);
+  const syncComment = buildSyncComment(relativePath, sha256, sourcePathHash);
+
+  // 读取文件内容
+  const arrayBuffer = await file.arrayBuffer();
+  const fileBuffer = Buffer.from(arrayBuffer);
+
+  // 创建或更新笔记
+  let noteId: string;
+  let isNew = false;
+
+  if (existingNoteId || syncRow) {
+    noteId = existingNoteId || syncRow!.noteId;
+    // 更新笔记
+    const content = `# ${title}\n\n此文件来自桌面端文件夹同步。\n\n- 文件名：${filename}\n- 相对路径：${relativePath}\n${syncComment}`;
+    db.prepare(`UPDATE notes SET title = ?, content = ?, contentText = ?, contentFormat = 'markdown', version = version + 1, updatedAt = datetime('now') WHERE id = ?`)
+      .run(title, content, content, noteId);
+  } else {
+    // 创建新笔记
+    noteId = uuid();
+    isNew = true;
+    const content = `# ${title}\n\n此文件来自桌面端文件夹同步。\n\n- 文件名：${filename}\n- 相对路径：${relativePath}\n${syncComment}`;
+    db.prepare(`INSERT INTO notes (id, userId, notebookId, workspaceId, title, content, contentText, contentFormat) VALUES (?, ?, ?, ?, ?, ?, ?, 'markdown')`)
+      .run(noteId, userId, targetNotebookId, nb.workspaceId, title, content, content);
+  }
+
+  // 保存附件文件
+  const { v4: uuidv4 } = require("uuid");
+  const attachmentId = uuidv4();
+  const now = new Date();
+  const year = String(now.getFullYear());
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const path = require("path");
+  const fs = require("fs");
+  const crypto = require("crypto");
+
+  const attachmentsDir = process.env.NOWEN_DATA_DIR || path.join(process.cwd(), "data", "attachments");
+  const dir = path.join(attachmentsDir, year, month);
+  fs.mkdirSync(dir, { recursive: true });
+
+  const ext = path.extname(filename) || ".bin";
+  const safeExt = ext.replace(/[^a-zA-Z0-9.]/g, "");
+  const fileFullName = `${attachmentId}${safeExt}`;
+  const fullPath = path.join(dir, fileFullName);
+  const relativeAttachmentPath = `${year}/${month}/${fileFullName}`;
+
+  fs.writeFileSync(fullPath, fileBuffer);
+
+  const fileSha256 = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+
+  // 插入附件记录
+  db.prepare(`INSERT INTO attachments (id, userId, noteId, filename, mimeType, size, path, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`)
+    .run(attachmentId, userId, noteId, filename, file.type || null, fileBuffer.length, relativeAttachmentPath);
+
+  // 更新同步映射
+  if (syncRow) {
+    db.prepare("UPDATE folder_sync_files SET sha256 = ?, relativePath = ?, filename = ?, updatedAt = datetime('now') WHERE id = ?")
+      .run(sha256, relativePath, filename, syncRow.id);
+  } else {
+    db.prepare("INSERT INTO folder_sync_files (id, userId, sourcePathHash, relativePath, filename, sha256, noteId) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(uuid(), userId, sourcePathHash, relativePath, filename, sha256, noteId);
+  }
+
+  // 广播更新
+  try {
+    const updated = db.prepare("SELECT version, updatedAt FROM notes WHERE id = ?").get(noteId) as any;
+    broadcastNoteUpdated(noteId, {
+      version: updated.version, updatedAt: updated.updatedAt,
+      title, contentText: filename, actorUserId: userId,
+    });
+  } catch { /* ignore */ }
+
+  return c.json({
+    success: true, created: isNew, updated: !isNew, skipped: false,
+    noteId, attachmentId, sha256,
+  });
+});
+
+/**
  * POST /api/folder-sync/check-dedup
  */
 app.post("/check-dedup", async (c) => {

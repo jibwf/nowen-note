@@ -169,6 +169,16 @@ export interface FolderSyncPendingUploads {
   error?: string;
 }
 
+export interface FolderSyncUploadFileResult {
+  ok: boolean;
+  code?: string;
+  message?: string;
+  filename?: string;
+  mimeType?: string;
+  size?: number;
+  buffer?: string; // base64
+}
+
 export interface FolderSyncAPI {
   selectFolder(): Promise<{ cancelled: boolean; path?: string }>;
   getConfigs(): Promise<FolderSyncConfig[]>;
@@ -178,7 +188,8 @@ export interface FolderSyncAPI {
   runNow(folderId: string): Promise<FolderSyncScanResult>;
   getIndex(folderId: string): Promise<FolderSyncIndexItem[]>;
   getPendingUploads(folderId: string): Promise<FolderSyncPendingUploads>;
-  markUploadResult(folderId: string, relativePath: string, result: { success: boolean; noteId?: string; skipped?: boolean; error?: string }): Promise<{ ok: boolean }>;
+  markUploadResult(folderId: string, relativePath: string, result: { success: boolean; noteId?: string; attachmentId?: string; skipped?: boolean; error?: string }): Promise<{ ok: boolean }>;
+  getUploadFile(folderId: string, relativePath: string): Promise<FolderSyncUploadFileResult>;
 }
 
 interface NowenDesktopAPI {

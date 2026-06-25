@@ -68,7 +68,7 @@ export default function SecuritySettings() {
 }
 
 // ====================================================================
-// 账号与密码修改（原有逻辑，只微调使用 api.updateSecurity + broadcastLogout）
+// 账号与密码修改（使用 api.updateSecurity + broadcastAuthChanged）
 // ====================================================================
 function PasswordSection() {
   const { t } = useTranslation();
@@ -109,18 +109,24 @@ function PasswordSection() {
 
     setIsLoading(true);
     try {
+      const changedPassword = !!newPassword;
       // api.updateSecurity 会自动把新 token 写回 localStorage（后端改密会 bump tokenVersion）
       await api.updateSecurity({
         currentPassword,
         newUsername: newUsername || undefined,
         newPassword: newPassword || undefined,
       });
+      // 改密后清掉"记住密码/自动登录"和快速登录旧 token，避免旧密码反复尝试
+      if (changedPassword) {
+        void import("@/lib/rememberLogin").then((m) => m.clearRememberedCredentials()).catch(() => {});
+        void import("@/lib/quickLogin").then((m) => m.disableQuickLogin()).catch(() => {});
+      }
       setSuccess(true);
       setTimeout(() => {
         // 改密成功 → 通知其他 tab 重新登录，当前 tab 保持登录态 reload
         broadcastAuthChanged("password_changed");
         window.location.reload();
-      }, 2000);
+      }, 1200);
     } catch (err: any) {
       triggerShake(err?.message || t('securitySettings.updateFailed'));
     } finally {

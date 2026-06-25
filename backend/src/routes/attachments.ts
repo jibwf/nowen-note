@@ -384,9 +384,28 @@ export async function handleDownloadAttachment(c: Context): Promise<Response> {
   const id = c.req.param("id");
   const db = getDb();
   const row = db
-    .prepare("SELECT id, mimeType, path, filename FROM attachments WHERE id = ?")
-    .get(id) as { id: string; mimeType: string; path: string; filename: string } | undefined;
+    .prepare("SELECT id, noteId, mimeType, path, filename FROM attachments WHERE id = ?")
+    .get(id) as { id: string; noteId: string; mimeType: string; path: string; filename: string } | undefined;
   if (!row) return c.json({ error: "附件不存在" }, 404);
+
+  // 权限校验：附件下载必须走 note 的 read 权限链（支持分享笔记、工作区成员等场景）
+  // <img> 标签不带 Authorization header，但同源请求会带 cookie / X-User-Id，
+  // 这里用 userId 做最小权限判断；无 userId 时检查笔记是否有公开分享链接。
+  const userId = c.req.header("X-User-Id") || "";
+  if (row.noteId && userId) {
+    const { permission } = resolveNotePermission(row.noteId, userId);
+    if (!hasPermission(permission, "read")) {
+      return c.json({ error: "无权访问该附件" }, 403);
+    }
+  } else if (row.noteId && !userId) {
+    // 无登录态（<img> 标签请求）：检查笔记是否有公开分享链接
+    const share = db.prepare(
+      "SELECT id FROM shares WHERE noteId = ? AND isActive = 1 LIMIT 1"
+    ).get(row.noteId) as { id: string } | undefined;
+    if (!share) {
+      return c.json({ error: "附件不存在" }, 404);
+    }
+  }
 
   const absPath = path.join(ATTACHMENTS_DIR, row.path);
   const localExists = fs.existsSync(absPath);

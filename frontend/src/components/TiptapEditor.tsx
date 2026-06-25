@@ -31,6 +31,7 @@ import { markdownToSimpleHtml } from "@/lib/importService";
 import { repairTiptapJson } from "@/lib/tiptapSchemaRepair";
 import { markdownToHtml as mdToFullHtml, detectFormat as detectContentFormat, tiptapJsonToMarkdown } from "@/lib/contentFormat";
 import { api } from "@/lib/api";
+import { uploadAndInsertImage } from "@/lib/imageUploadService";
 import { extractRtfImagesAsync } from "@/lib/rtfImageWorkerClient";
 import { replaceDataUrlImagesWithAttachments } from "@/lib/rtfImageUploader";
 import {
@@ -1635,23 +1636,26 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
                   };
                   if (currentNote?.id) {
                     showPasteToast("converting", t("tiptap.imageUploading"));
-                    api.attachments
-                      .upload(currentNote.id, file)
-                      .then(({ url }) => {
+                    uploadAndInsertImage(
+                      file,
+                      file.name || "image.png",
+                      currentNote.id,
+                      (url) => {
                         insertAtSrc(url);
                         showPasteToast("success", t("tiptap.imageUploadSuccess"));
-                      })
-                      .catch((err) => {
-                        console.error("Attachment upload failed, falling back to base64:", err);
-                        showPasteToast("error", t("tiptap.imageUploadFailed"));
-                        // 上传失败兜底：仍用 base64 插入，保证用户不丢失截图
-                        const reader = new FileReader();
-                        reader.onload = (e) => {
-                          const src = e.target?.result as string;
-                          if (src) insertAtSrc(src);
-                        };
-                        reader.readAsDataURL(file);
-                      });
+                      },
+                      "paste",
+                    ).catch((err) => {
+                      console.error("Image upload failed, falling back to base64:", err);
+                      showPasteToast("error", t("tiptap.imageUploadFailed"));
+                      // 上传失败兜底：仍用 base64 插入，保证用户不丢失截图
+                      const reader = new FileReader();
+                      reader.onload = (e) => {
+                        const src = e.target?.result as string;
+                        if (src) insertAtSrc(src);
+                      };
+                      reader.readAsDataURL(file);
+                    });
                   } else {
                     // 没有 note 上下文（理论上不应发生）：退回 base64
                     const reader = new FileReader();
@@ -2110,10 +2114,19 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         (async () => {
           for (const file of files) {
             try {
-              const res = await api.attachments.upload(currentNote.id, file);
-              if (res.category === "image") {
-                insertImageToView(res.url);
+              const isImage = file.type.startsWith("image/");
+              if (isImage) {
+                // 图片文件：优先走图床
+                await uploadAndInsertImage(
+                  file,
+                  file.name,
+                  currentNote.id,
+                  (url) => insertImageToView(url),
+                  "drag-drop",
+                );
               } else {
+                // 非图片文件：走本地附件
+                const res = await api.attachments.upload(currentNote.id, file);
                 insertAttachmentToView(res.filename, res.url, res.size);
               }
             } catch (err) {

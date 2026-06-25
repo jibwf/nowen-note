@@ -108,6 +108,7 @@ import { findTextAction, type TextAction } from "@/lib/textActions";
 import { cn } from "@/lib/utils";
 import { normalizeToMarkdown, markdownToPlainText } from "@/lib/contentFormat";
 import { api } from "@/lib/api";
+import { uploadAndInsertImage } from "@/lib/imageUploadService";
 import type { NoteEditorHandle, NoteEditorHeading, NoteEditorProps } from "@/components/editors/types";
 import type { FormatMenuPayload } from "@/lib/desktopBridge";
 import {
@@ -505,31 +506,34 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
 
   // ---------- ͼƬ�ϴ����㹤����/б��/��ק/ճ���� ----------
 
-  /** ���ã��ϴ��ļ��� /api/attachments ����� Markdown ͼƬ�﷨ */
+  /** 上传图片文件到 /api/attachments 或图床，插入 Markdown 图片语法 */
   const insertImageFromFile = useCallback((file: File) => {
     const view = viewRef.current;
     if (!view) return;
     const currentNote = noteRef.current;
     const alt = file.name.replace(/\.[^.]+$/, "");
     if (currentNote?.id) {
-      // �� noteId���߷�����ϴ����������·������ TiptapEditor һ�£�
-      api.attachments
-        .upload(currentNote.id, file)
-        .then(({ url }) => {
+      // 优先走图床，失败时回退本地附件
+      uploadAndInsertImage(
+        file,
+        file.name,
+        currentNote.id,
+        (url) => {
           const v = viewRef.current;
           if (v) insertImage(v, url, alt);
-        })
-        .catch((err) => {
-          console.error("Attachment upload failed, falling back to base64:", err);
-          // �ϴ�ʧ�ܶ��ף����� base64 ���룬��֤�û�����ʧͼƬ
-          const reader = new FileReader();
-          reader.onload = () => {
-            const src = reader.result;
-            const v = viewRef.current;
-            if (typeof src === "string" && v) insertImage(v, src, alt);
-          };
-          reader.readAsDataURL(file);
-        });
+        },
+        "markdown",
+      ).catch((err) => {
+        console.error("Image upload failed, falling back to base64:", err);
+        // 上传失败兜底：仍用 base64 插入，保证用户不丢失截图
+        const reader = new FileReader();
+        reader.onload = () => {
+          const src = reader.result;
+          const v = viewRef.current;
+          if (typeof src === "string" && v) insertImage(v, src, alt);
+        };
+        reader.readAsDataURL(file);
+      });
     } else {
       // û�� note �����ģ������ϲ�Ӧ���������˻� base64
       const reader = new FileReader();

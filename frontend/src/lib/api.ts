@@ -1488,15 +1488,6 @@ export const api = {
   },
 
   // Image Hosting
-    /** 批量检查 sourcePathHash 是否已有导入记录 */
-    checkDedup: (sourcePathHashes: string[]) =>
-      request<Record<string, string>>("/folder-sync/check-dedup", {
-        method: "POST",
-        body: JSON.stringify({ sourcePathHashes }),
-      }),
-  },
-
-  // Image Hosting
   imageHosting: {
     /** 获取图床配置（脱敏） */
     getConfig: () => request<any>("/image-hosting/config"),

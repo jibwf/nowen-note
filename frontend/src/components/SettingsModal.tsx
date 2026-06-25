@@ -9,6 +9,7 @@ import SecuritySettings from "@/components/SecuritySettings";
 import TokenManagement from "@/components/TokenManagement";
 import DataManager from "@/components/DataManager";
 import FolderSyncSettings from "@/components/settings/FolderSyncSettings";
+import ImageHostingSettings from "@/components/settings/ImageHostingSettings";
 import AISettingsPanel from "@/components/AISettingsPanel";
 import UserManagement from "@/components/UserManagement";
 import WorkspaceManagement from "@/components/WorkspaceManagement";
@@ -22,7 +23,7 @@ import { isDesktop, checkForUpdates, onUpdaterStatus, getReleaseChannel, isPorta
 import { CustomFont } from "@/types";
 import { cn } from "@/lib/utils";
 
-type TabId = "appearance" | "switches" | "ai" | "security" | "tokens" | "data" | "folderSync" | "users" | "workspaces" | "developer" | "download" | "about";
+type TabId = "appearance" | "switches" | "ai" | "security" | "tokens" | "data" | "folderSync" | "imageHosting" | "users" | "workspaces" | "developer" | "download" | "about";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -1361,6 +1362,7 @@ const SettingsModal = React.forwardRef<HTMLDivElement, SettingsModalProps>(
     { id: "data" as const, label: t('settings.dataManagement'), icon: Database },
     // 「文件夹同步」：桌面端专属，Phase B 只做配置 CRUD
     ...((window as any).nowenDesktop?.isDesktop ? [{ id: "folderSync" as const, label: t('folderSync.title'), icon: FolderSync }] : []),
+    { id: "imageHosting" as const, label: t('imageHosting.title'), icon: Image },
     // 「开发者」面板：仅管理员可见，承载运行时调试开关（如 files-list 查询日志）。
     // 普通用户根本看不到这一项，与后端的 admin-only 写入闸门双层防御。
     ...(isAdmin ? [{ id: "developer" as const, label: t('settings.developer'), icon: Wrench }] : []),
@@ -1549,6 +1551,7 @@ const SettingsModal = React.forwardRef<HTMLDivElement, SettingsModalProps>(
                        —— 管理员看到完整三 scope；普通用户只看"个人空间"的导出/导入。 */}
                   {activeTab === "data" && <DataManager />}
                   {activeTab === "folderSync" && <FolderSyncSettings />}
+                  {activeTab === "imageHosting" && <ImageHostingSettings />}
                   {activeTab === "developer" && isAdmin && <DeveloperPanel />}
                   {activeTab === "download" && <DownloadPanel />}
                   {activeTab === "about" && <AboutPanel />}

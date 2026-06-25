@@ -637,33 +637,48 @@ async function processMarkdownAttachments(
     tasks.push({ fullMatch: m[0], prefix: m[1], url });
   }
 
+  if (tasks.length === 0) return { content: md, images: [] };
+
   const replacements = new Map<string, string>();
 
   await Promise.all(
     tasks.map(async (task) => {
-      const absUrl = toAbsoluteUrl(task.url);
-      const cachedPath = registry.get(absUrl);
-      if (cachedPath) {
-        replacements.set(task.fullMatch, `${task.prefix}(${cachedPath})`);
-        return;
-      }
-
       try {
-        const resp = await fetch(absUrl);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const blob = await resp.blob();
-        const ext = detectExtFromResponse(blob.type, absUrl);
-        const hash = await blobToHash(blob);
-        const fileName = `${hash}.${ext}`;
-        const relPath = `./assets/${fileName}`;
+        const absUrl = resolveAttachmentUrl(task.url);
+        // 用附件 id 做 key 去重
+        const idMatch = /\/api\/attachments\/([^/?#]+)/i.exec(task.url);
+        const key = idMatch ? `att-${idMatch[1]}` : task.url;
 
-        if (!registry.has(absUrl)) {
-          registry.set(absUrl, relPath);
-          const base64 = await blobToBase64(blob);
-          images.push({ relPath: `assets/${fileName}`, base64, hash });
+        const cachedPath = registry.get(key);
+        if (cachedPath) {
+          replacements.set(task.fullMatch, `${task.prefix}(${cachedPath})`);
+          return;
         }
 
-        replacements.set(task.fullMatch, `${task.prefix}(${relPath})`);
+        const res = await fetch(absUrl, { credentials: "include" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const mime = res.headers.get("content-type") || "application/octet-stream";
+        const buf = await res.arrayBuffer();
+        if (buf.byteLength === 0) throw new Error("empty body");
+
+        // ArrayBuffer -> base64（分块转换避免大图爆栈）
+        const bytes = new Uint8Array(buf);
+        let binary = "";
+        const chunk = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunk) {
+          binary += String.fromCharCode.apply(
+            null,
+            bytes.subarray(i, i + chunk) as unknown as number[]
+          );
+        }
+        const base64 = btoa(binary);
+
+        const ext = detectExtFromResponse(mime, task.url);
+        const relPath = `assets/${key}.${ext}`;
+        registry.set(key, relPath);
+        images.push({ relPath, base64 });
+
+        replacements.set(task.fullMatch, `${task.prefix}(./${relPath})`);
         stats.ok++;
       } catch (err) {
         stats.failed++;
@@ -672,6 +687,7 @@ async function processMarkdownAttachments(
           noteId: noteContext?.noteId,
           noteTitle: noteContext?.noteTitle,
           error: err instanceof Error ? err.message : String(err),
+          phase: "download",
         });
         // 失败时保留相对路径，去掉可能失效的 host
         replacements.set(task.fullMatch, `${task.prefix}(${normalizeAttachmentSrc(task.url)})`);

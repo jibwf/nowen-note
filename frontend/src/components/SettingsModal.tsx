@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Palette, Shield, Database, X, Settings, Camera, Save, Loader2, Trash2, Upload, Type, Check, ChevronDown, Globe, Bot, Users, Info, ExternalLink, Heart, Sparkles, RefreshCw, Wrench, ZoomIn, Key, Building2, BookOpen, ToggleLeft, Download, FolderSync } from "lucide-react";
+import { Palette, Shield, Database, X, Settings, Camera, Save, Loader2, Trash2, Upload, Type, Check, ChevronDown, Globe, Bot, Users, Info, ExternalLink, Heart, Sparkles, RefreshCw, Wrench, ZoomIn, Key, Building2, BookOpen, ToggleLeft, Download, FolderSync, Image as ImageIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import ThemeToggle from "@/components/ThemeToggle";
 import SkinSwitcher from "@/components/SkinSwitcher";
@@ -1362,7 +1362,7 @@ const SettingsModal = React.forwardRef<HTMLDivElement, SettingsModalProps>(
     { id: "data" as const, label: t('settings.dataManagement'), icon: Database },
     // 「文件夹同步」：桌面端专属，Phase B 只做配置 CRUD
     ...((window as any).nowenDesktop?.isDesktop ? [{ id: "folderSync" as const, label: t('folderSync.title'), icon: FolderSync }] : []),
-    { id: "imageHosting" as const, label: t('imageHosting.title'), icon: Image },
+    { id: "imageHosting" as const, label: t('imageHosting.title'), icon: ImageIcon },
     // 「开发者」面板：仅管理员可见，承载运行时调试开关（如 files-list 查询日志）。
     // 普通用户根本看不到这一项，与后端的 admin-only 写入闸门双层防御。
     ...(isAdmin ? [{ id: "developer" as const, label: t('settings.developer'), icon: Wrench }] : []),

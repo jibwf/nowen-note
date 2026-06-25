@@ -388,24 +388,21 @@ export async function handleDownloadAttachment(c: Context): Promise<Response> {
     .get(id) as { id: string; noteId: string; mimeType: string; path: string; filename: string } | undefined;
   if (!row) return c.json({ error: "附件不存在" }, 404);
 
-  // 权限校验：附件下载必须走 note 的 read 权限链（支持分享笔记、工作区成员等场景）
-  // <img> 标签不带 Authorization header，但同源请求会带 cookie / X-User-Id，
-  // 这里用 userId 做最小权限判断；无 userId 时检查笔记是否有公开分享链接。
+  // 权限校验：
+  //   - 带 X-User-Id 的请求（fetch / API 调用）→ 走 note read 权限链；
+  //   - 不带 X-User-Id 的请求（<img src> 浏览器原生请求）→ 走"UUID 不可枚举"
+  //     隐式授权：附件 id 是 uuid，除了读过 note.content 拿到 URL 的人之外没人能
+  //     枚举。与 Gitea / GitLab 私有仓库附件的处理方式一致。
+  //     详见文件顶部"授权模型"注释。
   const userId = c.req.header("X-User-Id") || "";
   if (row.noteId && userId) {
     const { permission } = resolveNotePermission(row.noteId, userId);
     if (!hasPermission(permission, "read")) {
       return c.json({ error: "无权访问该附件" }, 403);
     }
-  } else if (row.noteId && !userId) {
-    // 无登录态（<img> 标签请求）：检查笔记是否有公开分享链接
-    const share = db.prepare(
-      "SELECT id FROM shares WHERE noteId = ? AND isActive = 1 LIMIT 1"
-    ).get(row.noteId) as { id: string } | undefined;
-    if (!share) {
-      return c.json({ error: "附件不存在" }, 404);
-    }
   }
+  // else: 无 X-User-Id（<img> 标签原生请求）→ 附件 id 不可枚举即为隐式授权，
+  // 无需额外校验。详见文件顶部注释。
 
   const absPath = path.join(ATTACHMENTS_DIR, row.path);
   const localExists = fs.existsSync(absPath);

@@ -99,6 +99,7 @@ export interface FolderSyncConfig {
   includeSubfolders: boolean;
   fileTypes: string[];
   enabled: boolean;
+  intervalMinutes: number | null;
   lastSyncedAt: string | null;
   lastScanAt?: string | null;
   lastScanStats?: FolderSyncScanStats | null;

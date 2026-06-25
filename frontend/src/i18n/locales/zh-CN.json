@@ -2220,6 +2220,13 @@
     "filterAll": "全部",
     "noFiles": "暂无索引文件",
     "openNote": "打开笔记",
-    "statErrors": "失败"
+    "statErrors": "失败",
+    "syncInterval": "同步间隔",
+    "intervalManual": "仅手动",
+    "interval10m": "每 10 分钟",
+    "interval30m": "每 30 分钟",
+    "interval1h": "每小时",
+    "interval6h": "每 6 小时",
+    "interval1d": "每天"
   }
 }

@@ -68,6 +68,20 @@ function logTypeColor(type: string): string {
   return "text-tx-tertiary";
 }
 
+const INTERVAL_OPTIONS: { value: number | null; labelKey: string; defaultLabel: string }[] = [
+  { value: null, labelKey: "folderSync.intervalManual", defaultLabel: "仅手动" },
+  { value: 10, labelKey: "folderSync.interval10m", defaultLabel: "每 10 分钟" },
+  { value: 30, labelKey: "folderSync.interval30m", defaultLabel: "每 30 分钟" },
+  { value: 60, labelKey: "folderSync.interval1h", defaultLabel: "每小时" },
+  { value: 360, labelKey: "folderSync.interval6h", defaultLabel: "每 6 小时" },
+  { value: 1440, labelKey: "folderSync.interval1d", defaultLabel: "每天" },
+];
+
+function getIntervalLabel(intervalMinutes: number | null | undefined, t: (k: string, d?: string) => string): string {
+  const opt = INTERVAL_OPTIONS.find((o) => o.value === (intervalMinutes ?? null));
+  return opt ? t(opt.labelKey, { defaultValue: opt.defaultLabel }) : t("folderSync.intervalManual", { defaultValue: "仅手动" });
+}
+
 /** 单个配置卡片 */
 function ConfigCard({
   config,
@@ -103,6 +117,7 @@ function ConfigCard({
   const [editSubfolders, setEditSubfolders] = useState(config.includeSubfolders);
   const [editFileTypes, setEditFileTypes] = useState<string[]>(config.fileTypes);
   const [editEnabled, setEditEnabled] = useState(config.enabled);
+  const [editInterval, setEditInterval] = useState<number | null>(config.intervalMinutes ?? null);
 
   const nbName = notebooks.find((n) => n.id === config.targetNotebookId)?.name || "—";
   const stats = lastScanResult?.ok ? lastScanResult : config.lastScanStats;
@@ -149,6 +164,7 @@ function ConfigCard({
       includeSubfolders: editSubfolders,
       fileTypes: editFileTypes,
       enabled: editNotebook ? editEnabled : false,
+      intervalMinutes: editInterval,
     });
   };
 
@@ -184,12 +200,15 @@ function ConfigCard({
               )}
             </div>
           </div>
-          <span className={cn(
-            "text-[10px] px-1.5 py-0.5 rounded-full shrink-0",
-            config.enabled ? "bg-green-500/10 text-green-600 dark:text-green-400" : "bg-zinc-500/10 text-zinc-500"
-          )}>
-            {config.enabled ? t("folderSync.enabled") : t("folderSync.disabled")}
-          </span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-[10px] text-tx-tertiary">{getIntervalLabel(config.intervalMinutes, t)}</span>
+            <span className={cn(
+              "text-[10px] px-1.5 py-0.5 rounded-full",
+              config.enabled ? "bg-green-500/10 text-green-600 dark:text-green-400" : "bg-zinc-500/10 text-zinc-500"
+            )}>
+              {config.enabled ? t("folderSync.enabled") : t("folderSync.disabled")}
+            </span>
+          </div>
         </div>
 
         {/* 扫描统计 */}
@@ -333,6 +352,15 @@ function ConfigCard({
                 </button>
               ))}
             </div>
+          </div>
+          <div>
+            <label className="block text-xs text-tx-tertiary mb-1">{t("folderSync.syncInterval")}</label>
+            <select value={editInterval ?? ""} onChange={(e) => setEditInterval(e.target.value ? Number(e.target.value) : null)}
+              className="w-full text-sm rounded-lg border border-app-border bg-app-bg text-tx-primary px-3 py-1.5 outline-none focus:ring-2 focus:ring-accent-primary/30">
+              {INTERVAL_OPTIONS.map((opt) => (
+                <option key={opt.value ?? 0} value={opt.value ?? ""}>{t(opt.labelKey, { defaultValue: opt.defaultLabel })}</option>
+              ))}
+            </select>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={editEnabled} onChange={(e) => setEditEnabled(e.target.checked)}

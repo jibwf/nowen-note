@@ -2051,6 +2051,13 @@
     "filterAll": "All",
     "noFiles": "No indexed files",
     "openNote": "Open note",
-    "statErrors": "errors"
+    "statErrors": "errors",
+    "syncInterval": "Sync Interval",
+    "intervalManual": "Manual only",
+    "interval10m": "Every 10 minutes",
+    "interval30m": "Every 30 minutes",
+    "interval1h": "Every hour",
+    "interval6h": "Every 6 hours",
+    "interval1d": "Every day"
   }
 }

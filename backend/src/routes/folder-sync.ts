@@ -6,6 +6,7 @@ import {
   hasPermission,
 } from "../middleware/acl";
 import { broadcastNoteUpdated } from "../services/realtime";
+import { extractAttachmentText } from "../services/attachment-indexer";
 
 const app = new Hono();
 
@@ -362,6 +363,30 @@ app.post("/import-attachment", async (c) => {
         title, contentText: filename, actorUserId: userId,
       });
     } catch { /* ignore */ }
+
+    // 提取 PDF/DOCX 文本写入 contentText（事务外执行，失败不影响上传结果）
+    const EXTRACT_START = "<!-- nowen-folder-sync-extracted:start -->";
+    const EXTRACT_END = "<!-- nowen-folder-sync-extracted:end -->";
+    try {
+      const extractResult = await extractAttachmentText({
+        id: attachmentId,
+        path: relativeAttachmentPath,
+        mimeType: file.type || "application/octet-stream",
+        filename,
+        size: fileBuffer.length,
+      });
+      if (extractResult.text && extractResult.text.trim()) {
+        const truncated = extractResult.text.slice(0, 200000);
+        // 读取当前 contentText，替换或追加提取文本块
+        const current = db.prepare("SELECT contentText FROM notes WHERE id = ?").get(updateNoteId) as { contentText: string } | undefined;
+        const base = (current?.contentText || "").split(EXTRACT_START)[0].trimEnd();
+        const newContentText = `${base}\n\n${EXTRACT_START}\n${truncated}\n${EXTRACT_END}`;
+        db.prepare("UPDATE notes SET contentText = ? WHERE id = ?").run(newContentText, updateNoteId);
+      }
+    } catch (e) {
+      // 提取失败只记日志，不影响附件上传成功
+      console.warn("[folder-sync] text extraction failed for", filename, e);
+    }
 
     return c.json({
       success: true, created: isNew, updated: !isNew, skipped: false,

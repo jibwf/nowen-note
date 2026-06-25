@@ -1371,7 +1371,12 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
             </button>
             <button
               type="button"
-              onClick={() => setViewMode("split")}
+              onClick={() => {
+                // 切换到分屏时同步当前内容到预览
+                const view = viewRef.current;
+                if (view) setPreviewMarkdown(view.state.doc.toString());
+                setViewMode("split");
+              }}
               className={cn(
                 "flex items-center gap-1 px-2 py-1 text-[11px] font-medium transition-colors",
                 viewMode === "split"
@@ -1413,16 +1418,28 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
           paddingBottom ֻ�Լ��̸߶ȣ������걻���뷨��ס��
           v2026-05-18 ���Ƴ��ƶ��������������ɶ��� sticky ��������ͳһ
           �е���ʽ����� */}
-      <div
-        className="flex-1 overflow-auto px-4 md:px-8"
-        style={{ paddingBottom: "var(--keyboard-height, 0px)" }}
-      >
-        <div
-          ref={hostRef}
-          className="nowen-md-editor h-full"
-          // �� CM6 �ڲ����������ܻ����ȷ�߶�
-          style={{ minHeight: "100%" }}
-        />
+            {/* editor content area - source/preview/split */}
+      <div className={cn(
+        "flex-1 min-h-0",
+        viewMode === "split" ? "flex overflow-hidden" : "overflow-auto px-4 md:px-8"
+      )} style={{ paddingBottom: viewMode !== "split" ? "var(--keyboard-height, 0px)" : undefined }}>
+        {/* CodeMirror host - always mounted, hidden in preview mode */}
+        <div className={cn(
+          viewMode === "split" ? "w-1/2 min-h-0 overflow-auto px-4 md:px-8" : "h-full",
+          viewMode === "preview" && "hidden"
+        )}>
+          <div ref={hostRef} className="nowen-md-editor h-full" style={{ minHeight: "100%" }} />
+        </div>
+        {/* Split divider */}
+        {viewMode === "split" && <div className="w-px bg-app-border/60 shrink-0" />}
+        {/* Preview area */}
+        {(viewMode === "preview" || viewMode === "split") && (
+          <div className={cn(
+            viewMode === "split" ? "w-1/2 min-h-0 overflow-auto px-4 md:px-8" : "h-full"
+          )}>
+            <MarkdownPreview markdown={previewMarkdown} className="h-full" />
+          </div>
+        )}
       </div>
 
       {/* ״̬��������ͳ�ƣ��� TiptapEditor ���룩 */}

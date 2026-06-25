@@ -88,6 +88,7 @@ function saveConfig(input) {
     includeSubfolders: input.includeSubfolders !== false,
     fileTypes: input.fileTypes || [".md", ".txt", ".html", ".pdf", ".docx"],
     enabled: input.enabled !== false,
+    intervalMinutes: input.intervalMinutes ?? null,
     lastSyncedAt: null,
     lastScanAt: null,
     lastScanStats: null,
@@ -144,9 +145,19 @@ function shouldIgnoreFile(name) {
 
 // ---------- 扫描 ----------
 
+function normalizeFileTypes(fileTypes) {
+  if (!Array.isArray(fileTypes) || fileTypes.length === 0) {
+    return [".md", ".txt", ".html", ".pdf", ".docx"];
+  }
+  return [...new Set(fileTypes.map((e) => {
+    const lower = e.toLowerCase();
+    return lower.startsWith(".") ? lower : `.${lower}`;
+  }))];
+}
+
 function scanFolder(folderPath, fileTypes, includeSubfolders) {
   const results = [];
-  const typeSet = new Set(fileTypes.map((e) => e.toLowerCase()));
+  const typeSet = new Set(normalizeFileTypes(fileTypes));
 
   function walk(dir, relBase) {
     let entries;
@@ -164,6 +175,11 @@ function scanFolder(folderPath, fileTypes, includeSubfolders) {
       if (entry.isDirectory()) {
         if (shouldIgnoreDir(entry.name)) continue;
         if (includeSubfolders) {
+          // 安全检查：不跟随 symlink，避免循环扫描
+          try {
+            const stat = fs.lstatSync(fullPath);
+            if (stat.isSymbolicLink()) continue;
+          } catch { /* ignore */ }
           walk(fullPath, relPath);
         }
       } else if (entry.isFile()) {
@@ -446,8 +462,26 @@ function getPendingUploads(folderId) {
     const ext = path.extname(item.relativePath).toLowerCase();
     if (!TEXT_EXTS.has(ext)) continue;
 
-    // 读取文本内容
+    // 读取文本内容（安全校验：确保路径在 folderPath 内）
     const fullPath = path.join(config.folderPath, item.relativePath.replace(/\//g, path.sep));
+    const resolvedPath = path.resolve(fullPath);
+    const resolvedBase = path.resolve(config.folderPath);
+    if (!resolvedPath.startsWith(resolvedBase + path.sep) && resolvedPath !== resolvedBase) {
+      pending.push({
+        relativePath: item.relativePath,
+        filename: path.basename(item.relativePath),
+        sha256: item.sha256,
+        sourcePathHash: computeSourcePathHash(folderId, item.relativePath),
+        size: item.size,
+        mtimeMs: item.mtimeMs,
+        ext,
+        contentText: null,
+        existingNoteId: item.noteId || null,
+        skipReason: "Path traversal detected",
+      });
+      continue;
+    }
+
     let contentText;
     try {
       const stat = fs.statSync(fullPath);
@@ -472,7 +506,7 @@ function getPendingUploads(folderId) {
         relativePath: item.relativePath,
         filename: path.basename(item.relativePath),
         sha256: item.sha256,
-        sourcePathHash: computeSourcePathHash(item.relativePath),
+        sourcePathHash: computeSourcePathHash(folderId, item.relativePath),
         size: item.size,
         mtimeMs: item.mtimeMs,
         ext,

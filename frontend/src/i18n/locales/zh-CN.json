@@ -2227,6 +2227,8 @@
     "interval30m": "每 30 分钟",
     "interval1h": "每小时",
     "interval6h": "每 6 小时",
-    "interval1d": "每天"
+    "interval1d": "每天",
+    "nextSync": "下次同步",
+    "nextSyncSoon": "即将同步"
   }
 }

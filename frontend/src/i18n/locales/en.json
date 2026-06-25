@@ -2058,6 +2058,8 @@
     "interval30m": "Every 30 minutes",
     "interval1h": "Every hour",
     "interval6h": "Every 6 hours",
-    "interval1d": "Every day"
+    "interval1d": "Every day",
+    "nextSync": "Next sync",
+    "nextSyncSoon": "Sync soon"
   }
 }

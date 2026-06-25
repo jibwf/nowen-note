@@ -1266,6 +1266,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("folder-sync:get-index", (_e, folderId) => folderSync.getIndex(folderId));
   ipcMain.handle("folder-sync:get-pending-uploads", (_e, folderId) => folderSync.getPendingUploads(folderId));
   ipcMain.handle("folder-sync:mark-upload-result", (_e, folderId, relativePath, result) => folderSync.markUploadResult(folderId, relativePath, result));
+  ipcMain.handle("folder-sync:append-log", (_e, folderId, type, message, detail) => { folderSync.appendLog(folderId, type, message, detail); return { ok: true }; });
   ipcMain.handle("folder-sync:get-upload-file", (_e, folderId, relativePath) => folderSync.getUploadFile(folderId, relativePath));
 
   // 局域网服务发现的 IPC 已在更早处注册（setup 窗口依赖它）；这里不重复注册

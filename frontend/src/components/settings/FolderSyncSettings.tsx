@@ -199,6 +199,18 @@ function ConfigCard({
                   {t("folderSync.lastSynced")}: {new Date(config.lastSyncedAt).toLocaleString()}
                 </span>
               )}
+              {config.enabled && config.intervalMinutes && config.intervalMinutes > 0 && (() => {
+                const lastSync = config.lastSyncedAt || config.lastScanAt || config.createdAt;
+                if (!lastSync) return null;
+                const nextAt = new Date(new Date(lastSync).getTime() + config.intervalMinutes * 60_000);
+                const isPast = nextAt.getTime() <= Date.now();
+                return (
+                  <span className="text-[10px] text-tx-tertiary">
+                    <Clock size={9} className="inline mr-0.5" />
+                    {isPast ? t("folderSync.nextSyncSoon") : `${t("folderSync.nextSync")}: ${nextAt.toLocaleString()}`}
+                  </span>
+                );
+              })()}
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -450,7 +462,7 @@ export default function FolderSyncSettings() {
   const handleRunNow = useCallback(async (folderId: string) => {
     try {
       setActionLoading(`run-${folderId}`);
-      const result = await runFolderSyncOnce(folderId);
+      const result = await runFolderSyncOnce(folderId, { silent: false, reason: "manual" });
 
       if (result.scanResult?.ok) {
         setLastScanResults((prev) => ({ ...prev, [folderId]: result.scanResult! }));

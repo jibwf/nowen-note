@@ -646,4 +646,5 @@ module.exports = {
   getPendingUploads,
   markUploadResult,
   getUploadFile,
+  appendLog,
 };

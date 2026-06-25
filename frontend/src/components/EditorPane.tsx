@@ -2286,7 +2286,7 @@ const moveToTrash = useCallback(async () => {
                     {aiClassifyLoading ? (
                       <Loader2 size={12} className="animate-spin" />
                     ) : (
-                      <span className="text-[13px]">?</span>
+                      <Sparkles size={12} />
                     )}
                     <span className="flex-1 text-left">
                       {aiClassifyLoading

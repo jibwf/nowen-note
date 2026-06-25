@@ -5,7 +5,7 @@
  * 保留 Markdown 原文、富文本 Tiptap JSON、笔记本结构、标签、附件关系。
  */
 
-import { getDb } from "../db/schema";
+import { getDb, getDbSchemaVersion } from "../db/schema";
 import JSZip from "jszip";
 import * as fs from "fs";
 import * as path from "path";
@@ -248,7 +248,7 @@ export async function createNowenPackageExport(params: ExportParams): Promise<{
 
   // ── 5. 查询附件 ──
 
-  // 从 attachments 表查询
+  // 从 attachments 表查询（按 noteId 关联）
   const dbAttachments = notes.length > 0
     ? db.prepare(`
         SELECT id, noteId, filename, mimeType, size, path, createdAt
@@ -264,19 +264,30 @@ export async function createNowenPackageExport(params: ExportParams): Promise<{
     ids.forEach((id) => contentAttachmentIds.add(id));
   }
 
-  // 合并去重
-  const allAttachmentIds = new Set(dbAttachments.map((a) => a.id));
-  contentAttachmentIds.forEach((id) => allAttachmentIds.add(id));
+  // 计算 content 中引用但不在 dbAttachments 中的附件 ID
+  const dbAttachmentIds = new Set(dbAttachments.map((a) => a.id));
+  const extraAttachmentIds = Array.from(contentAttachmentIds).filter((id) => !dbAttachmentIds.has(id));
 
-  // 查询缺失的附件元信息
-  const extraAttachmentIds = Array.from(contentAttachmentIds).filter((id) => !allAttachmentIds.has(id));
+  // 查询额外附件（必须加 userId 限制，避免越权）
   let extraAttachments: ExportAttachment[] = [];
   if (extraAttachmentIds.length > 0) {
     extraAttachments = db.prepare(`
       SELECT id, noteId, filename, mimeType, size, path, createdAt
       FROM attachments
-      WHERE id IN (${extraAttachmentIds.map(() => "?").join(",")})
-    `).all(...extraAttachmentIds) as ExportAttachment[];
+      WHERE id IN (${extraAttachmentIds.map(() => "?").join(",")}) AND userId = ?
+    `).all(...extraAttachmentIds, userId) as ExportAttachment[];
+
+    // 对 content 里引用但 attachments 表查不到的 id，记录 warning
+    const foundIds = new Set(extraAttachments.map((a) => a.id));
+    for (const id of extraAttachmentIds) {
+      if (!foundIds.has(id)) {
+        warnings.push({
+          type: "attachment_row_missing",
+          attachmentId: id,
+          message: `Attachment ${id} referenced in content but not found in attachments table`,
+        });
+      }
+    }
   }
 
   const allAttachments = [...dbAttachments, ...extraAttachments];
@@ -306,6 +317,7 @@ export async function createNowenPackageExport(params: ExportParams): Promise<{
     // 确定内容文件名
     let contentFile: string;
     const cf = note.contentFormat || "tiptap-json";
+    const knownFormats = ["markdown", "tiptap-json", "html"];
     if (cf === "markdown") {
       contentFile = "content.md";
       formatStats.markdown++;
@@ -313,8 +325,17 @@ export async function createNowenPackageExport(params: ExportParams): Promise<{
       contentFile = "content.html";
       formatStats.html++;
     } else {
+      // 未知格式或 tiptap-json 都按富文本处理
       contentFile = "content.tiptap.json";
       formatStats.richText++;
+      // 记录未知格式 warning
+      if (note.contentFormat && !knownFormats.includes(note.contentFormat)) {
+        warnings.push({
+          type: "unknown_content_format",
+          noteId: note.id,
+          message: `Unknown contentFormat "${note.contentFormat}", exported as tiptap-json`,
+        });
+      }
     }
 
     // 写内容文件
@@ -409,10 +430,12 @@ export async function createNowenPackageExport(params: ExportParams): Promise<{
 
   // 6.7 manifest.json
   const now = new Date().toISOString();
+  const schemaVersion = getDbSchemaVersion();
   const manifest = {
     format: "nowen-package",
     formatVersion: 1,
     app: "nowen-note",
+    schemaVersion,
     exportedAt: now,
     scope: {
       type: notebookId ? "notebook" : "all",

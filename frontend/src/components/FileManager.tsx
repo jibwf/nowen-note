@@ -1596,7 +1596,7 @@ export default function FileManager() {
       <FileUploadDialog
         open={uploadDialogOpen}
         onClose={() => setUploadDialogOpen(false)}
-        onUploaded={() => { loadList(); loadStats(); loadReclaimable(); }}
+        onUploaded={() => { invalidateFileListCache(); loadList(); loadStats(); loadReclaimable(); }}
         defaultFolderId={null}
       />
     </div>

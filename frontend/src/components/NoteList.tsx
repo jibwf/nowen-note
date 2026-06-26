@@ -2367,6 +2367,8 @@ export default function NoteList() {
             .then(() => {
               actions.refreshNotebooks();
               actions.refreshNotes();
+              // TAG-CLEANUP-ON-NOTE-DELETE-01: 批量软删除后刷新标签列表
+              api.getTags().then(actions.setTags).catch(() => {});
               toast.success(t('noteList.bulkTrashSuccess', { count: movable.length }));
             })
             .catch((err) => {
@@ -2381,6 +2383,8 @@ export default function NoteList() {
           .then(() => {
             actions.refreshNotebooks();
             actions.refreshNotes();
+            // TAG-CLEANUP-ON-NOTE-DELETE-01: 软删除后刷新标签列表
+            api.getTags().then(actions.setTags).catch(() => {});
           })
           .catch(console.error);
         break;
@@ -2460,6 +2464,8 @@ export default function NoteList() {
           .then(() => {
             actions.refreshNotebooks();
             actions.refreshNotes();
+            // TAG-CLEANUP-ON-NOTE-DELETE-01: 删除笔记后刷新标签列表
+            api.getTags().then(actions.setTags).catch(() => {});
           })
           .catch(console.error);
         break;

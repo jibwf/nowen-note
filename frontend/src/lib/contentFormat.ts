@@ -22,7 +22,7 @@
  *   老格式笔记才会真正跑到那段代码。
  */
 
-import { generateHTML, generateJSON } from "@tiptap/core";
+import { generateHTML, generateJSON, Extension } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
@@ -43,6 +43,27 @@ import { MathInline, MathBlock } from "@/components/MathExtensions";
 import { FootnoteReference, FootnoteDefinition } from "@/components/FootnoteExtensions";
 import { TextStyleKit } from "@/components/FontSizeExtension";
 import { Video as VideoExtension, videoNodeToMarkdown } from "@/components/VideoExtension";
+
+// BLOCK-ID-01: heading blockId 扩展（与 TiptapEditor 对齐）
+// 只声明 attrs，不带 appendTransaction plugin（generateHTML/generateJSON 不需要）
+const BlockIdAttrs = Extension.create({
+  name: "blockId",
+  addGlobalAttributes() {
+    return [{
+      types: ["heading"],
+      attributes: {
+        blockId: {
+          default: null,
+          parseHTML: (element: HTMLElement) => element.getAttribute("data-block-id") || null,
+          renderHTML: (attributes: any) => {
+            if (!attributes.blockId) return {};
+            return { "data-block-id": attributes.blockId };
+          },
+        },
+      },
+    }];
+  },
+});
 
 // ---------- 格式识别 ----------
 
@@ -163,6 +184,9 @@ function getTiptapExtensions() {
     // `textAlign` 属性会被 Tiptap schema 过滤掉 → Turndown 拿不到 style
     // → RTE→MD 时段落对齐被静默丢失。markdownToTiptapJSON 反向也靠它识别 align 属性。
     TextAlign.configure({ types: ["heading", "paragraph"] }),
+    // BLOCK-ID-01: heading blockId 属性，与 TiptapEditor 对齐
+    // 避免 generateHTML/generateJSON 时 blockId 被 schema 过滤
+    BlockIdAttrs,
     // 数学公式：与 TiptapEditor 保持一致，避免 generateHTML 时 math 节点被 schema
     // 过滤掉。MathInline / MathBlock 都是 atom 节点，仅用属性 `latex` 携带源码。
     MathInline,

@@ -1,6 +1,7 @@
 import React, { forwardRef, lazy, Suspense, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useEditor, Editor, EditorContent, Extension, ReactNodeViewRenderer } from "@tiptap/react";
+import { Plugin, PluginKey } from "prosemirror-state";
 
 // 懒加载 docx 内联预览：office 解析器（fflate + 自研 OOXML parser）有几十 KB，
 // 而绝大多数会话不会点 docx 附件，所以拆出去按需拉。
@@ -651,6 +652,89 @@ const IndentExtension = Extension.create({
         return changed;
       },
     } as any;
+  },
+});
+
+/**
+ * BLOCK-ID-01: 块 ID 扩展
+ *
+ * 给 heading 节点增加稳定 blockId，用于后续标题块引用。
+ *
+ * 特性：
+ *   - 新建 heading 自动生成 blockId（blk_ 前缀 + UUID）
+ *   - 旧笔记加载后自动补齐缺失的 blockId
+ *   - 编辑 heading 文本时 blockId 不变化
+ *   - DOM 渲染 data-block-id 属性，支持 querySelector 定位
+ *   - TipTap JSON 中保存 attrs.blockId
+ *
+ * 限制：
+ *   - 只处理 heading，不处理 paragraph / list / image / table 等
+ *   - 不做块引用 UI，不做跳转，不改 note_links
+ */
+const BlockIdExtension = Extension.create({
+  name: "blockId",
+
+  addGlobalAttributes() {
+    return [
+      {
+        types: ["heading"],
+        attributes: {
+          blockId: {
+            default: null,
+            parseHTML: (element) => element.getAttribute("data-block-id") || null,
+            renderHTML: (attributes) => {
+              if (!attributes.blockId) return {};
+              return { "data-block-id": attributes.blockId };
+            },
+          },
+        },
+      },
+    ];
+  },
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey("blockId"),
+        appendTransaction: (transactions, oldState, newState) => {
+          // 只在有文档变更时处理
+          const docChanged = transactions.some((tr) => tr.docChanged);
+          if (!docChanged) return null;
+
+          const tr = newState.tr;
+          let modified = false;
+          const seenIds = new Set<string>();
+
+          // 扫描所有 heading 节点
+          newState.doc.descendants((node, pos) => {
+            if (node.type.name !== "heading") return;
+
+            const currentId = node.attrs.blockId;
+
+            // 检查重复 blockId
+            if (currentId && seenIds.has(currentId)) {
+              // 重复 ID，重新生成
+              const newId = `blk_${crypto.randomUUID()}`;
+              tr.setNodeMarkup(pos, undefined, { ...node.attrs, blockId: newId });
+              modified = true;
+              return;
+            }
+
+            if (currentId) {
+              seenIds.add(currentId);
+              return;
+            }
+
+            // 缺少 blockId，生成新的
+            const newId = `blk_${crypto.randomUUID()}`;
+            tr.setNodeMarkup(pos, undefined, { ...node.attrs, blockId: newId });
+            modified = true;
+          });
+
+          return modified ? tr : null;
+        },
+      }),
+    ];
   },
 });
 
@@ -1509,6 +1593,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         types: ['heading', 'paragraph'],
       }),
       IndentExtension,
+      BlockIdExtension, // BLOCK-ID-01: heading blockId 稳定生成
 
       slashExtension.current,
       // Markdown 语法增强：~~删除线~~ / ==高亮== input rule + 智能粘贴 markdown

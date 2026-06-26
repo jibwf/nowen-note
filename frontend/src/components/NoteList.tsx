@@ -2816,24 +2816,18 @@ export default function NoteList() {
               <Trash2 size={18} />
             </Button>
           ) : (
-            // split-button：左侧 + 依然是"新建普通笔记"保留肉记忆；右侧箭头弹类型选择。
-            <div className="flex items-center">
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleCreateNote("normal")}>
-                <Plus size={18} />
-              </Button>
-              <button
-                ref={createMenuAnchorDesktopRef}
-                type="button"
-                aria-label="选择新建类型"
-                onClick={() => {
-                  setCreateNoteMenuSource("desktop");
-                  setCreateNoteMenuOpen((v) => !v);
-                }}
-                className="h-8 w-5 flex items-center justify-center rounded-md text-tx-tertiary hover:bg-app-hover hover:text-tx-secondary transition-colors"
-              >
-                <ChevronDown size={12} />
-              </button>
-            </div>
+            <button
+              ref={createMenuAnchorDesktopRef}
+              type="button"
+              className="h-8 px-2 flex items-center gap-1 rounded-md text-tx-tertiary hover:bg-app-hover hover:text-tx-secondary transition-colors"
+              onClick={() => {
+                setCreateNoteMenuSource("desktop");
+                setCreateNoteMenuOpen((v) => !v);
+              }}
+            >
+              <Plus size={18} />
+              <ChevronDown size={12} />
+            </button>
           )}
           {/* 排序下拉（移动端） */}
           {showSortMenu && (
@@ -2918,24 +2912,18 @@ export default function NoteList() {
               <Trash2 size={15} />
             </Button>
           ) : (
-            // split-button： + 依然走"新建普通笔记"；箭头点开后选择类型。
-            <div className="flex items-center">
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleCreateNote("normal")}>
-                <Plus size={15} />
-              </Button>
-              <button
-                ref={createMenuAnchorMobileRef}
-                type="button"
-                aria-label="选择新建类型"
-                onClick={() => {
-                  setCreateNoteMenuSource("mobile");
-                  setCreateNoteMenuOpen((v) => !v);
-                }}
-                className="h-7 w-4 flex items-center justify-center rounded-md text-tx-tertiary hover:bg-app-hover hover:text-tx-secondary transition-colors"
-              >
-                <ChevronDown size={11} />
-              </button>
-            </div>
+            <button
+              ref={createMenuAnchorMobileRef}
+              type="button"
+              className="h-7 px-1.5 flex items-center gap-0.5 rounded-md text-tx-tertiary hover:bg-app-hover hover:text-tx-secondary transition-colors"
+              onClick={() => {
+                setCreateNoteMenuSource("mobile");
+                setCreateNoteMenuOpen((v) => !v);
+              }}
+            >
+              <Plus size={15} />
+              <ChevronDown size={11} />
+            </button>
           )}
           {/* 排序下拉（桌面端） */}
           {showSortMenu && (

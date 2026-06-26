@@ -299,7 +299,7 @@ tasks.post("/", requireWorkspaceFeature("tasks"), async (c) => {
     const vErr = validateRepeatRuleJson(rj);
     if (vErr) return c.json({ error: vErr, code: "INVALID_REPEAT_RULE" }, 400);
     // 去重 weekdays
-    if (rj.weekdays) rj.weekdays = [...new Set(rj.weekdays)].sort((a: number, b: number) => a - b);
+    if (rj.weekdays) rj.weekdays = [...new Set(rj.weekdays)].sort((a, b) => (a as number) - (b as number));
     repeatRuleJson = JSON.stringify(rj);
   }
   if (repeatRule !== "none" && !dueDate && !dueAt) {
@@ -415,7 +415,7 @@ tasks.put("/:id", (c) => {
         const vErr = validateRepeatRuleJson(body.repeatRuleJson);
         if (vErr) return c.json({ error: vErr, code: "INVALID_REPEAT_RULE" }, 400);
         const rj = { ...body.repeatRuleJson };
-        if (rj.weekdays) rj.weekdays = [...new Set(rj.weekdays)].sort((a: number, b: number) => a - b);
+        if (rj.weekdays) rj.weekdays = [...new Set(rj.weekdays)].sort((a, b) => (a as number) - (b as number));
         repeatRuleJson = JSON.stringify(rj);
       } else {
         return c.json({ error: "Invalid repeatRuleJson", code: "INVALID_REPEAT_RULE" }, 400);

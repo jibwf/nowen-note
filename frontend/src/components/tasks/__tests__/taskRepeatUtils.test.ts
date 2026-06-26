@@ -261,4 +261,53 @@ describe("getNextRepeatDate (custom)", () => {
       expect(getNextRepeatDate(t)).toBeNull();
     });
   });
+
+  // TASK-RECURRENCE-LUNAR-01: 农历循环测试
+  describe("lunar yearly", () => {
+    it("八月十五每年循环 (2025-10-06 => 2026-09-25)", () => {
+      const t = makeTask({
+        repeatRule: "custom",
+        repeatRuleJson: JSON.stringify({ calendar: "lunar", frequency: "year", interval: 1, lunarMonth: 8, lunarDay: 15 }),
+        dueDate: "2025-10-06",
+      });
+      expect(getNextRepeatDate(t)).toBe("2026-09-25");
+    });
+
+    it("正月初一每年循环 (2025-01-29 => 2026-02-17)", () => {
+      const t = makeTask({
+        repeatRule: "custom",
+        repeatRuleJson: JSON.stringify({ calendar: "lunar", frequency: "year", interval: 1, lunarMonth: 1, lunarDay: 1 }),
+        dueDate: "2025-01-29",
+      });
+      expect(getNextRepeatDate(t)).toBe("2026-02-17");
+    });
+
+    it("每2个农历年循环 (2025 八月十五 => 2027 八月十五)", () => {
+      const t = makeTask({
+        repeatRule: "custom",
+        repeatRuleJson: JSON.stringify({ calendar: "lunar", frequency: "year", interval: 2, lunarMonth: 8, lunarDay: 15 }),
+        dueDate: "2025-10-06",
+      });
+      expect(getNextRepeatDate(t)).toBe("2027-09-15");
+    });
+
+    it("农历三十遇到小月落到该月最后一天", () => {
+      const t = makeTask({
+        repeatRule: "custom",
+        repeatRuleJson: JSON.stringify({ calendar: "lunar", frequency: "year", interval: 1, lunarMonth: 2, lunarDay: 30 }),
+        dueDate: "2025-03-29",
+      });
+      const result = getNextRepeatDate(t);
+      expect(result).not.toBeNull();
+    });
+
+    it("calendar 缺省时按 gregorian 处理", () => {
+      const t = makeTask({
+        repeatRule: "custom",
+        repeatRuleJson: JSON.stringify({ frequency: "year", interval: 1, yearMonth: 10, yearDay: 6 }),
+        dueDate: "2025-10-06",
+      });
+      expect(getNextRepeatDate(t)).toBe("2026-10-06");
+    });
+  });
 });

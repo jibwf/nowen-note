@@ -1046,6 +1046,11 @@ export const api = {
     request<Partial<Note> & { id: string; version: number; title: string; updatedAt: string }>(
       `/notes/${id}?slim=1`,
     ),
+  // BLOCK-LINKS-UI-01: 获取笔记的标题块列表（用于块级引用选择）
+  getNoteHeadings: (id: string) =>
+    request<{ headings: Array<{ blockId: string; level: number; text: string; order: number }> }>(
+      `/notes/${id}/headings`,
+    ),
   createNote: (data: Partial<Note>) => {
     // Phase D: 客户端提前生成 UUID v4，后端接受。
     //   - 优点：离线创建不需要临时 ID + 后期映射；
@@ -1292,6 +1297,39 @@ export const api = {
     update: (data: { enabled?: boolean; includeCompleted?: boolean; includeDescription?: boolean; defaultAlarmMinutes?: number }) =>
       request<{ feed: any }>(`/task-calendar/feed`, { method: "PATCH", body: JSON.stringify(data) }),
     rotateToken: () => request<{ success: boolean }>(`/task-calendar/feed/rotate-token`, { method: "POST" }),
+  },
+
+  // Calendar ICS mirror export to S3
+  calendarExportTargets: {
+    list: () => request<{ targets: any[] }>(`/task-calendar/export-targets`),
+    create: (data: {
+      feedId: string;
+      name?: string;
+      enabled?: boolean;
+      endpoint: string;
+      region?: string;
+      bucket: string;
+      accessKeyId: string;
+      secretAccessKey: string;
+      pathPrefix?: string;
+      publicBaseUrl: string;
+      forcePathStyle?: boolean;
+    }) => request<{ target: any }>(`/task-calendar/export-targets`, { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: {
+      name?: string;
+      enabled?: boolean;
+      endpoint?: string;
+      region?: string;
+      bucket?: string;
+      accessKeyId?: string;
+      secretAccessKey?: string;
+      pathPrefix?: string;
+      publicBaseUrl?: string;
+      forcePathStyle?: boolean;
+    }) => request<{ target: any }>(`/task-calendar/export-targets/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id: string) => request<{ success: boolean }>(`/task-calendar/export-targets/${id}`, { method: "DELETE" }),
+    test: (id: string) => request<{ ok: boolean; error?: string }>(`/task-calendar/export-targets/${id}/test`, { method: "POST" }),
+    exportNow: (id: string) => request<{ success: boolean; publicUrl?: string; error?: string }>(`/task-calendar/export-targets/${id}/export-now`, { method: "POST" }),
   },
 
   // Folder sync (desktop only)

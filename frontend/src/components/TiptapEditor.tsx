@@ -60,7 +60,7 @@ import type { NoteEditorHandle, NoteEditorHeading, NoteEditorProps } from "@/com
 import type { FormatMenuPayload } from "@/lib/desktopBridge";
 import { sendFormatState } from "@/lib/desktopBridge";
 import { SlashCommandsMenu, getDefaultSlashCommands, createSlashExtension, createSlashEventHandlers } from "@/components/SlashCommands";
-import { NoteLinkMenu, type NoteSearchResult } from "@/components/NoteLinkExtension";
+import { NoteLinkMenu, type NoteSearchResult, type HeadingItem } from "@/components/NoteLinkExtension";
 import { MarkdownEnhancements } from "@/components/MarkdownEnhancements";
 import { MathExtensions } from "@/components/MathExtensions";
 import { FootnoteExtensions, nextFootnoteIdentifier } from "@/components/FootnoteExtensions";
@@ -2320,8 +2320,8 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
     },
   });
 
-  // 插入笔记引用
-  const handleNoteLinkSelect = useCallback((note: NoteSearchResult) => {
+  // BLOCK-LINKS-UI-01: 插入笔记引用（支持笔记级和块级）
+  const handleNoteLinkSelect = useCallback((note: NoteSearchResult, heading?: HeadingItem) => {
     if (!editor) return;
 
     // 计算需要替换的范围：从 [[ 到当前光标位置
@@ -2337,13 +2337,37 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
     const replaceFrom = $from.pos - ($from.parentOffset - triggerIndex);
     const replaceTo = $from.pos;
 
-    // 插入笔记引用格式：[[note:NOTE_ID|笔记标题]]
-    const linkText = `[[note:${note.id}|${note.title}]]`;
+    // 构建 href 和显示文本
+    let href: string;
+    let linkText: string;
 
+    if (heading) {
+      // 块级引用：note:NOTE_ID#blk:BLOCK_ID
+      href = `note:${note.id}#blk:${heading.blockId}`;
+      // 显示文本：笔记标题 > 标题文本
+      linkText = `${note.title} > ${heading.text}`;
+    } else {
+      // 笔记级引用：note:NOTE_ID
+      href = `note:${note.id}`;
+      linkText = note.title;
+    }
+
+    // 插入 Link mark
     editor.chain()
       .focus()
       .deleteRange({ from: replaceFrom, to: replaceTo })
-      .insertContent(linkText)
+      .insertContent({
+        type: "text",
+        text: linkText,
+        marks: [{
+          type: "link",
+          attrs: {
+            href,
+            target: "_blank",
+            rel: "noopener noreferrer nofollow",
+          },
+        }],
+      })
       .run();
 
     // 关闭菜单

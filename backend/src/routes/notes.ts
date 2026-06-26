@@ -948,6 +948,85 @@ app.get("/:id/backlinks", (c) => {
   return c.json({ backlinks });
 });
 
+// BLOCK-LINKS-UI-01: 获取笔记的标题块列表（用于块级引用选择）
+app.get("/:id/headings", (c) => {
+  const db = getDb();
+  const userId = c.req.header("X-User-Id") || "";
+  const targetNoteId = c.req.param("id");
+
+  // 权限校验：用户必须对目标笔记有 read 权限
+  const { permission } = resolveNotePermission(targetNoteId, userId);
+  if (!hasPermission(permission, "read")) {
+    return c.json({ error: "笔记不存在或无权限", code: "NOT_FOUND" }, 404);
+  }
+
+  // 检查目标笔记是否存在且未被删除
+  const targetNote = db.prepare(
+    "SELECT id, title, content, contentFormat, isTrashed FROM notes WHERE id = ?"
+  ).get(targetNoteId) as { id: string; title: string; content: string; contentFormat: string; isTrashed: number } | undefined;
+
+  if (!targetNote) {
+    return c.json({ error: "笔记不存在", code: "NOT_FOUND" }, 404);
+  }
+
+  if (targetNote.isTrashed) {
+    return c.json({ error: "笔记已删除", code: "NOT_FOUND" }, 404);
+  }
+
+  // 从 content 中提取 heading 节点
+  const headings: Array<{ blockId: string; level: number; text: string; order: number }> = [];
+
+  try {
+    if (targetNote.contentFormat === "tiptap-json" && targetNote.content) {
+      const content = JSON.parse(targetNote.content);
+
+      // 递归遍历 TipTap JSON 提取 heading 节点
+      let order = 0;
+      const extractHeadings = (nodes: any[]) => {
+        for (const node of nodes) {
+          if (node.type === "heading" && node.attrs?.blockId) {
+            // 提取 heading 文本
+            let text = "";
+            if (node.content) {
+              for (const child of node.content) {
+                if (child.type === "text") {
+                  text += child.text;
+                }
+              }
+            }
+
+            if (text.trim()) {
+              headings.push({
+                blockId: node.attrs.blockId,
+                level: node.attrs.level || 1,
+                text: text.trim(),
+                order: order++,
+              });
+            }
+          }
+
+          // 递归遍历子节点
+          if (node.content) {
+            extractHeadings(node.content);
+          }
+        }
+      };
+
+      extractHeadings(content.content || []);
+
+      // 限制返回数量
+      if (headings.length > 100) {
+        headings.length = 100;
+      }
+    }
+  } catch (e) {
+    console.warn("[getHeadings] failed to parse content:", e instanceof Error ? e.message : e);
+    // 解析失败返回空列表，不报错
+  }
+
+  return c.json({ headings });
+});
+
 /**
  * 释放 Y.js 房间（MD↔RTE 切换用）
  * ---------------------------------------------------------------------------

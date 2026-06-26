@@ -1445,9 +1445,9 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
 
       {/* ״̬��������ͳ�ƣ��� TiptapEditor ���룩 */}
       <div className="px-4 md:px-8 py-1.5 border-t border-app-border/60 text-[11px] text-tx-tertiary flex items-center gap-3 select-none">
-        <span>{wordStats.chars}{t('tiptap.chars')}</span>
+        <span>{wordStats.chars}{tr('tiptap.chars')}</span>
         <span className="opacity-60">·</span>
-        <span>{wordStats.words}{t('tiptap.words')}</span>
+        <span>{wordStats.words}{tr('tiptap.words')}</span>
         <span className="ml-auto opacity-60">Markdown</span>
       </div>
 

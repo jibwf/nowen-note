@@ -1685,6 +1685,81 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  // v37: note_links 重建表，补齐外键约束和 ON DELETE CASCADE（NOTE-LINKS-FK-MIGRATION-01）
+  //   背景：v36 的 note_links 表没有外键约束，数据一致性依赖手动清理。
+  //   本次迁移通过"重建表"方式添加外键约束，确保删除笔记时 note_links 自动清理。
+  //
+  //   流程：
+  //     1) 清理孤儿记录（sourceNoteId/targetNoteId/userId 不存在的行）
+  //     2) 创建 note_links_new 表（带完整外键约束）
+  //     3) 将合法数据复制到新表（去重）
+  //     4) DROP 老表 + RENAME 新表
+  //     5) 重建索引
+  //
+  //   幂等：检查表是否已有外键约束，已重建则跳过。
+  {
+    version: 37,
+    name: "note-links-add-fk",
+    up: (db) => {
+      // 1) 表存在性检查
+      const tables = db.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='note_links'"
+      ).all();
+      if (tables.length === 0) return; // 表还不存在，跳过
+
+      // 2) 检查是否已重建（通过检查外键是否存在）
+      const fkList = db.prepare("PRAGMA foreign_key_list(note_links)").all() as { table: string }[];
+      if (fkList.length > 0) return; // 已有外键，跳过
+
+      // 3) 清理孤儿记录
+      db.exec(`
+        DELETE FROM note_links WHERE sourceNoteId NOT IN (SELECT id FROM notes);
+        DELETE FROM note_links WHERE targetNoteId NOT IN (SELECT id FROM notes);
+        DELETE FROM note_links WHERE userId NOT IN (SELECT id FROM users);
+      `);
+
+      // 4) 创建新表（带外键约束）
+      db.exec(`
+        CREATE TABLE note_links_new (
+          id TEXT PRIMARY KEY,
+          userId TEXT NOT NULL,
+          sourceNoteId TEXT NOT NULL,
+          targetNoteId TEXT NOT NULL,
+          linkText TEXT,
+          createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+          updatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (sourceNoteId) REFERENCES notes(id) ON DELETE CASCADE,
+          FOREIGN KEY (targetNoteId) REFERENCES notes(id) ON DELETE CASCADE
+        );
+      `);
+
+      // 5) 复制合法数据（去重：同一 userId + sourceNoteId + targetNoteId 只保留一条）
+      db.exec(`
+        INSERT INTO note_links_new (id, userId, sourceNoteId, targetNoteId, linkText, createdAt, updatedAt)
+        SELECT id, userId, sourceNoteId, targetNoteId, linkText, createdAt, updatedAt
+        FROM note_links
+        WHERE rowid IN (
+          SELECT MIN(rowid) FROM note_links
+          GROUP BY userId, sourceNoteId, targetNoteId
+        );
+      `);
+
+      // 6) DROP 老表 + RENAME 新表
+      db.exec(`DROP TABLE note_links;`);
+      db.exec(`ALTER TABLE note_links_new RENAME TO note_links;`);
+
+      // 7) 重建索引
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_note_links_user_pair
+          ON note_links(userId, sourceNoteId, targetNoteId);
+        CREATE INDEX IF NOT EXISTS idx_note_links_user_target
+          ON note_links(userId, targetNoteId);
+        CREATE INDEX IF NOT EXISTS idx_note_links_user_source
+          ON note_links(userId, sourceNoteId);
+      `);
+    },
+  },
 ];
 
 /** 当前代码已知的最高 schema 版本（== MIGRATIONS 里 max(version)）。 */

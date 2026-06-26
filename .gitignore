@@ -52,3 +52,7 @@ nowen-harmony/outputs/
 nowen-harmony/report/
 nowen-harmony/.deveco/
 nowen-harmony/entry/build/
+dist-electron-lite/win-unpacked/resources
+dist-electron-lite/win-unpacked
+dist-electron-lite/.icon-ico
+dist-electron-lite

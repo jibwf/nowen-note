@@ -320,7 +320,8 @@
       "editWarningMessage": "The rich-text editor does not support all HTML tags. Some formatting and styles may be lost after switching. Continue?",
       "editWarningConfirm": "Continue Editing",
       "editWarningCancel": "Stay in Preview"
-    }
+    },
+    "lastSaved": "Last saved"
   },
   "tiptap": {
     "placeholder": "Start writing...",

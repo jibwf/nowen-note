@@ -3195,11 +3195,21 @@ function SyncIndicator({
   onManualSync: () => void;
 }) {
   const { t } = useTranslation();
+  const formatFullTime = (ts: string) => {
+    try { return new Date(ts).toLocaleString(); } catch { return ts; }
+  };
+
   const getTooltip = () => {
     switch (syncStatus) {
       case "saving": return t('editor.saving');
-      case "saved": return t('editor.allSaved');
-      case "error": return t('editor.saveFailed');
+      case "saved":
+        return lastSyncedAt
+          ? `${t('editor.allSaved')}：${formatFullTime(lastSyncedAt)}`
+          : t('editor.allSaved');
+      case "error":
+        return lastSyncedAt
+          ? `${t('editor.saveFailed')}，${t('editor.lastSaved')}：${formatFullTime(lastSyncedAt)}`
+          : t('editor.saveFailed');
       case "queued": return t("editor.queued", { defaultValue: "草稿存储，等待网络恢复后自动同步" });
       case "offline": return t("editor.offline", { defaultValue: "当前离线" });
       default:
@@ -3288,11 +3298,24 @@ function SyncIndicator({
         syncStatus === "idle" && "text-tx-tertiary group-hover:text-tx-secondary",
       )}>
         {syncStatus === "saving" && t('editor.savingStatus')}
-        {syncStatus === "saved" && t('editor.savedStatus')}
+        {syncStatus === "saved" && (
+          <>
+            {t('editor.savedStatus')}
+            {lastSyncedAt && (
+              <span className="ml-1 opacity-70">
+                · {new Date(lastSyncedAt).toLocaleTimeString()}
+              </span>
+            )}
+          </>
+        )}
         {syncStatus === "error" && t('editor.saveFailedStatus')}
-{syncStatus === "queued" && t("editor.queuedStatus", { defaultValue: "草稿存储" })}
-{syncStatus === "offline" && t("editor.offlineStatus", { defaultValue: "离线" })}
-        {syncStatus === "idle" && (lastSyncedAt ? t('editor.synced') : t('editor.sync'))}
+        {syncStatus === "queued" && t("editor.queuedStatus", { defaultValue: "草稿存储" })}
+        {syncStatus === "offline" && t("editor.offlineStatus", { defaultValue: "离线" })}
+        {syncStatus === "idle" && (
+          lastSyncedAt
+            ? <>{t('editor.synced')}<span className="ml-1 opacity-70">· {new Date(lastSyncedAt).toLocaleTimeString()}</span></>
+            : t('editor.sync')
+        )}
       </span>
     </button>
   );

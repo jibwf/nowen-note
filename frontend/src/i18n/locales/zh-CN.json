@@ -333,7 +333,8 @@
       "editWarningMessage": "富文本编辑器不支持所有 HTML 标签，切换后部分排版和样式可能丢失。确定要继续吗？",
       "editWarningConfirm": "继续编辑",
       "editWarningCancel": "留在预览"
-    }
+    },
+    "lastSaved": "上次保存"
   },
   "tiptap": {
     "placeholder": "开始写点什么...",

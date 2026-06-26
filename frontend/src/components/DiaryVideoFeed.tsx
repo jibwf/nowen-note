@@ -4,6 +4,7 @@ import { Diary } from "@/types";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
+import SayMarkdownContent from "@/components/diary/SayMarkdownContent";
 
 // ---------------------------------------------------------------------------
 // 工具
@@ -264,15 +265,15 @@ export default function DiaryVideoFeed({
           <span className="text-xs opacity-40">{timeAgo(currentItem.createdAt, t)}</span>
         )}
         {contentText && (
-          <p
+          <div
             className={cn(
               "mt-1.5 text-sm leading-relaxed opacity-90",
               !expanded && "line-clamp-3",
             )}
             onClick={() => setExpanded(!expanded)}
           >
-            {contentText}
-          </p>
+            <SayMarkdownContent content={contentText} />
+          </div>
         )}
 
         {/* 加载更多提示 */}

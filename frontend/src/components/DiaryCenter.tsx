@@ -25,6 +25,7 @@ import { useTranslation } from "react-i18next";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/lib/toast";
 import DiaryVideoFeed from "@/components/DiaryVideoFeed";
+import SayMarkdownContent from "@/components/diary/SayMarkdownContent";
 import {
   loadDiaryDraft,
   saveDiaryDraft,
@@ -1106,11 +1107,9 @@ const DiaryCard = React.forwardRef<HTMLDivElement, {
       >
         <div className="bg-app-surface rounded-xl border border-app-border/60 hover:border-accent-primary/20 transition-all duration-200 hover:shadow-sm hover:shadow-accent-primary/5">
           <div className="p-5">
-            {/* 内容（纯图说说允许 contentText 为空，此时不渲染 <p>） */}
+            {/* 内容（纯图说说允许 contentText 为空，此时不渲染） */}
             {item.contentText && (
-              <p className="text-sm text-tx-primary leading-relaxed whitespace-pre-wrap break-words">
-                {item.contentText}
-              </p>
+              <SayMarkdownContent content={item.contentText} />
             )}
 
             {/* 媒体预览：图片九宫格 / 视频播放器 */}

@@ -689,16 +689,34 @@ function createWindow() {
   //   full → 本机后端 http://127.0.0.1:{backendPort}
   //   lite → 用户在 setup 窗里选择并写入 settings.json 的 remoteUrl
   //
-  // 重要：打包后的 Electron 始终加载本地 frontend/dist，而不是远端服务器页面。
+  // 重要：桌面客户端永远加载本地 frontend/dist，而不是远端服务器页面。
   // 这样服务端即使开启「API-only / 关闭网页端」也不会影响 PC 客户端。
   const targetUrl =
     currentMode === "lite" && currentRemoteUrl
       ? currentRemoteUrl
       : `http://127.0.0.1:${backendPort}`;
   const frontendIndex = path.join(getFrontendDist(), "index.html");
-  if ((app.isPackaged || currentMode === "lite") && fs.existsSync(frontendIndex)) {
+  if (fs.existsSync(frontendIndex)) {
+    // 桌面客户端始终加载本地 UI，远程地址作为 API base 通过 query 参数传入
     mainWindow.loadFile(frontendIndex, { query: { serverUrl: targetUrl } });
+  } else if (currentMode === "lite") {
+    // lite 模式但本地前端缺失：显示错误提示，不要加载远程页面（可能是 WebUI 禁用页）
+    const errorHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+      body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+        font-family:system-ui,sans-serif;background:#0D1117;color:#E6EDF3;text-align:center;padding:20px}
+      .box{max-width:400px}.title{font-size:18px;font-weight:600;margin-bottom:12px;color:#E6EDF3}
+      .hint{font-size:13px;color:#8b949e;line-height:1.6}
+      button{margin-top:16px;padding:8px 20px;border-radius:8px;border:1px solid #30363d;
+        background:#21262d;color:#E6EDF3;cursor:pointer;font-size:13px}
+      button:hover{background:#30363d}
+    </style></head><body><div class="box">
+      <div class="title">客户端资源缺失</div>
+      <div class="hint">本地前端文件未找到。请重新安装 Nowen Note Lite，或检查安装包是否完整。</div>
+      <button onclick="window.location.reload()">重试</button>
+    </div></body></html>`;
+    mainWindow.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(errorHtml));
   } else {
+    // full 模式 dev 环境：加载本地 dev server
     mainWindow.loadURL(targetUrl);
   }
   applyMenuBarPreference();

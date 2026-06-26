@@ -316,6 +316,86 @@ taskCalendar.get("/feed/:token", (c) => {
   });
 });
 
+// ── Export Targets（S3 镜像导出） ──
+
+import {
+  listExportTargets,
+  createExportTarget,
+  updateExportTarget,
+  deleteExportTarget,
+  testExportTarget,
+  exportNow,
+} from "../services/calendar-export";
+
+// GET /export-targets — 列出当前用户的所有 export targets
+taskCalendar.get("/export-targets", (c) => {
+  const userId = getUserId(c);
+  const targets = listExportTargets(userId);
+  return c.json({ targets });
+});
+
+// POST /export-targets — 创建 export target
+taskCalendar.post("/export-targets", async (c) => {
+  const userId = getUserId(c);
+  const body = await c.req.json().catch(() => ({}));
+
+  // 必填字段校验
+  if (!body.feedId || !body.endpoint || !body.bucket || !body.accessKeyId || !body.secretAccessKey || !body.publicBaseUrl) {
+    return c.json({ error: "Missing required fields: feedId, endpoint, bucket, accessKeyId, secretAccessKey, publicBaseUrl" }, 400);
+  }
+
+  try {
+    const target = createExportTarget(userId, body);
+    return c.json({ target }, 201);
+  } catch (err: any) {
+    return c.json({ error: err.message || "Failed to create export target" }, 400);
+  }
+});
+
+// PUT /export-targets/:id — 更新 export target
+taskCalendar.put("/export-targets/:id", async (c) => {
+  const userId = getUserId(c);
+  const targetId = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
+
+  try {
+    const target = updateExportTarget(userId, targetId, body);
+    return c.json({ target });
+  } catch (err: any) {
+    return c.json({ error: err.message || "Failed to update export target" }, 400);
+  }
+});
+
+// DELETE /export-targets/:id — 删除 export target
+taskCalendar.delete("/export-targets/:id", (c) => {
+  const userId = getUserId(c);
+  const targetId = c.req.param("id");
+
+  const deleted = deleteExportTarget(userId, targetId);
+  if (!deleted) {
+    return c.json({ error: "Export target not found" }, 404);
+  }
+  return c.json({ success: true });
+});
+
+// POST /export-targets/:id/test — 测试 S3 连接
+taskCalendar.post("/export-targets/:id/test", async (c) => {
+  const userId = getUserId(c);
+  const targetId = c.req.param("id");
+
+  const result = await testExportTarget(userId, targetId);
+  return c.json(result);
+});
+
+// POST /export-targets/:id/export-now — 立即导出 ICS 到 S3
+taskCalendar.post("/export-targets/:id/export-now", async (c) => {
+  const userId = getUserId(c);
+  const targetId = c.req.param("id");
+
+  const result = await exportNow(userId, targetId);
+  return c.json(result);
+});
+
 // ── 导出 ICS 生成逻辑供公开路由使用 ──
 
 /** 根据 token 查询 feed 并生成 ICS 内容。返回 null 表示 token 无效或已禁用。 */

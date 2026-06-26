@@ -56,7 +56,6 @@ import {
   Square,
   Sparkles,
   Link2,
-  ChevronDown,
   Globe,
 } from "lucide-react";
 import { api, resolveAttachmentUrl } from "@/lib/api";

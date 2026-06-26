@@ -44,6 +44,8 @@ export interface NoteEditorProps {
   onTagsChange?: (tags: Tag[]) => void;
   onHeadingsChange?: (headings: NoteEditorHeading[]) => void;
   onEditorReady?: (scrollTo: (pos: number) => void) => void;
+  /** 打开笔记回调（用于笔记引用跳转） */
+  onOpenNote?: (noteId: string) => void;
   editable?: boolean;
   /** 访客模式（分享页）：禁用依赖登录态的能力（TagInput、AI 助手等） */
   isGuest?: boolean;

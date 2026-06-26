@@ -2134,5 +2134,10 @@
     "todayJournal": "Today's Journal",
     "noJournals": "No journals yet",
     "createToday": "Create today's journal"
+  },
+  "noteLink": {
+    "searchPlaceholder": "Search notes...",
+    "noResults": "No matching notes found",
+    "linkCreated": "Note link inserted"
   }
 }

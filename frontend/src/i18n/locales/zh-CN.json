@@ -2303,5 +2303,10 @@
     "todayJournal": "今日日记",
     "noJournals": "暂无日记",
     "createToday": "创建今日日记"
+  },
+  "noteLink": {
+    "searchPlaceholder": "搜索笔记...",
+    "noResults": "没有找到匹配的笔记",
+    "linkCreated": "笔记引用已插入"
   }
 }

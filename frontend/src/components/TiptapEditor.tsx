@@ -59,6 +59,7 @@ import type { NoteEditorHandle, NoteEditorHeading, NoteEditorProps } from "@/com
 import type { FormatMenuPayload } from "@/lib/desktopBridge";
 import { sendFormatState } from "@/lib/desktopBridge";
 import { SlashCommandsMenu, getDefaultSlashCommands, createSlashExtension, createSlashEventHandlers } from "@/components/SlashCommands";
+import { NoteLinkMenu, type NoteSearchResult } from "@/components/NoteLinkExtension";
 import { MarkdownEnhancements } from "@/components/MarkdownEnhancements";
 import { MathExtensions } from "@/components/MathExtensions";
 import { FootnoteExtensions, nextFootnoteIdentifier } from "@/components/FootnoteExtensions";
@@ -1201,7 +1202,7 @@ function getEditorPlainText(editor: any): string {
 }
 
 export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEditor(
-  { note, onUpdate, onTagsChange, onHeadingsChange, onEditorReady, editable = true, isGuest = false },
+  { note, onUpdate, onTagsChange, onHeadingsChange, onEditorReady, onOpenNote, editable = true, isGuest = false },
   ref,
 ) {
   const titleRef = useRef<HTMLInputElement>(null);
@@ -1294,6 +1295,19 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
   });
   // hover 关闭延迟定时器：用户从链接移到气泡上时给一个缓冲，避免穿过空隙时闪烁
   const linkHoverCloseTimer = useRef<NodeJS.Timeout | null>(null);
+
+  // 笔记引用搜索菜单状态（[[ 触发）
+  const [noteLinkMenu, setNoteLinkMenu] = useState<{
+    open: boolean;
+    position: { top: number; left: number };
+    query: string;
+    triggerFrom: number; // [[ 的起始位置，用于替换
+  }>({
+    open: false,
+    position: { top: 0, left: 0 },
+    query: "",
+    triggerFrom: 0,
+  });
 
   // 斜杠命令事件处理器（稳定引用）
   const slashHandlers = useRef(createSlashEventHandlers());
@@ -1591,6 +1605,15 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
               }
             } catch {
               toast.info(`${label}：${plain}`);
+            }
+            return true;
+          }
+          // 笔记引用链接：note:NOTE_ID 格式
+          if (href.startsWith("note:")) {
+            event.preventDefault();
+            const noteId = href.slice(5);
+            if (noteId && onOpenNote) {
+              onOpenNote(noteId);
             }
             return true;
           }
@@ -2157,6 +2180,32 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
       const text = getEditorPlainText(editor);
       setWordStats(computeStats(text));
       onHeadingsChange?.(extractHeadings(editor));
+
+      // 检测 [[ 触发笔记搜索菜单
+      const { state } = editor;
+      const { selection } = state;
+      const { $from } = selection;
+      const textBefore = $from.parent.textContent.slice(0, $from.parentOffset);
+
+      // 查找最近的 [[ 触发
+      const triggerIndex = textBefore.lastIndexOf("[[");
+      if (triggerIndex !== -1) {
+        const query = textBefore.slice(triggerIndex + 2);
+        // 计算菜单位置
+        const coords = editor.view.coordsAtPos($from.pos);
+        setNoteLinkMenu({
+          open: true,
+          position: { top: coords.bottom + 8, left: coords.left },
+          query,
+          triggerFrom: $from.pos - query.length,
+        });
+      } else {
+        // 没有 [[ 触发，关闭菜单
+        if (noteLinkMenu.open) {
+          setNoteLinkMenu(prev => ({ ...prev, open: false }));
+        }
+      }
+
       // P0: 调度时快照 noteId，防止 debounce 期间切换笔记导致写错目标
       const scheduledNoteId = noteRef.current.id;
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
@@ -2170,6 +2219,36 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
       }, 500);
     },
   });
+
+  // 插入笔记引用
+  const handleNoteLinkSelect = useCallback((note: NoteSearchResult) => {
+    if (!editor) return;
+
+    // 计算需要替换的范围：从 [[ 到当前光标位置
+    const { state } = editor;
+    const { selection } = state;
+    const { $from } = selection;
+    const textBefore = $from.parent.textContent.slice(0, $from.parentOffset);
+    const triggerIndex = textBefore.lastIndexOf("[[");
+
+    if (triggerIndex === -1) return;
+
+    // 计算替换范围
+    const replaceFrom = $from.pos - ($from.parentOffset - triggerIndex);
+    const replaceTo = $from.pos;
+
+    // 插入笔记引用格式：[[note:NOTE_ID|笔记标题]]
+    const linkText = `[[note:${note.id}|${note.title}]]`;
+
+    editor.chain()
+      .focus()
+      .deleteRange({ from: replaceFrom, to: replaceTo })
+      .insertContent(linkText)
+      .run();
+
+    // 关闭菜单
+    setNoteLinkMenu(prev => ({ ...prev, open: false }));
+  }, [editor]);
 
   const copySelectionText = useCallback(async () => {
     if (!editor) return;
@@ -4426,6 +4505,17 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         editor={editor}
         items={getDefaultSlashCommands(t, handleImageUpload, openAIAssistant)}
       />
+
+      {/* 笔记引用搜索菜单 */}
+      {noteLinkMenu.open && (
+        <NoteLinkMenu
+          editor={editor}
+          position={noteLinkMenu.position}
+          query={noteLinkMenu.query}
+          onSelect={handleNoteLinkSelect}
+          onClose={() => setNoteLinkMenu(prev => ({ ...prev, open: false }))}
+        />
+      )}
 
       {/* 图片预览 Lightbox */}
       <AnimatePresence>

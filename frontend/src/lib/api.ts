@@ -1083,6 +1083,25 @@ export const api = {
   reorderNotes: (items: { id: string; sortOrder: number }[]) =>
     request<{ success: boolean }>("/notes/reorder/batch", { method: "PUT", body: JSON.stringify({ items }) }),
   /**
+   * 搜索笔记（用于笔记引用）
+   * 只返回当前用户有权限访问的笔记
+   */
+  searchNotes: async (query: string, limit: number = 10): Promise<Array<{ id: string; title: string; notebookId: string; updatedAt: string }>> => {
+    if (!query.trim()) return [];
+    const params = new URLSearchParams();
+    params.set("q", query.trim());
+    params.set("limit", String(limit));
+    // 只搜索标题，不搜索内容
+    params.set("searchMode", "title");
+    const data = await request<{ items: any[] }>(`/search?${params.toString()}`);
+    return (data.items || []).map((item: any) => ({
+      id: item.id,
+      title: item.title,
+      notebookId: item.notebookId,
+      updatedAt: item.updatedAt,
+    }));
+  },
+  /**
    * 释放笔记的 Y.js 房间：销毁服务端内存 Doc，并清空 note_yupdates / note_ysnapshots。
    * MD→RTE 切换时调用，避免下次切回 MD 时恢复出"上次 MD 会话的旧 yDoc"。
    */

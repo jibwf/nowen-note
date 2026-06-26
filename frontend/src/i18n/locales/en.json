@@ -1208,7 +1208,12 @@
       "months": "month(s)",
       "years": "year(s)",
       "endDate": "Repeat until",
-      "needDueDate": "Set a due date first to enable repeat"
+      "needDueDate": "Set a due date first to enable repeat",
+      "calendar": "Calendar",
+      "gregorian": "Gregorian",
+      "lunar": "Lunar",
+      "lunarYears": "lunar year(s)",
+      "lunarDate": "Lunar"
     },
     "templates": {
       "title": "Task Templates",

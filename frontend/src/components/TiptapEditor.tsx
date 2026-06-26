@@ -2222,7 +2222,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
     },
   });
 
-  // 插入笔记引用
+  // 插入笔记引用（BACKLINKS-01-RV2: 使用 Link mark 实现可点击跳转）
   const handleNoteLinkSelect = useCallback((note: NoteSearchResult) => {
     if (!editor) return;
 
@@ -2239,13 +2239,24 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
     const replaceFrom = $from.pos - ($from.parentOffset - triggerIndex);
     const replaceTo = $from.pos;
 
-    // 插入笔记引用格式：[[note:NOTE_ID|笔记标题]]
-    const linkText = `[[note:${note.id}|${note.title}]]`;
-
+    // 插入带 Link mark 的笔记引用
+    // href 使用 note:NOTE_ID 格式，点击时由 handleDOMEvents.click 处理跳转
+    // 同时保留纯文本格式用于 note_links 同步（syncNoteLinks 识别 href="note:UUID"）
     editor.chain()
       .focus()
       .deleteRange({ from: replaceFrom, to: replaceTo })
-      .insertContent(linkText)
+      .insertContent({
+        type: "text",
+        text: note.title,
+        marks: [{
+          type: "link",
+          attrs: {
+            href: `note:${note.id}`,
+            target: "_blank",
+            rel: "noopener noreferrer nofollow",
+          },
+        }],
+      })
       .run();
 
     // 关闭菜单

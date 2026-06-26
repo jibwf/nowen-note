@@ -1251,7 +1251,12 @@
       "months": "月",
       "years": "年",
       "endDate": "重复截止日期",
-      "needDueDate": "请先设置截止日期才能启用重复"
+      "needDueDate": "请先设置截止日期才能启用重复",
+      "calendar": "日历",
+      "gregorian": "公历",
+      "lunar": "农历",
+      "lunarYears": "个农历年",
+      "lunarDate": "农历"
     },
     "templates": {
       "title": "任务模板",

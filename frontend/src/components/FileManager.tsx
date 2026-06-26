@@ -45,6 +45,9 @@ import {
   Download,
   Loader2,
   Filter,
+  FolderOpen,
+  ChevronRight,
+  ChevronDown,
   ArrowUpDown,
   Inbox,
   Copy,
@@ -265,6 +268,25 @@ export default function FileManager() {
   //          切到"图片"分类时会自动跳 grid（见 handleCategoryChange）；
   //          图床模式下强制 grid（见 toggleImageHostMode）。
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
+
+  // 分组模式：扁平列表 vs 按笔记本分组
+  const [groupMode, setGroupMode] = useState<"flat" | "notebook">(() => {
+    try { return (localStorage.getItem("nowen-file-group") as "flat" | "notebook") || "flat"; } catch { return "flat"; }
+  });
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem("nowen-file-collapsed-groups");
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch { return new Set(); }
+  });
+  const toggleGroup = useCallback((key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      try { localStorage.setItem("nowen-file-collapsed-groups", JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }, []);
 
   // 图床模式（Image Host）：
   //   特化的 UI 子模式，专门服务于"把笔记附件当外链图床用"的场景。
@@ -920,6 +942,28 @@ export default function FileManager() {
   const isFirstPageNoResults = !loading && items.length === 0 && page === 1;
   const hasAnyFilter = searchQuery || category !== "all";
 
+  // 按笔记本分组（groupMode === "notebook" 时使用）
+  const groupedItems = useMemo(() => {
+    if (groupMode !== "notebook") return null;
+    const groups = new Map<string, { label: string; icon: string | null; items: typeof items }>();
+    for (const it of items) {
+      const nbId = it.primaryNote?.notebookId || null;
+      const nbName = it.primaryNote?.notebookName || null;
+      const nbIcon = it.primaryNote?.notebookIcon || null;
+      const key = nbId || (it.primaryNote ? "__unarchived__" : "__orphan__");
+      const label = nbId ? (nbName || "未命名笔记本") : (it.primaryNote ? "未归档附件" : "孤儿附件");
+      const icon = nbId ? nbIcon : null;
+      if (!groups.has(key)) groups.set(key, { label, icon, items: [] });
+      groups.get(key)!.items.push(it);
+    }
+    // 排序：有笔记本的按名称，孤儿/未归档放最后
+    return [...groups.entries()].sort(([aKey, a], [bKey, b]) => {
+      if (aKey.startsWith("__") && !bKey.startsWith("__")) return 1;
+      if (!aKey.startsWith("__") && bKey.startsWith("__")) return -1;
+      return a.label.localeCompare(b.label);
+    });
+  }, [groupMode, items]);
+
   // 方便状态栏展示
   const statsLine = useMemo(() => {
     if (!stats) return "";
@@ -1050,6 +1094,32 @@ export default function FileManager() {
               title="列表视图"
             >
               <List size={14} />
+            </button>
+          </div>
+        )}
+
+        {/* 分组切换：扁平列表 vs 按笔记本分组 */}
+        {!isImageHostMode && (
+          <div className="hidden md:flex items-center rounded-lg border border-app-border bg-app-bg p-0.5">
+            <button
+              className={cn(
+                "px-2 py-1 rounded-md text-xs flex items-center gap-1 transition-colors",
+                groupMode === "flat" ? "bg-accent-primary/15 text-accent-primary" : "text-tx-secondary hover:bg-app-hover",
+              )}
+              onClick={() => { setGroupMode("flat"); localStorage.setItem("nowen-file-group", "flat"); }}
+              title="不分组"
+            >
+              <List size={14} />
+            </button>
+            <button
+              className={cn(
+                "px-2 py-1 rounded-md text-xs flex items-center gap-1 transition-colors",
+                groupMode === "notebook" ? "bg-accent-primary/15 text-accent-primary" : "text-tx-secondary hover:bg-app-hover",
+              )}
+              onClick={() => { setGroupMode("notebook"); localStorage.setItem("nowen-file-group", "notebook"); }}
+              title="按笔记本分组"
+            >
+              <FolderOpen size={14} />
             </button>
           </div>
         )}
@@ -1355,6 +1425,55 @@ export default function FileManager() {
               </div>
             ) : isFirstPageNoResults ? (
               <EmptyState hasFilter={!!hasAnyFilter} onUpload={onPickFiles} />
+            ) : groupMode === "notebook" && groupedItems ? (
+              // 按笔记本分组视图
+              <div className="space-y-4">
+                {groupedItems.map(([groupKey, group]) => {
+                  const isCollapsed = collapsedGroups.has(groupKey);
+                  return (
+                    <div key={groupKey}>
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(groupKey)}
+                        className="flex items-center gap-2 w-full px-1 py-1.5 text-xs font-medium text-tx-secondary hover:text-tx-primary transition-colors"
+                      >
+                        {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                        {group.icon && <span>{group.icon}</span>}
+                        <span>{group.label}</span>
+                        <span className="text-tx-tertiary font-normal">({group.items.length})</span>
+                      </button>
+                      {!isCollapsed && (
+                        viewMode === "grid" ? (
+                          <GridView
+                            items={group.items}
+                            onOpen={openDetail}
+                            onCopyUrl={copyUrl}
+                            onCopySnippet={copySnippet}
+                            onDownload={downloadItem}
+                            copiedId={copiedId}
+                            downloadingId={downloadingId}
+                            selectionMode={selectionMode}
+                            selectedIds={selectedIds}
+                            onToggleSelect={toggleSelect}
+                            isImageHostMode={isImageHostMode}
+                          />
+                        ) : (
+                          <ListView
+                            items={group.items}
+                            onOpen={openDetail}
+                            onDelete={afterDelete}
+                            onJumpToNote={jumpToNote}
+                            selectionMode={selectionMode}
+                            selectedIds={selectedIds}
+                            onToggleSelect={toggleSelect}
+                            isImageHostMode={isImageHostMode}
+                          />
+                        )
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             ) : viewMode === "grid" ? (
               <GridView
                 items={items}

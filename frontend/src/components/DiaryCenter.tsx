@@ -1104,8 +1104,8 @@ const DiaryCard = React.forwardRef<HTMLDivElement, {
         transition={{ duration: 0.3, ease: "easeOut" }}
         className="group"
       >
-        <div className="bg-app-surface rounded-xl border border-app-border/60 hover:border-accent-primary/20 transition-all duration-200 hover:shadow-md hover:shadow-accent-primary/5">
-          <div className="p-4">
+        <div className="bg-app-surface rounded-xl border border-app-border/60 hover:border-accent-primary/20 transition-all duration-200 hover:shadow-sm hover:shadow-accent-primary/5">
+          <div className="p-5">
             {/* 内容（纯图说说允许 contentText 为空，此时不渲染 <p>） */}
             {item.contentText && (
               <p className="text-sm text-tx-primary leading-relaxed whitespace-pre-wrap break-words">
@@ -2261,11 +2261,11 @@ export default function DiaryCenter() {
           }}
         />
       ) : (
-        /* 桌面端双栏布局 */
         <div className="flex-1 flex overflow-hidden">
+          <div className="flex-1 flex justify-center overflow-hidden">
           {/* 左侧：主内容区 */}
-          <ScrollArea className="flex-1" ref={scrollRef}>
-            <div className="max-w-[720px] mx-auto px-4 lg:px-6 py-6 space-y-5">
+          <ScrollArea className="flex-1 max-w-[760px]" ref={scrollRef}>
+            <div className="px-4 lg:px-6 py-6 space-y-5">
               {/* 顶部标题 + 统计 */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -2293,9 +2293,9 @@ export default function DiaryCenter() {
                 </button>
               </div>
 
-              {/* 发布框 - 强化样式 */}
+              {/* 发布框 */}
               <div className="relative">
-                <div className="absolute -inset-1 bg-gradient-to-r from-violet-500/10 to-pink-500/10 rounded-2xl blur-sm" />
+                <div className="absolute -inset-0.5 bg-gradient-to-r from-violet-500/5 to-pink-500/5 rounded-2xl" />
                 <div className="relative">
                   <ComposeBox key={getCurrentWorkspace() || "personal"} onPost={handlePost} />
                 </div>
@@ -2436,7 +2436,7 @@ export default function DiaryCenter() {
           </ScrollArea>
 
           {/* 右侧面板（桌面端） */}
-          <div className="hidden lg:block w-[300px] xl:w-[320px] border-l border-app-border bg-app-surface/30 overflow-auto">
+          <div className="hidden lg:block w-[300px] xl:w-[320px] shrink-0 border-l border-app-border bg-app-surface/30 overflow-auto">
             <div className="p-4 sticky top-0">
               <DiarySidebar
                 stats={stats}
@@ -2446,6 +2446,7 @@ export default function DiaryCenter() {
                 recentItems={items}
               />
             </div>
+          </div>
           </div>
         </div>
       )}

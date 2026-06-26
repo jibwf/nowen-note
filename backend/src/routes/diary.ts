@@ -337,6 +337,9 @@ diary.post("/", requireWorkspaceFeature("diaries"), async (c) => {
   // 支持自定义发布时间（用于补录历史说说）
   // 格式：ISO 8601 或 "YYYY-MM-DD HH:MM:SS" 或 "YYYY-MM-DD"
   // 未传或无效值则使用当前时间
+  //
+  // 语义注意：createdAt 当前作为用户可编辑的时间线展示时间使用（非真实创建时间）。
+  // 短期可接受，长期建议新增 publishedAt/displayDate 字段。
   const customCreatedAt = normalizeCustomDate(body.createdAt);
 
   const id = crypto.randomUUID();
@@ -433,10 +436,16 @@ function normalizeDateBound(raw: string | undefined, kind: "from" | "to"): strin
 
 /**
  * 规范化用户自定义的发布时间。
+ *
+ * 设计决策：
+ *   createdAt 当前作为用户可编辑的时间线展示时间使用（非真实创建时间）。
+ *   短期可接受，长期建议新增 publishedAt/displayDate 字段。
+ *
  * 支持格式：
- *   - "YYYY-MM-DD" → 当天 00:00:00
- *   - "YYYY-MM-DDTHH:MM:SS" / "YYYY-MM-DD HH:MM:SS" → 直接使用
- *   - ISO 8601 带时区 → 转为 UTC
+ *   - "YYYY-MM-DD" → 当天 00:00:00（本地时间）
+ *   - "YYYY-MM-DDTHH:MM" / "YYYY-MM-DDTHH:MM:SS" → 保留本地时间，不转 UTC
+ *   - "YYYY-MM-DD HH:MM:SS" → 直接使用
+ *   - ISO 8601 带 Z 时区后缀 → 转为 UTC
  * 返回 SQLite 格式的时间字符串，或 null（使用默认当前时间）。
  */
 function normalizeCustomDate(raw: unknown): string | null {
@@ -452,15 +461,25 @@ function normalizeCustomDate(raw: unknown): string | null {
   const spaceMatch = s.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/);
   if (spaceMatch) return `${spaceMatch[1]} ${spaceMatch[2]}`;
 
-  // ISO 8601 格式（带 T）
-  try {
-    const date = new Date(s);
-    if (!isNaN(date.getTime())) {
-      // 转为 UTC "YYYY-MM-DD HH:MM:SS"
-      return date.toISOString().slice(0, 19).replace("T", " ");
+  // "YYYY-MM-DDTHH:MM" 格式（datetime-local 输入框的默认格式）
+  // 注意：这是本地时间，直接保留，不转 UTC
+  const localMatch = s.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})$/);
+  if (localMatch) return `${localMatch[1]} ${localMatch[2]}:00`;
+
+  // "YYYY-MM-DDTHH:MM:SS" 格式（无时区后缀，视为本地时间）
+  const localMatch2 = s.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})$/);
+  if (localMatch2) return `${localMatch2[1]} ${localMatch2[2]}`;
+
+  // ISO 8601 带 Z 时区后缀 → 转为 UTC
+  if (s.endsWith("Z") || s.match(/[+-]\d{2}:\d{2}$/)) {
+    try {
+      const date = new Date(s);
+      if (!isNaN(date.getTime())) {
+        return date.toISOString().slice(0, 19).replace("T", " ");
+      }
+    } catch {
+      /* ignore */
     }
-  } catch {
-    /* ignore */
   }
 
   return null;

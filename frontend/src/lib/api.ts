@@ -1070,7 +1070,15 @@ export const api = {
 
   // BACKLINKS-02: 获取笔记的反向链接（哪些笔记引用了当前笔记）
   getBacklinks: (noteId: string, limit = 50) =>
-    request<{ backlinks: Array<{ sourceNoteId: string; title: string; updatedAt: string; linkText: string | null }> }>(
+    request<{ backlinks: Array<{
+      sourceNoteId: string;
+      title: string;
+      updatedAt: string;
+      linkText: string | null;
+      linkType: string;
+      targetBlockId: string | null;
+      excerpt: string | null;
+    }> }>(
       `/notes/${noteId}/backlinks?limit=${limit}`
     ),
   emptyTrash: () =>

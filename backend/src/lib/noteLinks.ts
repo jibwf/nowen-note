@@ -31,46 +31,75 @@
 import type Database from "better-sqlite3";
 import { v4 as uuid } from "uuid";
 
-// 匹配 [[note:UUID|标题]] 格式（纯文本形式）
-// 也匹配 href="note:UUID" 格式（HTML/TipTap link mark 形式）
+// BLOCK-LINKS-01: 引用链接条目
+export interface NoteLinkEntry {
+  targetNoteId: string;
+  targetBlockId: string | null;
+  linkType: "note" | "block";
+  linkText: string | null;
+  excerpt: string | null;
+}
+
+// 匹配 [[note:UUID|标题]] 和 [[note:UUID#blk:BLOCK_ID|标题 > 摘要]] 格式（纯文本形式）
 // UUID 支持大小写十六进制
-const NOTE_LINK_RE = /\[\[note:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:\|[^\]]*)?\]\]/g;
-const NOTE_HREF_RE = /note:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/g;
+// #blk:BLOCK_ID 可选
+const NOTE_LINK_RE = /\[\[note:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:#blk:([a-zA-Z0-9_-]+))?(?:\|([^\]]*))?\]\]/g;
+
+// 匹配 href="note:UUID" 和 href="note:UUID#blk:BLOCK_ID" 格式（HTML/TipTap link mark 形式）
+const NOTE_HREF_RE = /note:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:#blk:([a-zA-Z0-9_-]+))?/g;
 
 /**
- * 从 note.content 字符串里解析出所有被引用的 note id 和 linkText。
+ * 从 note.content 字符串里解析出所有被引用的 note/block 链接。
  *
- * 兼容两种格式：
- *   - 纯文本：`[[note:UUID|标题]]`
- *   - HTML/TipTap：`href="note:UUID"`
+ * 兼容格式：
+ *   - 笔记级纯文本：`[[note:UUID|标题]]`
+ *   - 块级纯文本：`[[note:UUID#blk:BLOCK_ID|标题 > 摘要]]`
+ *   - 笔记级 href：`href="note:UUID"`
+ *   - 块级 href：`href="note:UUID#blk:BLOCK_ID"`
  *
- * 返回 Map<targetNoteId, linkText>（不含自引用，调用方传入 sourceNoteId 过滤）。
- * 同一 targetNoteId 多次出现时，保留第一个 linkText。
+ * 返回 NoteLinkEntry 数组（去重：同一 targetNoteId + targetBlockId 只保留一条）。
  */
-export function extractNoteLinksFromContent(content: string): Map<string, string | null> {
-  const links = new Map<string, string | null>();
+export function extractNoteLinksFromContent(content: string): NoteLinkEntry[] {
+  const seen = new Set<string>();
+  const entries: NoteLinkEntry[] = [];
 
-  // 匹配 [[note:UUID|标题]] 格式
+  const addEntry = (entry: NoteLinkEntry) => {
+    const key = `${entry.targetNoteId}:${entry.targetBlockId || ""}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    entries.push(entry);
+  };
+
+  // 匹配 [[note:UUID#blk:BLOCK_ID|标题 > 摘要]] 格式
   for (const match of content.matchAll(NOTE_LINK_RE)) {
     const noteId = match[1].toLowerCase();
-    // 提取 | 后面的标题部分（如果存在）
-    const fullMatch = match[0];
-    const pipeIndex = fullMatch.indexOf("|");
-    const linkText = pipeIndex >= 0 ? fullMatch.slice(pipeIndex + 1, -2) : null;
-    if (!links.has(noteId)) {
-      links.set(noteId, linkText || null);
-    }
+    const blockId = match[2] || null;
+    const displayText = match[3] || null;
+
+    addEntry({
+      targetNoteId: noteId,
+      targetBlockId: blockId,
+      linkType: blockId ? "block" : "note",
+      linkText: displayText || null,
+      excerpt: blockId && displayText ? displayText : null,
+    });
   }
 
-  // 匹配 href="note:UUID" 格式（HTML/TipTap link mark）
+  // 匹配 href="note:UUID#blk:BLOCK_ID" 格式（HTML/TipTap link mark）
   for (const match of content.matchAll(NOTE_HREF_RE)) {
     const noteId = match[1].toLowerCase();
-    if (!links.has(noteId)) {
-      links.set(noteId, null);
-    }
+    const blockId = match[2] || null;
+
+    addEntry({
+      targetNoteId: noteId,
+      targetBlockId: blockId,
+      linkType: blockId ? "block" : "note",
+      linkText: null,
+      excerpt: null,
+    });
   }
 
-  return links;
+  return entries;
 }
 
 /**
@@ -78,10 +107,10 @@ export function extractNoteLinksFromContent(content: string): Map<string, string
  *
  * 逻辑：
  *   1. DELETE FROM note_links WHERE userId = ? AND sourceNoteId = ?
- *   2. 从 content 解析出 targetNoteId 和 linkText
- *   3. 去重、排除自引用
+ *   2. 从 content 解析出引用链接（含笔记级和块级）
+ *   3. 排除自引用（笔记级）
  *   4. 过滤掉不存在的 target note
- *   5. INSERT 新的 note_links 行（含 linkText）
+ *   5. INSERT 新的 note_links 行
  *
  * 失败仅打日志，不阻断保存（与 attachmentReferences 一致）。
  */
@@ -97,33 +126,45 @@ export function syncNoteLinks(
       "DELETE FROM note_links WHERE userId = ? AND sourceNoteId = ?"
     ).run(userId, sourceNoteId);
 
-    // 2. 解析新的引用（含 linkText）
+    // 2. 解析新的引用（含笔记级和块级）
     const links = extractNoteLinksFromContent(content);
 
-    // 3. 排除自引用
-    links.delete(sourceNoteId.toLowerCase());
+    // 3. 排除笔记级自引用（块级自引用允许：引用自己的某个 heading）
+    const filteredLinks = links.filter(
+      (link) => !(link.targetNoteId === sourceNoteId.toLowerCase() && !link.targetBlockId)
+    );
 
-    if (links.size === 0) return;
+    if (filteredLinks.length === 0) return;
 
     // 4. 过滤掉不存在的 target note（简单校验）
-    const validEntries: Array<[string, string | null]> = [];
+    const validEntries: NoteLinkEntry[] = [];
     const checkStmt = db.prepare("SELECT id FROM notes WHERE id = ?");
-    for (const [targetId, linkText] of links) {
-      const exists = checkStmt.get(targetId);
-      if (exists) validEntries.push([targetId, linkText]);
+    for (const link of filteredLinks) {
+      const exists = checkStmt.get(link.targetNoteId);
+      if (exists) validEntries.push(link);
     }
 
     if (validEntries.length === 0) return;
 
-    // 5. 批量插入新的引用关系（含 linkText）
+    // 5. 批量插入新的引用关系
+    //    使用 INSERT OR IGNORE + 部分唯一约束去重
     const insertStmt = db.prepare(`
-      INSERT OR IGNORE INTO note_links (id, userId, sourceNoteId, targetNoteId, linkText, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      INSERT OR IGNORE INTO note_links (id, userId, sourceNoteId, targetNoteId, targetBlockId, linkType, linkText, excerpt, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `);
 
-    const insertMany = db.transaction((entries: Array<[string, string | null]>) => {
-      for (const [targetId, linkText] of entries) {
-        insertStmt.run(uuid(), userId, sourceNoteId, targetId, linkText);
+    const insertMany = db.transaction((entries: NoteLinkEntry[]) => {
+      for (const link of entries) {
+        insertStmt.run(
+          uuid(),
+          userId,
+          sourceNoteId,
+          link.targetNoteId,
+          link.targetBlockId,
+          link.linkType,
+          link.linkText,
+          link.excerpt,
+        );
       }
     });
 
@@ -141,6 +182,9 @@ export function syncNoteLinks(
  *   - title: 来源笔记标题
  *   - updatedAt: 来源笔记更新时间
  *   - linkText: 引用时的显示文本（可选）
+ *   - linkType: 'note' 或 'block'
+ *   - targetBlockId: 被引用的块 ID（可选）
+ *   - excerpt: 块级引用摘要（可选）
  *
  * 排除规则：
  *   - isTrashed = 1 的来源笔记
@@ -156,6 +200,9 @@ export function getBacklinks(
   title: string;
   updatedAt: string;
   linkText: string | null;
+  linkType: string;
+  targetBlockId: string | null;
+  excerpt: string | null;
 }> {
   try {
     const rows = db.prepare(`
@@ -163,7 +210,10 @@ export function getBacklinks(
         nl.sourceNoteId,
         n.title,
         n.updatedAt,
-        nl.linkText
+        nl.linkText,
+        nl.linkType,
+        nl.targetBlockId,
+        nl.excerpt
       FROM note_links nl
       JOIN notes n ON n.id = nl.sourceNoteId
       WHERE nl.userId = ?
@@ -176,6 +226,9 @@ export function getBacklinks(
       title: string;
       updatedAt: string;
       linkText: string | null;
+      linkType: string;
+      targetBlockId: string | null;
+      excerpt: string | null;
     }>;
 
     return rows;

@@ -1760,6 +1760,68 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  // v38: note_links 扩展块级引用支持（BLOCK-LINKS-01）
+  //   新增字段：
+  //     - targetBlockId: 被引用的 heading blockId（nullable，null 表示笔记级引用）
+  //     - sourceBlockId: 发起引用所在的 heading blockId（nullable，第一版可不写入）
+  //     - linkType: 'note' 或 'block'
+  //     - excerpt: 块级引用摘要（nullable）
+  //   新增索引和部分唯一约束。
+  {
+    version: 38,
+    name: "note-links-block-fields",
+    up: (db) => {
+      // 1) 表存在性检查
+      const tables = db.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='note_links'"
+      ).all();
+      if (tables.length === 0) return;
+
+      // 2) 检查是否已扩展（通过检查 targetBlockId 列是否存在）
+      const cols = db.prepare("PRAGMA table_info(note_links)").all() as { name: string }[];
+      const hasTargetBlockId = cols.some((c) => c.name === "targetBlockId");
+      if (hasTargetBlockId) return; // 已扩展，跳过
+
+      // 3) 添加新字段
+      db.exec(`
+        ALTER TABLE note_links ADD COLUMN targetBlockId TEXT;
+        ALTER TABLE note_links ADD COLUMN sourceBlockId TEXT;
+        ALTER TABLE note_links ADD COLUMN linkType TEXT NOT NULL DEFAULT 'note';
+        ALTER TABLE note_links ADD COLUMN excerpt TEXT;
+      `);
+
+      // 4) 为已有数据设置 linkType = 'note'
+      db.exec(`UPDATE note_links SET linkType = 'note' WHERE linkType IS NULL OR linkType = '';`);
+
+      // 5) 重建唯一约束（使用部分索引）
+      //    先删除旧的唯一索引
+      try {
+        db.exec(`DROP INDEX IF EXISTS idx_note_links_user_pair;`);
+      } catch { /* ignore */ }
+
+      //    笔记级唯一：targetBlockId IS NULL
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_note_links_unique_note
+          ON note_links(userId, sourceNoteId, targetNoteId)
+          WHERE targetBlockId IS NULL;
+      `);
+
+      //    块级唯一：targetBlockId IS NOT NULL
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_note_links_unique_block
+          ON note_links(userId, sourceNoteId, targetNoteId, targetBlockId)
+          WHERE targetBlockId IS NOT NULL;
+      `);
+
+      // 6) 新增索引
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_note_links_user_target_block
+          ON note_links(userId, targetNoteId, targetBlockId);
+        CREATE INDEX IF NOT EXISTS idx_note_links_user_link_type
+          ON note_links(userId, linkType);
+      `);
+    },
+  },
 ];
 
 /** 当前代码已知的最高 schema 版本（== MIGRATIONS 里 max(version)）。 */

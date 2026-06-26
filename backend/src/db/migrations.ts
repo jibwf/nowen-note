@@ -1600,6 +1600,42 @@ export const MIGRATIONS: Migration[] = [
       }
     },
   },
+
+  // ==========================================================================
+  // v34：今日日记功能 — notes 表增加 note_type 和 journal_date
+  // --------------------------------------------------------------------------
+  // 为支持"一键创建今日日记"功能，notes 表新增：
+  //   - note_type: 笔记类型，'normal' | 'journal'，默认 'normal'
+  //   - journal_date: 日记归属日期，YYYY-MM-DD 格式，仅 journal 类型有值
+  //
+  // 设计决策：
+  //   - 使用 note_type 而非 category，更语义化
+  //   - journal_date 使用 YYYY-MM-DD 格式，方便排序和唯一约束
+  //   - 唯一性通过后端查询保证（userId + journal_date + note_type = journal）
+  //   - 索引优化：idx_notes_journal_date 支持按日期查询日记
+  {
+    version: 34,
+    name: "journal-type-and-date",
+    up: (db) => {
+      // notes 表增加 note_type 字段
+      try {
+        db.prepare("SELECT note_type FROM notes LIMIT 1").get();
+      } catch {
+        db.prepare("ALTER TABLE notes ADD COLUMN note_type TEXT NOT NULL DEFAULT 'normal'").run();
+      }
+      // notes 表增加 journal_date 字段
+      try {
+        db.prepare("SELECT journal_date FROM notes LIMIT 1").get();
+      } catch {
+        db.prepare("ALTER TABLE notes ADD COLUMN journal_date TEXT").run();
+      }
+      // 索引：按用户 + 日期查询日记
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_notes_journal_date
+          ON notes(userId, note_type, journal_date);
+      `);
+    },
+  },
 ];
 
 /** 当前代码已知的最高 schema 版本（== MIGRATIONS 里 max(version)）。 */

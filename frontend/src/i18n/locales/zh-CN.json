@@ -2294,5 +2294,10 @@
     "uploading": "上传中...",
     "upload": "上传",
     "folderCreated": "文件夹已创建"
+  },
+  "journal": {
+    "created": "今日日记已创建",
+    "opened": "已打开今日日记",
+    "error": "打开今日日记失败"
   }
 }

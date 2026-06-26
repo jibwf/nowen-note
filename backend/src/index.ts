@@ -32,6 +32,7 @@ import icloudRouter from "./routes/icloud";
 import mindmapsRouter from "./routes/mindmaps";
 import mindmapFoldersRouter from "./routes/mindmap-folders";
 import diaryRouter, { handleDownloadDiaryImage } from "./routes/diary";
+import journalsRouter from "./routes/journals";
 import urlImportRouter from "./routes/url-import";
 
 import aiRouter from "./routes/ai";
@@ -398,6 +399,7 @@ app.route("/api/icloud", icloudRouter);
 app.route("/api/mindmaps", mindmapsRouter);
 app.route("/api/mindmap-folders", mindmapFoldersRouter);
 app.route("/api/diary", diaryRouter);
+app.route("/api/journals", journalsRouter);
 app.route("/api/url-import", urlImportRouter);
 app.route("/api/ai", aiRouter);
 app.route("/api/plugins", pluginsRouter);

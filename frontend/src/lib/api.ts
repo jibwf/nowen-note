@@ -1897,6 +1897,26 @@ export const api = {
     return request<DiaryStats>(`/diary/stats${qs ? `?${qs}` : ""}`);
   },
 
+  // 今日日记
+  journals: {
+    /** 获取或创建今日日记 */
+    getOrCreateToday: () =>
+      request<{ id: string; title: string; isNew: boolean; [key: string]: any }>("/journals/today"),
+    /** 检查今日日记是否存在 */
+    checkToday: () =>
+      request<{ exists: boolean; noteId: string | null; title: string | null }>("/journals/check"),
+    /** 获取日记列表 */
+    list: (cursor?: string, limit?: number) => {
+      const params = new URLSearchParams();
+      if (cursor) params.set("cursor", cursor);
+      if (limit) params.set("limit", String(limit));
+      const qs = params.toString();
+      return request<{ items: any[]; hasMore: boolean; nextCursor: string | null }>(
+        `/journals/list${qs ? `?${qs}` : ""}`
+      );
+    },
+  },
+
   // 说说图片：上传 / 删除悬空 / 拼 URL。
   // 上传时机：用户选好图就立即上传（不是发布时再传），体验上能即时看到缩略图、
   // 失败也能立即提示。返回的 id 在用户点"发布"时一并提交给 postDiary({ images })。

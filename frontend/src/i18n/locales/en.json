@@ -2125,5 +2125,10 @@
     "uploading": "Uploading...",
     "upload": "Upload",
     "folderCreated": "Folder created"
+  },
+  "journal": {
+    "created": "Today's journal created",
+    "opened": "Opened today's journal",
+    "error": "Failed to open today's journal"
   }
 }

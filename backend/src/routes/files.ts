@@ -1265,6 +1265,14 @@ app.post("/upload", requireWorkspaceFeature("files"), async (c) => {
         WHERE id = ? AND (uploadSource IS NULL OR uploadSource = '')`,
     ).run(dedupRow.id);
 
+    // folderId：dedup 命中时也要更新，否则用户选择文件夹上传已存在文件，
+    // 文件不会出现在目标文件夹中。
+    if (folderId) {
+      db.prepare(
+        `UPDATE attachments SET folderId = ? WHERE id = ? AND (folderId IS NULL OR folderId != ?)`,
+      ).run(folderId, dedupRow.id, folderId);
+    }
+
     return c.json(
       {
         id: dedupRow.id,

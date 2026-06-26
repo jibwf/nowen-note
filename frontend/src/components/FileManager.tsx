@@ -1010,10 +1010,11 @@ export default function FileManager() {
         className="flex flex-wrap items-center gap-2 md:gap-3 px-3 md:px-6 py-2.5 md:py-3 border-b border-app-border bg-app-surface/40"
         style={{ paddingTop: "calc(var(--safe-area-top) + 4px)" }}
       >
-        <div className="flex items-center gap-2 shrink-0">
+        {/* 左侧：标题区 */}
+        <div className="flex items-center gap-2 min-w-0">
           <div
             className={cn(
-              "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
+              "w-8 h-8 rounded-lg flex items-center justify-center transition-colors shrink-0",
               isImageHostMode
                 ? "bg-indigo-500/15 text-indigo-500"
                 : "bg-accent-primary/10 text-accent-primary",
@@ -1021,35 +1022,36 @@ export default function FileManager() {
           >
             {isImageHostMode ? <Globe size={18} /> : <Inbox size={18} />}
           </div>
-          <div>
-            <h2 className="text-sm font-semibold text-tx-primary">
-              {isImageHostMode ? "图床" : "文件管理"}
-            </h2>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-tx-primary whitespace-nowrap">
+                {isImageHostMode ? "图床" : "文件管理"}
+              </h2>
+              {storageBadge && (
+                <div
+                  className={cn(
+                    "hidden sm:flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] shrink-0",
+                    storageBadge.className,
+                  )}
+                  title={storageBadge.detail ? `${storageBadge.label} · ${storageBadge.detail}` : storageBadge.label}
+                >
+                  <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", storageBadge.dotClassName)} />
+                  <span className="whitespace-nowrap font-medium">{storageBadge.label}</span>
+                  {storageBadge.detail && (
+                    <span className="hidden max-w-[120px] truncate opacity-75 lg:inline">
+                      {storageBadge.detail}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
             <p className="text-[11px] text-tx-tertiary leading-none mt-0.5">
               {isImageHostMode
                 ? "上传图片 / 文件即得直链 · 支持复制 URL / Markdown / HTML"
-                : statsLine || "\u00A0"}
+                : statsLine || " "}
             </p>
           </div>
         </div>
-
-        {storageBadge && (
-          <div
-            className={cn(
-              "hidden sm:flex max-w-[280px] items-center gap-2 rounded-full border px-2.5 py-1 text-[11px]",
-              storageBadge.className,
-            )}
-            title={storageBadge.detail ? `${storageBadge.label} · ${storageBadge.detail}` : storageBadge.label}
-          >
-            <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", storageBadge.dotClassName)} />
-            <span className="whitespace-nowrap font-medium">{storageBadge.label}</span>
-            {storageBadge.detail && (
-              <span className="hidden max-w-[140px] truncate opacity-75 lg:inline">
-                {storageBadge.detail}
-              </span>
-            )}
-          </div>
-        )}
 
         <div className="flex-1" />
 

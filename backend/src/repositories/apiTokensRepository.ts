@@ -15,6 +15,7 @@ import { getDb } from "../db/schema";
 import type {
   ApiTokenRecord,
   ApiTokenListItem,
+  ApiTokenLookupRow,
   ApiTokenUsageRow,
   CreateApiTokenInput,
 } from "./types";
@@ -60,6 +61,26 @@ export const apiTokensRepository = {
     return db
       .prepare("SELECT id, userId, revokedAt FROM api_tokens WHERE id = ?")
       .get(id) as { id: string; userId: string; revokedAt: string | null } | undefined;
+  },
+
+  /**
+   * 按 tokenHash 查询 token（用于鉴权链路）
+   *
+   * 只负责查询数据库，不负责：
+   * - 校验 revokedAt
+   * - 校验 expiresAt
+   * - 更新 lastUsedAt
+   * - 记录 usage
+   * - 判断 scope
+   */
+  findByTokenHash(tokenHash: string): ApiTokenLookupRow | undefined {
+    const db = getDb();
+    return db
+      .prepare(
+        `SELECT id, userId, scopes, expiresAt, revokedAt, lastUsedAt
+         FROM api_tokens WHERE tokenHash = ?`,
+      )
+      .get(tokenHash) as ApiTokenLookupRow | undefined;
   },
 
   /**

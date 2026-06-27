@@ -64,3 +64,13 @@ export interface CreateApiTokenInput {
   scopes: string[];
   expiresAt: string | null;
 }
+
+/** api_token 查询结果（用于鉴权链路） */
+export interface ApiTokenLookupRow {
+  id: string;
+  userId: string;
+  scopes: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
+}

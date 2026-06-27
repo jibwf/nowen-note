@@ -25,6 +25,7 @@
 
 import crypto from "crypto";
 import type { Database as BetterSqliteDB } from "better-sqlite3";
+import { apiTokensRepository } from "../repositories";
 
 export const API_TOKEN_PREFIX = "nkn_"; // "nowen note key"
 const TOKEN_RAW_BYTES = 32;
@@ -144,21 +145,7 @@ export function resolveApiToken(
 ): ResolvedApiToken | null {
   if (!looksLikeApiToken(raw)) return null;
   const h = hashApiToken(raw);
-  const row = db
-    .prepare(
-      `SELECT id, userId, scopes, expiresAt, revokedAt, lastUsedAt
-       FROM api_tokens WHERE tokenHash = ?`,
-    )
-    .get(h) as
-    | {
-        id: string;
-        userId: string;
-        scopes: string;
-        expiresAt: string | null;
-        revokedAt: string | null;
-        lastUsedAt: string | null;
-      }
-    | undefined;
+  const row = apiTokensRepository.findByTokenHash(h);
   if (!row) return null;
   if (row.revokedAt) return null;
   if (row.expiresAt) {

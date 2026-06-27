@@ -109,6 +109,17 @@ export const apiTokensRepository = {
   },
 
   /**
+   * 清理 cutoffDay 之前的 usage 数据
+   *
+   * 注意：cutoffDay 格式为 YYYY-MM-DD (UTC)，由调用方生成。
+   * 删除条件为 day < cutoffDay，不包含 cutoffDay 当天。
+   */
+  pruneUsageBefore(cutoffDay: string): void {
+    const db = getDb();
+    db.prepare("DELETE FROM api_token_usage WHERE day < ?").run(cutoffDay);
+  },
+
+  /**
    * 吊销 token（软删除）
    */
   revokeById(id: string): void {

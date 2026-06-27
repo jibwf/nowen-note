@@ -103,7 +103,7 @@ export function pruneTokenUsage(db: BetterSqliteDB, retentionDays = 90): void {
     const cutoff = new Date(Date.now() - retentionDays * 86400_000)
       .toISOString()
       .slice(0, 10);
-    db.prepare("DELETE FROM api_token_usage WHERE day < ?").run(cutoff);
+    apiTokensRepository.pruneUsageBefore(cutoff);
   } catch {
     /* 忽略 */
   }

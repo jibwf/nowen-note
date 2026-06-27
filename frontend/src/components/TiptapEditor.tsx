@@ -60,7 +60,7 @@ import type { NoteEditorHandle, NoteEditorHeading, NoteEditorProps } from "@/com
 import type { FormatMenuPayload } from "@/lib/desktopBridge";
 import { sendFormatState } from "@/lib/desktopBridge";
 import { SlashCommandsMenu, getDefaultSlashCommands, createSlashExtension, createSlashEventHandlers } from "@/components/SlashCommands";
-import { NoteLinkMenu, type NoteSearchResult, type HeadingItem } from "@/components/NoteLinkExtension";
+import { NoteLinkMenu, type NoteSearchResult, type HeadingItem as NoteLinkHeadingItem } from "@/components/NoteLinkExtension";
 import { MarkdownEnhancements } from "@/components/MarkdownEnhancements";
 import { MathExtensions } from "@/components/MathExtensions";
 import { FootnoteExtensions, nextFootnoteIdentifier } from "@/components/FootnoteExtensions";
@@ -895,11 +895,6 @@ function createKeyboardExtension(flushSaveRef: React.MutableRefObject<() => void
   });
 }
 
-/**
- * 大纲/跳转条目：直接复用共享的 NoteEditorHeading。
- * 保留 `HeadingItem` 名字供历史 `import { HeadingItem } from "./TiptapEditor"` 的引用。
- */
-export type HeadingItem = NoteEditorHeading;
 
 interface ToolbarButtonProps {
   onClick: () => void;
@@ -1273,8 +1268,8 @@ function ColorPopover({ editor, iconSize = 15, compact = false }: ColorPopoverPr
  */
 type TiptapEditorProps = NoteEditorProps;
 
-function extractHeadings(editor: any): HeadingItem[] {
-  const headings: HeadingItem[] = [];
+function extractHeadings(editor: any): NoteEditorHeading[] {
+  const headings: NoteEditorHeading[] = [];
   const doc = editor.state.doc;
   let idx = 0;
   doc.descendants((node: any, pos: number) => {
@@ -2341,7 +2336,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
   });
 
   // BLOCK-LINKS-UI-01: 插入笔记引用（支持笔记级和块级）
-  const handleNoteLinkSelect = useCallback((note: NoteSearchResult, heading?: HeadingItem) => {
+  const handleNoteLinkSelect = useCallback((note: NoteSearchResult, heading?: NoteLinkHeadingItem) => {
     if (!editor) return;
 
     // 使用保存的 triggerFrom 位置，而不是重新计算

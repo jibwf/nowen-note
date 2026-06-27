@@ -2407,11 +2407,11 @@ body.density-compact {
 }
 
 /* ============================================================================
- * Electron macOS锛歨iddenInset 绐楀彛涓嬬殑鎷栨嫿鍖轰笌 Traffic Light 璁╀綅
+/* Fullscreen: Traffic Light hidden, reclaim 72px left padding */
  * ----------------------------------------------------------------------------
  * 涓昏繘绋?createWindow() 閲屼粎 macOS 寮€鍚?titleBarStyle:"hiddenInset"銆?
  * 姝ゆ椂绐楀彛娌℃湁鐙珛鏍囬鏍忥紝鐢ㄦ埛蹇呴』閫氳繃 -webkit-app-region: drag 鐨勫尯鍩熸潵鎷栧姩锛?
- * 鍚屾椂宸︿笂瑙掍笁涓?Traffic Light 鎸夐挳鍥哄畾鍦?(x:12, y:14)锛岄渶瑕佺粰 Sidebar 椤剁
+/* Sidebar header: leave space for Traffic Light (72px for red/yellow/green + 12px gap) */
  * 鐣欏嚭 ~72px 宸?padding锛岄伩鍏嶈鎸夐挳鍘嬩綇銆?
  *
  * 閫夋嫨鍣ㄧ敤 `html[data-electron="darwin"]`鈥斺€攎ain.tsx 鍦ㄦ寕杞藉墠宸插啓鍏ワ紱
@@ -2434,12 +2434,12 @@ html[data-electron="darwin"] .vibrancy-sidebar [contenteditable="true"] {
   -webkit-app-region: no-drag;
 }
 
-/* Sidebar 椤堕儴 header 缁?Traffic Light 璁╀綅锛?2px 瓒冲瀹圭撼绾㈤粍缁?+ 12px 鍙充晶闂磋窛锛?*/
+/* Sidebar header: leave space for Traffic Light (72px for red/yellow/green + 12px gap) */
 html[data-electron="darwin"] .vibrancy-sidebar > :first-child {
   padding-left: 72px;
 }
 
-/* Traffic Light 鎸夐挳浣嶇疆璋冩暣鍒?(12, 52)锛岄渶瑕佺粰渚ф爮椤堕儴鐣欏嚭瓒冲绌洪棿 */
+/* Traffic Light position: (12, 52), leave space at top of sidebar */
 html[data-electron="darwin"] .vibrancy-sidebar {
   padding-top: 56px;
 }

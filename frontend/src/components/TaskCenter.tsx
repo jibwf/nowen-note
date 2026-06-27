@@ -39,6 +39,7 @@ import { compareTasksByDueTime, moveTaskToDate } from "./tasks/taskDateUtils";
 import { TaskTemplatePicker } from "./tasks/TaskTemplatePicker";
 import { ReminderCenter } from "./tasks/ReminderCenter";
 import { TaskCalendarFeedSettings } from "./tasks/TaskCalendarFeedSettings";
+import { CalendarExportTargetSettings } from "./tasks/CalendarExportTargetSettings";
 import { MobileProjectTrigger, MobileProjectPicker } from "./tasks/MobileProjectPicker";
 import { taskMatchesSearch } from "./tasks/taskSearch";
 
@@ -838,7 +839,7 @@ export default function TaskCenter() {
               )}
             </button>
             <TaskCalendarFeedSettings />
-            
+            <CalendarExportTargetSettings />
           </div>
         </div>
 

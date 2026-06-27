@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Star, Pin, Trash2, Cloud, CloudOff, RefreshCw, Check, Loader2, ChevronLeft, FolderInput, ChevronRight, ChevronDown, X, ListTree, Lock, Unlock, Tag as TagIcon, Type, MoreHorizontal, Share2, History, MessageCircle, FileCode, FileText, Eye, Pencil, CloudUpload, PanelLeft, Paperclip, Search, Sparkles, Network, Maximize2, Minimize2, Image, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import TiptapEditor, { HeadingItem } from "@/components/TiptapEditor";
+import TiptapEditor from "@/components/TiptapEditor";
+import type { NoteEditorHeading } from "@/components/editors/types";
 import MarkdownEditor from "@/components/MarkdownEditor";
 import HtmlPreviewPane, { isFullHtmlDocument } from "@/components/HtmlPreviewPane";
 import type { NoteEditorHandle } from "@/components/editors/types";
@@ -95,7 +96,7 @@ export default function EditorPane() {
   // 否则可能读到旧值，导致偏好刚关之后还会往"已锁定的笔记"写 / 写 yDoc。
   const viewLockedIdsRef = useRef(viewLockedIds);
   viewLockedIdsRef.current = viewLockedIds;
-  const [headings, setHeadings] = useState<HeadingItem[]>([]);
+  const [headings, setHeadings] = useState<NoteEditorHeading[]>([]);
   const scrollToRef = useRef<((pos: number) => void) | null>(null);
   const { t } = useTranslation();
 
@@ -3108,7 +3109,7 @@ function OutlinePanel({
   onSelect,
   onClose,
 }: {
-  headings: HeadingItem[];
+  headings: NoteEditorHeading[];
   onSelect: (pos: number) => void;
   onClose: () => void;
 }) {

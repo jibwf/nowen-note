@@ -84,6 +84,18 @@ export const apiTokensRepository = {
   },
 
   /**
+   * 更新 token 最后使用时间和 IP
+   *
+   * 注意：60 秒节流判断由调用方（resolveApiToken）负责，Repository 只执行 UPDATE。
+   */
+  updateLastUsed(id: string, ip: string): void {
+    const db = getDb();
+    db.prepare(
+      "UPDATE api_tokens SET lastUsedAt = datetime('now'), lastUsedIp = ? WHERE id = ?",
+    ).run(ip, id);
+  },
+
+  /**
    * 吊销 token（软删除）
    */
   revokeById(id: string): void {

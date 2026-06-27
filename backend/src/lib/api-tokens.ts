@@ -158,9 +158,7 @@ export function resolveApiToken(
     !row.lastUsedAt || Date.now() - Date.parse(row.lastUsedAt) > 60_000;
   if (shouldTouch) {
     try {
-      db.prepare(
-        "UPDATE api_tokens SET lastUsedAt = datetime('now'), lastUsedIp = ? WHERE id = ?",
-      ).run(ip || "", row.id);
+      apiTokensRepository.updateLastUsed(row.id, ip || "");
     } catch {
       /* 非关键路径，忽略 */
     }

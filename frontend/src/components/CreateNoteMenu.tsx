@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { FileText, FileCode, FileType2, Calendar } from "lucide-react";
+import { FileText, FileCode, FileType2 } from "lucide-react";
 
-export type NoteType = "normal" | "markdown" | "word" | "journal";
+export type NoteType = "normal" | "markdown" | "word";
 
 export interface CreateNoteMenuProps {
   onPick: (type: NoteType) => void;
@@ -17,7 +17,6 @@ export interface CreateNoteMenuProps {
  * 菜单项：
  *   - 新建笔记（富文本编辑器）
  *   - 新建 Markdown 笔记（原生 Markdown 编辑器）
- *   - 今日日记（自动创建或打开今日日记）
  *   - 导入 Word 文档（.docx 转可编辑笔记）
  */
 export default function CreateNoteMenu({ onPick, onClose, anchorRef }: CreateNoteMenuProps) {
@@ -61,12 +60,6 @@ export default function CreateNoteMenu({ onPick, onClose, anchorRef }: CreateNot
       label: "新建 Markdown 笔记",
       desc: "原生 Markdown 编辑器",
       icon: <FileCode size={14} />,
-    },
-    {
-      id: "journal" as NoteType,
-      label: "今日日记",
-      desc: "一键创建或打开今日日记",
-      icon: <Calendar size={14} />,
     },
     {
       id: "word" as NoteType,

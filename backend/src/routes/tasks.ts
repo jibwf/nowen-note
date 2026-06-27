@@ -775,7 +775,12 @@ tasks.post("/batch", async (c) => {
     // Generate next repeated tasks only for tasks that were previously incomplete
     let generatedCount = 0;
     for (const task of toComplete) {
-      if (generateNextRepeatedTask(db, task)) generatedCount++;
+      try {
+        if (generateNextRepeatedTask(db, task)) generatedCount++;
+      } catch (err) {
+        console.error("Failed to generate next repeated task:", err);
+        // 不阻断主流程，继续处理其他任务
+      }
     }
 
     return c.json({ success: true, affected: toComplete.length, generatedCount });

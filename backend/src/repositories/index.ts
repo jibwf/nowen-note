@@ -9,6 +9,20 @@
 export { systemSettingsRepository } from "./systemSettingsRepository";
 export { customFontsRepository } from "./customFontsRepository";
 export { apiTokensRepository } from "./apiTokensRepository";
+export { calendarExportTargetsRepository } from "./calendarExportTargetsRepository";
 
 // 类型导出
-export type { SystemSetting, CustomFont, ApiTokenRecord, ApiTokenListItem, ApiTokenLookupRow, ApiTokenUsageRow, CreateApiTokenInput } from "./types";
+export type {
+  SystemSetting,
+  CustomFont,
+  ApiTokenRecord,
+  ApiTokenListItem,
+  ApiTokenLookupRow,
+  ApiTokenUsageRow,
+  CreateApiTokenInput,
+  CalendarExportTargetRecord,
+  CalendarExportTargetRecordBoolean,
+  CreateCalendarExportTargetInput,
+  UpdateCalendarExportTargetInput,
+  UpdateCalendarExportTargetStatusInput,
+} from "./types";

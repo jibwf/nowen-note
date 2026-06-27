@@ -74,3 +74,52 @@ export interface ApiTokenLookupRow {
   revokedAt: string | null;
   lastUsedAt: string | null;
 }
+
+// ===== Calendar Export Targets =====
+
+/** calendar_export_targets 表结构（SQLite 原始值） */
+export interface CalendarExportTargetRecord {
+  id: string;
+  userId: string;
+  feedId: string;
+  type: string;
+  enabled: number; // SQLite 0/1
+  name: string;
+  configJson: string;
+  publicUrl: string | null;
+  lastExportAt: string | null;
+  lastStatus: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** calendar_export_targets 表结构（enabled 转为 boolean） */
+export interface CalendarExportTargetRecordBoolean extends Omit<CalendarExportTargetRecord, "enabled"> {
+  enabled: boolean;
+}
+
+/** 创建 calendar_export_target 输入 */
+export interface CreateCalendarExportTargetInput {
+  id: string;
+  userId: string;
+  feedId: string;
+  type: string;
+  enabled: number;
+  name: string;
+  configJson: string;
+}
+
+/** 更新 calendar_export_target 输入（按 id + userId） */
+export interface UpdateCalendarExportTargetInput {
+  name?: string;
+  enabled?: number;
+  configJson?: string;
+}
+
+/** 更新 calendar_export_target 状态输入（按 id，不含 userId） */
+export interface UpdateCalendarExportTargetStatusInput {
+  lastStatus?: string;
+  publicUrl?: string;
+  lastError?: string;
+}

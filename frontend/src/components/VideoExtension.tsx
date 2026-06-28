@@ -57,18 +57,29 @@ export function parseVideoUrl(rawUrl: string): ParsedVideo | null {
   const url = (rawUrl || "").trim();
   if (!url) return null;
 
-  // 直链文件：扩展名识别
-  if (FILE_EXTS.test(url)) {
+  // SEC-XSS-01-E-RV1: 站内附件相对路径（new URL 无法解析，提前处理）
+  if (url.startsWith("/api/attachments/") && FILE_EXTS.test(url)) {
     return { kind: "file", embedUrl: url, platform: "file" };
   }
 
-  // 解析 URL，失败则当未知 iframe 处理
+  // 解析 URL
   let u: URL;
   try {
     u = new URL(url);
   } catch {
     return null;
   }
+
+  // SEC-XSS-01-E-RV1: 协议白名单 — 只允许 http/https
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    return null;
+  }
+
+  // 直链文件：扩展名识别（协议验证通过后才判断，防止 javascript:xxx.mp4 绕过）
+  if (FILE_EXTS.test(url)) {
+    return { kind: "file", embedUrl: url, platform: "file" };
+  }
+
   const host = u.hostname.toLowerCase();
 
   // B 站

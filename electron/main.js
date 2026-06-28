@@ -21,6 +21,17 @@ const {
 } = require("./credentials");
 const folderSync = require("./folder-sync");
 
+// SEC-ELECTRON-01-B1: 验证外部 URL 协议是否允许通过 shell.openExternal 打开
+// 只允许 http/https/mailto，禁止 file/javascript/data/vbscript 等危险协议
+function isAllowedExternalUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    return ["http:", "https:", "mailto:"].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
 // 日志 & 崩溃上报需尽早初始化（crashReporter.start 建议在 ready 之前）
 initLogger({
   // 如需接入外部崩溃上报服务（如 Sentry/Bugsnag/自建 collector），填入 URL 并设置 uploadCrashes=true
@@ -754,7 +765,12 @@ function createWindow() {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("http")) shell.openExternal(url);
+    // SEC-ELECTRON-01-B1: 使用 URL parser 验证协议，只允许安全协议
+    if (isAllowedExternalUrl(url)) {
+      shell.openExternal(url);
+    } else {
+      console.warn("[main] blocked external URL with unsafe protocol:", url);
+    }
     return { action: "deny" };
   });
 

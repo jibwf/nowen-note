@@ -121,23 +121,14 @@ app.get("/", (c) => {
     params.push(userId);
   } else if (tagIds.length > 0) {
     query += " AND notes.isTrashed = 0";
-    if (tagMode === "and" && tagIds.length > 1) {
-      // AND 逻辑：笔记必须同时拥有所有已选标签
-      // 使用 GROUP BY + HAVING COUNT 确保每个 tagId 都命中
-      const placeholders = tagIds.map(() => "?").join(",");
-      query += ` AND notes.id IN (
-        SELECT noteId FROM note_tags
-        WHERE tagId IN (${placeholders})
-        GROUP BY noteId
-        HAVING COUNT(DISTINCT tagId) >= ?
-      )`;
-      params.push(...tagIds, tagIds.length);
-    } else {
-      // OR 逻辑 或 单标签：只要命中任一标签即可
-      const placeholders = tagIds.map(() => "?").join(",");
-      query += ` AND notes.id IN (SELECT noteId FROM note_tags WHERE tagId IN (${placeholders}))`;
-      params.push(...tagIds);
+    const filteredNoteIds = noteTagsRepository.listNoteIdsByTagFilter(tagIds, tagMode as "and" | "or");
+    if (filteredNoteIds.length === 0) {
+      // 无匹配标签，直接返回空
+      return c.json([]);
     }
+    const placeholders = filteredNoteIds.map(() => "?").join(",");
+    query += ` AND notes.id IN (${placeholders})`;
+    params.push(...filteredNoteIds);
   } else if (notebookId) {
     // 递归收集 notebookId 自身 + 全部后代笔记本，使笔记列表能展示子笔记本下的笔记
     // 用 SQLite 的递归 CTE：从给定 id 出发沿 parentId 反向向下展开

@@ -59,4 +59,43 @@ export const noteTagsRepository = {
       )
       .all(noteId) as Tag[];
   },
+
+  /**
+   * 按标签筛选笔记 ID 列表。
+   *
+   * 支持单标签、多标签 OR、多标签 AND 三种模式。
+   *
+   * @param tagIds 标签 ID 列表
+   * @param mode 筛选模式："and"（默认）或 "or"
+   * @returns 笔记 ID 列表
+   */
+  listNoteIdsByTagFilter(tagIds: string[], mode: "and" | "or" = "and"): string[] {
+    if (tagIds.length === 0) return [];
+
+    const db = getDb();
+
+    if (mode === "and" && tagIds.length > 1) {
+      // AND 逻辑：笔记必须同时拥有所有已选标签
+      // 使用 GROUP BY + HAVING COUNT 确保每个 tagId 都命中
+      const placeholders = tagIds.map(() => "?").join(",");
+      const rows = db
+        .prepare(
+          `SELECT noteId FROM note_tags
+           WHERE tagId IN (${placeholders})
+           GROUP BY noteId
+           HAVING COUNT(DISTINCT tagId) >= ?`,
+        )
+        .all(...tagIds, tagIds.length) as { noteId: string }[];
+      return rows.map((r) => r.noteId);
+    } else {
+      // OR 逻辑 或 单标签：只要命中任一标签即可
+      const placeholders = tagIds.map(() => "?").join(",");
+      const rows = db
+        .prepare(
+          `SELECT DISTINCT noteId FROM note_tags WHERE tagId IN (${placeholders})`,
+        )
+        .all(...tagIds) as { noteId: string }[];
+      return rows.map((r) => r.noteId);
+    }
+  },
 };

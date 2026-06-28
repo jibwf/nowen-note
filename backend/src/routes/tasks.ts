@@ -729,16 +729,35 @@ tasks.delete("/:id", (c) => {
   return c.json({ success: true });
 });
 
-
-
+/** 安全清理任务依赖：表不存在或清理失败不阻断删除 */
+function safeDeleteTaskDependencies(db: any, ids: string[]) {
+  if (!ids || ids.length === 0) return;
+  try {
+    const tableExists = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='task_dependencies'"
+    ).get();
+    if (!tableExists) {
+      console.warn("[tasks.batch] task_dependencies table not found, skipping");
+      return;
+    }
+    const ph = ids.map(() => "?").join(",");
+    db.prepare(`DELETE FROM task_dependencies WHERE predecessorTaskId IN (${ph}) OR successorTaskId IN (${ph})`)
+      .run(...ids, ...ids);
+  } catch (err) {
+    console.warn("[tasks.batch] failed to cleanup task_dependencies:", err);
+  }
+}
 
 // batch: complete / delete multiple tasks
 tasks.post("/batch", async (c) => {
+  const logPrefix = "[tasks.batch]";
   try {
     const db = getDb();
     const userId = c.req.header("X-User-Id")!;
     const body = await c.req.json();
     const { ids, action } = body as { ids: string[]; action: "complete" | "delete" };
+
+    console.log(`${logPrefix} action=${action}, ids.length=${ids?.length ?? 0}`);
 
     if (!Array.isArray(ids) || ids.length === 0) {
       return c.json({ error: "ids cannot be empty", code: "BAD_REQUEST" }, 400);
@@ -753,9 +772,13 @@ tasks.post("/batch", async (c) => {
       "SELECT id, userId, workspaceId FROM tasks WHERE id IN (" + placeholders + ")"
     ).all(...safeIds) as { id: string; userId: string; workspaceId: string | null }[];
 
+    console.log(`${logPrefix} safeIds.length=${safeIds.length}, tasksFound=${tasksFound.length}`);
+
     const allowedIds = tasksFound
       .filter((t) => canManageResource(t.userId, t.workspaceId, userId))
       .map((t) => t.id);
+
+    console.log(`${logPrefix} allowedIds.length=${allowedIds.length}`);
 
     if (allowedIds.length === 0) {
       return c.json({ error: "Forbidden", code: "FORBIDDEN" }, 403);
@@ -763,7 +786,6 @@ tasks.post("/batch", async (c) => {
 
     const ph = allowedIds.map(() => "?").join(",");
     if (action === "complete") {
-      // Only complete tasks that are not already done
       const tasksBefore = db.prepare("SELECT * FROM tasks WHERE id IN (" + ph + ")").all(...allowedIds) as any[];
       const toComplete = tasksBefore.filter((t) => t.isCompleted === 0);
       if (toComplete.length === 0) return c.json({ success: true, affected: 0, generatedCount: 0 });
@@ -773,33 +795,37 @@ tasks.post("/batch", async (c) => {
       db.prepare("UPDATE tasks SET isCompleted = 1, status = 'done', updatedAt = datetime(\"now\") WHERE id IN (" + cph + ")")
         .run(...completeIds);
 
-      // Generate next repeated tasks only for tasks that were previously incomplete
       let generatedCount = 0;
       for (const task of toComplete) {
         try {
           if (generateNextRepeatedTask(db, task)) generatedCount++;
         } catch (err) {
-          console.error("Failed to generate next repeated task:", err);
-          // 不阻断主流程，继续处理其他任务
+          console.error(`${logPrefix} failed to generate next repeated task for ${task.id}:`, err);
         }
       }
 
+      console.log(`${logPrefix} complete success: affected=${toComplete.length}, generated=${generatedCount}`);
       return c.json({ success: true, affected: toComplete.length, generatedCount });
     } else {
-      // Collect all descendants of tasks being deleted
       const idsToDelete = collectDescendantIds(db, allowedIds);
-      const dph = idsToDelete.map(() => "?").join(",");
+      console.log(`${logPrefix} delete: allowedIds=${allowedIds.length}, idsToDelete=${idsToDelete.length}`);
 
-      // Clean up all dependencies referencing deleted tasks (including descendants)
-      db.prepare(`DELETE FROM task_dependencies WHERE predecessorTaskId IN (${dph}) OR successorTaskId IN (${dph})`).run(...idsToDelete, ...idsToDelete);
+      safeDeleteTaskDependencies(db, idsToDelete);
 
-      // Delete root tasks (children cascade via ON DELETE CASCADE)
-      db.prepare("DELETE FROM tasks WHERE id IN (" + ph + ")").run(...allowedIds);
+      const dph = allowedIds.map(() => "?").join(",");
+      db.prepare("DELETE FROM tasks WHERE id IN (" + dph + ")").run(...allowedIds);
+
+      console.log(`${logPrefix} delete success: affected=${allowedIds.length}`);
       return c.json({ success: true, affected: allowedIds.length });
     }
-  } catch (err) {
-    console.error("Batch tasks error:", err);
-    return c.json({ error: "Internal server error", code: "INTERNAL_ERROR" }, 500);
+  } catch (err: any) {
+    const errMsg = err?.message || String(err);
+    console.error(`${logPrefix} FAILED:`, errMsg, err);
+    return c.json({
+      error: "批量操作失败",
+      code: "TASK_BATCH_FAILED",
+      detail: errMsg,
+    }, 500);
   }
 });
 

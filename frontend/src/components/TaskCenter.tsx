@@ -439,7 +439,7 @@ export default function TaskCenter() {
       const s = await api.getTaskStats();
       setStats(s);
       refreshCounts();
-    } catch { toast.error(t("tasks.toast.bulkCompleteFailed")); loadTasks(); }
+    } catch (err: any) { const detail = err?.message || err?.error || ""; toast.error(detail ? `${t("tasks.toast.bulkCompleteFailed")}: ${detail}` : t("tasks.toast.bulkCompleteFailed")); loadTasks(); }
   };
 
   const handleBatchDelete = async () => {
@@ -465,7 +465,7 @@ export default function TaskCenter() {
       const s = await api.getTaskStats();
       setStats(s);
       refreshCounts();
-    } catch { toast.error(t("tasks.toast.bulkDeleteFailed")); loadTasks(); }
+    } catch (err: any) { const detail = err?.message || err?.error || ""; toast.error(detail ? `${t("tasks.toast.bulkDeleteFailed")}: ${detail}` : t("tasks.toast.bulkDeleteFailed")); loadTasks(); }
   };
 
   // === Drag reorder ===

@@ -7,6 +7,8 @@
 
 import crypto from "crypto";
 import { getDb } from "../db/schema";
+import { calendarExportTargetsRepository } from "../repositories";
+import type { CalendarExportTargetRecordBoolean } from "../repositories";
 
 // ====== 类型定义 ======
 
@@ -133,7 +135,7 @@ function parseConfig(configJson: string): CalendarExportTargetConfig {
   };
 }
 
-function toPublic(row: CalendarExportTarget): CalendarExportTargetPublic {
+function toPublic(row: CalendarExportTarget | CalendarExportTargetRecordBoolean): CalendarExportTargetPublic {
   const cfg = parseConfig(row.configJson);
   return {
     id: row.id,
@@ -264,9 +266,7 @@ function buildS3SignedRequest(
 
 /** 列出用户的所有 export targets */
 export function listExportTargets(userId: string): CalendarExportTargetPublic[] {
-  const rows = getDb()
-    .prepare("SELECT * FROM calendar_export_targets WHERE userId = ? ORDER BY createdAt DESC")
-    .all(userId) as CalendarExportTarget[];
+  const rows = calendarExportTargetsRepository.listByUser(userId);
   return rows.map(toPublic);
 }
 
@@ -307,21 +307,20 @@ export function createExportTarget(
     usePathStyle: input.forcePathStyle !== false,
   });
 
-  getDb().prepare(`
-    INSERT INTO calendar_export_targets (id, userId, feedId, type, enabled, name, configJson)
-    VALUES (?, ?, ?, 's3', ?, ?, ?)
-  `).run(
+  calendarExportTargetsRepository.create({
     id,
     userId,
-    input.feedId,
-    input.enabled !== false ? 1 : 0,
-    input.name || "",
+    feedId: input.feedId,
+    type: "s3",
+    enabled: input.enabled !== false ? 1 : 0,
+    name: input.name || "",
     configJson,
-  );
+  });
 
-  const row = getDb()
-    .prepare("SELECT * FROM calendar_export_targets WHERE id = ?")
-    .get(id) as CalendarExportTarget;
+  const row = calendarExportTargetsRepository.getByIdAndUser(id, userId);
+  if (!row) {
+    throw new Error("Failed to create export target");
+  }
   return toPublic(row);
 }
 
@@ -342,9 +341,7 @@ export function updateExportTarget(
     forcePathStyle?: boolean;
   },
 ): CalendarExportTargetPublic {
-  const existing = getDb()
-    .prepare("SELECT * FROM calendar_export_targets WHERE id = ? AND userId = ?")
-    .get(targetId, userId) as CalendarExportTarget | undefined;
+  const existing = calendarExportTargetsRepository.getByIdAndUser(targetId, userId);
   if (!existing) {
     throw new Error("Export target not found");
   }
@@ -365,39 +362,22 @@ export function updateExportTarget(
     usePathStyle: input.forcePathStyle !== undefined ? input.forcePathStyle !== false : oldCfg.usePathStyle,
   };
 
-  const updates: string[] = [];
-  const params: any[] = [];
+  calendarExportTargetsRepository.updateByIdAndUser(targetId, userId, {
+    name: input.name,
+    enabled: input.enabled ? 1 : 0,
+    configJson: JSON.stringify(newCfg),
+  });
 
-  if (input.name !== undefined) {
-    updates.push("name = ?");
-    params.push(input.name);
+  const row = calendarExportTargetsRepository.getByIdAndUser(targetId, userId);
+  if (!row) {
+    throw new Error("Export target not found after update");
   }
-  if (input.enabled !== undefined) {
-    updates.push("enabled = ?");
-    params.push(input.enabled ? 1 : 0);
-  }
-
-  updates.push("configJson = ?");
-  params.push(JSON.stringify(newCfg));
-  updates.push("updatedAt = datetime('now')");
-
-  params.push(targetId, userId);
-  getDb().prepare(`
-    UPDATE calendar_export_targets SET ${updates.join(", ")} WHERE id = ? AND userId = ?
-  `).run(...params);
-
-  const row = getDb()
-    .prepare("SELECT * FROM calendar_export_targets WHERE id = ?")
-    .get(targetId) as CalendarExportTarget;
   return toPublic(row);
 }
 
 /** 删除 export target */
 export function deleteExportTarget(userId: string, targetId: string): boolean {
-  const result = getDb()
-    .prepare("DELETE FROM calendar_export_targets WHERE id = ? AND userId = ?")
-    .run(targetId, userId);
-  return result.changes > 0;
+  return calendarExportTargetsRepository.deleteByIdAndUser(targetId, userId);
 }
 
 /** 测试 S3 连接 */
@@ -405,9 +385,7 @@ export async function testExportTarget(
   userId: string,
   targetId: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const row = getDb()
-    .prepare("SELECT * FROM calendar_export_targets WHERE id = ? AND userId = ?")
-    .get(targetId, userId) as CalendarExportTarget | undefined;
+  const row = calendarExportTargetsRepository.getByIdAndUser(targetId, userId);
   if (!row) {
     return { ok: false, error: "Export target not found" };
   }
@@ -453,9 +431,7 @@ export async function exportNow(
   userId: string,
   targetId: string,
 ): Promise<{ success: boolean; publicUrl?: string; error?: string }> {
-  const row = getDb()
-    .prepare("SELECT * FROM calendar_export_targets WHERE id = ? AND userId = ?")
-    .get(targetId, userId) as CalendarExportTarget | undefined;
+  const row = calendarExportTargetsRepository.getByIdAndUser(targetId, userId);
   if (!row) {
     return { success: false, error: "Export target not found" };
   }
@@ -553,22 +529,11 @@ function updateExportStatus(
   error?: string,
   publicUrl?: string,
 ): void {
-  const updates = ["lastStatus = ?", "lastExportAt = datetime('now')", "updatedAt = datetime('now')"];
-  const params: any[] = [status];
-
-  if (status === "success" && publicUrl) {
-    updates.push("publicUrl = ?");
-    params.push(publicUrl);
-    updates.push("lastError = NULL");
-  } else if (status === "error" && error) {
-    updates.push("lastError = ?");
-    params.push(error);
-  }
-
-  params.push(targetId);
-  getDb().prepare(`
-    UPDATE calendar_export_targets SET ${updates.join(", ")} WHERE id = ?
-  `).run(...params);
+  calendarExportTargetsRepository.updateStatusById(targetId, {
+    lastStatus: status,
+    publicUrl: status === "success" ? publicUrl : undefined,
+    lastError: status === "error" ? error : undefined,
+  });
 }
 
 // ====== 定时导出调度器 ======
@@ -578,10 +543,8 @@ let schedulerIntervalHandle: ReturnType<typeof setInterval> | null = null;
 let isExportRunning = false;
 
 /** 列出所有启用的 export targets */
-export function listEnabledExportTargets(): CalendarExportTarget[] {
-  return getDb()
-    .prepare("SELECT * FROM calendar_export_targets WHERE enabled = 1")
-    .all() as CalendarExportTarget[];
+export function listEnabledExportTargets(): CalendarExportTargetRecordBoolean[] {
+  return calendarExportTargetsRepository.listEnabled();
 }
 
 /**

@@ -15,6 +15,7 @@ import { yFlush, yDestroyDoc, yReplaceContentAsUpdate } from "../services/yjs";
 import { deleteAttachmentFilesByNoteIds, extractInlineBase64Images } from "./attachments";
 import { syncReferences as syncAttachmentReferences } from "../lib/attachmentRefs";
 import { syncNoteLinks, getBacklinks } from "../lib/noteLinks";
+import { noteLinksRepository } from "../repositories";
 import { reclaimSpace } from "../lib/reclaimSpace";
 import { buildFtsSearchTerm } from "../lib/searchQuery";
 
@@ -1111,7 +1112,7 @@ app.delete("/:id", (c) => {
   // BACKLINKS-02-RV1: 永久删除笔记前清理 note_links 引用关系
   // 作为 source 或 target 的引用记录都需要清除，避免孤儿数据残留
   try {
-    db.prepare("DELETE FROM note_links WHERE sourceNoteId = ? OR targetNoteId = ?").run(id, id);
+    noteLinksRepository.deleteByNoteId(id);
   } catch (e) {
     console.warn("[notes.delete] cleanup note_links failed:", e);
   }

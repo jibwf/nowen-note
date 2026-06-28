@@ -129,4 +129,17 @@ export const noteLinksRepository = {
 
     insertMany(validEntries);
   },
+
+  /**
+   * 删除笔记时清理 note_links 引用关系。
+   *
+   * 清理作为来源或目标的引用记录，避免孤儿数据残留。
+   * SQL 保持与原 routes/notes.ts 中的直连 SQL 完全等价。
+   */
+  deleteByNoteId(noteId: string): void {
+    const db = getDb();
+    db.prepare(
+      "DELETE FROM note_links WHERE sourceNoteId = ? OR targetNoteId = ?",
+    ).run(noteId, noteId);
+  },
 };

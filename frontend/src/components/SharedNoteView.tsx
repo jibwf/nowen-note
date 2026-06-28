@@ -9,6 +9,8 @@ import { common, createLowlight } from "lowlight";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
+import { sanitizeForShare, sanitizeSvg } from "@/lib/sanitizeHtml";
 import TiptapEditor from "@/components/TiptapEditor";
 import type { NoteEditorUpdatePayload } from "@/components/editors/types";
 import { detectFormat } from "@/lib/contentFormat";
@@ -211,7 +213,8 @@ export default function SharedNoteView({ shareToken }: SharedNoteViewProps) {
             </div>
           `;
         } else {
-          block.innerHTML = res.svg;
+          // SEC-XSS-01-E: Mermaid SVG 兜底清洗
+          block.innerHTML = sanitizeSvg(res.svg);
         }
       });
     });
@@ -268,7 +271,8 @@ export default function SharedNoteView({ shareToken }: SharedNoteViewProps) {
             </span>
           `;
         } else {
-          block.innerHTML = res.html;
+          // SEC-XSS-01-E: KaTeX HTML 兜底清洗
+          block.innerHTML = sanitizeForShare(res.html);
         }
       });
     });
@@ -1127,7 +1131,45 @@ export default function SharedNoteView({ shareToken }: SharedNoteViewProps) {
                 remarkPlugins={[remarkGfm]}
                 // rehype-raw 让 raw HTML（math 占位）能透传过 mdast→hast 阶段，
                 // 否则 ReactMarkdown 默认会丢弃 raw HTML 节点。
-                rehypePlugins={[rehypeRaw]}
+                // SEC-XSS-01-C: rehype-raw 后接 rehype-sanitize，防止 raw HTML 中的 XSS
+                rehypePlugins={[rehypeRaw, [
+                  rehypeSanitize,
+                  {
+                    tagNames: [
+                      "h1", "h2", "h3", "h4", "h5", "h6",
+                      "p", "br", "hr", "div", "span", "section", "article",
+                      "blockquote", "pre", "code",
+                      "ul", "ol", "li", "dl", "dt", "dd",
+                      "table", "thead", "tbody", "tfoot", "tr", "th", "td", "colgroup", "col",
+                      "a", "strong", "em", "b", "i", "u", "s", "sub", "sup", "mark", "small",
+                      "img", "video", "source", "audio", "picture",
+                      "details", "summary", "figure", "figcaption",
+                      "abbr", "kbd", "var", "samp", "del", "ins", "time", "address",
+                    ],
+                    attributes: {
+                      "*": [
+                        "className", "id", "title", "dir", "lang", "style",
+                        "dataMermaidSource", "dataMathSource", "dataMathSourceMd",
+                        "dataFootnoteId", "dataRendered", "dataWidth",
+                      ],
+                      "a": ["href", "target", "rel", "name"],
+                      "img": ["src", "alt", "width", "height", "loading", "referrerpolicy"],
+                      "video": ["src", "controls", "width", "height", "preload", "poster"],
+                      "source": ["src", "type"],
+                      "audio": ["src", "controls", "preload"],
+                      "td": ["colspan", "rowspan"],
+                      "th": ["colspan", "rowspan", "scope"],
+                      "blockquote": ["cite"],
+                      "code": ["className"],
+                      "time": ["datetime"],
+                      "input": [["disabled", true], ["type", "checkbox"]],
+                    },
+                    protocols: {
+                      href: ["http", "https", "mailto", "note"],
+                      src: ["http", "https"],
+                    },
+                  },
+                ]]}
                 components={{
                   // 拦截 mermaid 围栏代码块：react-markdown 把 ```mermaid 渲染成
                   // <pre><code class="language-mermaid">...</code></pre>。我们识别
@@ -1193,7 +1235,8 @@ export default function SharedNoteView({ shareToken }: SharedNoteViewProps) {
                 prose-code:text-indigo-600 dark:prose-code:text-indigo-400
                 prose-blockquote:border-indigo-300 dark:prose-blockquote:border-indigo-700"
               onClick={handleSharedContentClick}
-              dangerouslySetInnerHTML={{ __html: renderContent(content.content) }}
+              // SEC-XSS-01-C: sanitizeForShare 防止 stored XSS（H1 修复）
+              dangerouslySetInnerHTML={{ __html: sanitizeForShare(renderContent(content.content)) }}
             />
           )}
         </section>

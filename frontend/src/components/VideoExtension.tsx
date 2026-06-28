@@ -57,18 +57,29 @@ export function parseVideoUrl(rawUrl: string): ParsedVideo | null {
   const url = (rawUrl || "").trim();
   if (!url) return null;
 
-  // 直链文件：扩展名识别
-  if (FILE_EXTS.test(url)) {
+  // SEC-XSS-01-E-RV1: 站内附件相对路径（new URL 无法解析，提前处理）
+  if (url.startsWith("/api/attachments/") && FILE_EXTS.test(url)) {
     return { kind: "file", embedUrl: url, platform: "file" };
   }
 
-  // 解析 URL，失败则当未知 iframe 处理
+  // 解析 URL
   let u: URL;
   try {
     u = new URL(url);
   } catch {
     return null;
   }
+
+  // SEC-XSS-01-E-RV1: 协议白名单 — 只允许 http/https
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    return null;
+  }
+
+  // 直链文件：扩展名识别（协议验证通过后才判断，防止 javascript:xxx.mp4 绕过）
+  if (FILE_EXTS.test(url)) {
+    return { kind: "file", embedUrl: url, platform: "file" };
+  }
+
   const host = u.hostname.toLowerCase();
 
   // B 站
@@ -145,8 +156,8 @@ export function parseVideoUrl(rawUrl: string): ParsedVideo | null {
     }
   }
 
-  // 兜底：当作 iframe 尝试，用户自负
-  return { kind: "iframe", embedUrl: url, platform: "unknown" };
+  // SEC-XSS-01-E: 未知平台不再降级为 iframe，避免任意 URL 注入
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -192,7 +203,7 @@ const VideoNodeView: React.FC<ReactNodeViewProps> = ({ node, selected }) => {
             allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
             allowFullScreen
             referrerPolicy="no-referrer"
-            sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
+            sandbox="allow-scripts allow-presentation allow-popups"
             style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
           />
           {/* 未选中时透明遮罩，吃掉点击事件防止 iframe 抢焦点 / 防止误触播放
@@ -355,7 +366,7 @@ export const Video = Node.create({
               allow: "autoplay; fullscreen; encrypted-media; picture-in-picture",
               allowfullscreen: "true",
               referrerpolicy: "no-referrer",
-              sandbox: "allow-scripts allow-same-origin allow-presentation allow-popups",
+              sandbox: "allow-scripts allow-presentation allow-popups",
               style: "width:100%;aspect-ratio:16/9;border:0;display:block;",
             },
           ];
@@ -427,7 +438,7 @@ export function videoNodeToMarkdown(attrs: {
   const tag =
     kind === "file"
       ? `<video src="${escapeAttr(src)}" controls preload="metadata" style="width:100%;display:block;aspect-ratio:16/9;background:#000;"></video>`
-      : `<iframe src="${escapeAttr(src)}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-presentation allow-popups" style="width:100%;aspect-ratio:16/9;border:0;display:block;"></iframe>`;
+      : `<iframe src="${escapeAttr(src)}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer" sandbox="allow-scripts allow-presentation allow-popups" style="width:100%;aspect-ratio:16/9;border:0;display:block;"></iframe>`;
 
   const wrapper = `<div data-video-platform="${escapeAttr(String(platform))}" data-kind="${escapeAttr(kind)}" data-src="${escapeAttr(src)}" data-original-url="${escapeAttr(originalUrl)}" class="video-embed" style="margin:12px auto;max-width:720px;border-radius:8px;overflow:hidden;background:#000;">${tag}</div>`;
 

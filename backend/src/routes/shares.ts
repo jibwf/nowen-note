@@ -10,7 +10,7 @@ import { broadcastNoteUpdated, broadcastToUser } from "../services/realtime";
 import { yDestroyDoc } from "../services/yjs";
 import { syncReferences as syncAttachmentReferences } from "../lib/attachmentRefs";
 import { logAudit } from "../services/audit";
-import { noteVersionsRepository } from "../repositories";
+import { noteVersionsRepository, shareCommentsRepository } from "../repositories";
 
 // H3: 使用密码学安全的随机源生成分享 token。
 //     原实现用 Math.random()，理论上可被预测；改用 crypto.randomBytes。
@@ -744,11 +744,11 @@ sharesRouter.delete("/note/:noteId/comments/:commentId", (c) => {
   const userId = c.req.header("X-User-Id") || "";
   const commentId = c.req.param("commentId");
 
-  const comment = db.prepare("SELECT id, userId FROM share_comments WHERE id = ?").get(commentId) as any;
+  const comment = shareCommentsRepository.getById(commentId);
   if (!comment) return c.json({ error: "评论不存在" }, 404);
   if (comment.userId !== userId) return c.json({ error: "只能删除自己的评论" }, 403);
 
-  db.prepare("DELETE FROM share_comments WHERE id = ?").run(commentId);
+  shareCommentsRepository.delete(commentId);
   return c.json({ success: true });
 });
 
@@ -763,11 +763,10 @@ sharesRouter.patch("/note/:noteId/comments/:commentId/resolve", (c) => {
   const note = db.prepare("SELECT id FROM notes WHERE id = ? AND userId = ?").get(noteId, userId) as any;
   if (!note) return c.json({ error: "无权操作" }, 403);
 
-  const comment = db.prepare("SELECT isResolved FROM share_comments WHERE id = ?").get(commentId) as any;
+  const comment = shareCommentsRepository.getResolved(commentId);
   if (!comment) return c.json({ error: "评论不存在" }, 404);
 
-  db.prepare("UPDATE share_comments SET isResolved = ?, updatedAt = datetime('now') WHERE id = ?")
-    .run(comment.isResolved ? 0 : 1, commentId);
+  shareCommentsRepository.updateResolved(commentId, comment.isResolved ? 0 : 1);
 
   const updated = db.prepare(`
     SELECT sc.*, u.username, u.avatarUrl

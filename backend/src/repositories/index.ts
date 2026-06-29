@@ -35,6 +35,7 @@ export { attachmentChunksRepository } from "./attachmentChunksRepository";
 export { noteYupdatesRepository } from "./noteYupdatesRepository";
 export { workspaceMembersRepository } from "./workspaceMembersRepository";
 export { notebookMembersRepository } from "./notebookMembersRepository";
+export { shareCommentsRepository } from "./shareCommentsRepository";
 
 // 类型导出
 export type {

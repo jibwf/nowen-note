@@ -30,6 +30,7 @@ export { notebookShareLinksRepository } from "./notebookShareLinksRepository";
 export { noteAclRepository } from "./noteAclRepository";
 export { taskAttachmentsRepository } from "./taskAttachmentsRepository";
 export { attachmentReferencesRepository } from "./attachmentReferencesRepository";
+export { noteYsnapshotsRepository } from "./noteYsnapshotsRepository";
 
 // 类型导出
 export type {

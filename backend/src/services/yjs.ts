@@ -30,6 +30,7 @@
 
 import * as Y from "yjs";
 import { getDb } from "../db/schema";
+import { noteYsnapshotsRepository } from "../repositories";
 
 // ---------------------------------------------------------------------------
 // 配置
@@ -83,9 +84,7 @@ function loadDocFromDb(noteId: string): Y.Doc {
   const db = getDb();
   const doc = new Y.Doc();
 
-  const snap = db
-    .prepare("SELECT snapshot_blob, updatesMergedTo FROM note_ysnapshots WHERE noteId = ?")
-    .get(noteId) as { snapshot_blob: Buffer; updatesMergedTo: number } | undefined;
+  const snap = noteYsnapshotsRepository.getByNoteId(noteId);
 
   let appliedAny = false;
   let lastAppliedId = 0;
@@ -192,14 +191,7 @@ function writeSnapshot(noteId: string, doc: Y.Doc) {
       .prepare("SELECT MAX(id) as maxId FROM note_yupdates WHERE noteId = ?")
       .get(noteId) as { maxId: number | null } | undefined;
     const mergedTo = maxRow?.maxId || 0;
-    db.prepare(
-      `INSERT INTO note_ysnapshots (noteId, snapshot_blob, updatesMergedTo, updatedAt)
-       VALUES (?, ?, ?, datetime('now'))
-       ON CONFLICT(noteId) DO UPDATE SET
-         snapshot_blob = excluded.snapshot_blob,
-         updatesMergedTo = excluded.updatesMergedTo,
-         updatedAt = excluded.updatedAt`,
-    ).run(noteId, Buffer.from(state), mergedTo);
+    noteYsnapshotsRepository.upsert(noteId, Buffer.from(state), mergedTo);
   });
   tx();
 }
@@ -211,9 +203,7 @@ function writeSnapshot(noteId: string, doc: Y.Doc) {
 const GC_SAFETY_MARGIN = 50;
 function gcMergedUpdates(noteId: string) {
   const db = getDb();
-  const snap = db
-    .prepare("SELECT updatesMergedTo FROM note_ysnapshots WHERE noteId = ?")
-    .get(noteId) as { updatesMergedTo: number } | undefined;
+  const snap = noteYsnapshotsRepository.getUpdatesMergedTo(noteId);
   if (!snap) return;
   const safeDeleteBelow = snap.updatesMergedTo - GC_SAFETY_MARGIN;
   if (safeDeleteBelow <= 0) return;

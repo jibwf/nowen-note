@@ -197,4 +197,29 @@ export const noteVersionsRepository = {
     `).run(keepRecent);
     return result.changes;
   },
+
+  /**
+   * 统计用户的版本数量。
+   *
+   * @param userId 用户 ID
+   * @returns 版本数量
+   */
+  countByUser(userId: string): number {
+    const db = getDb();
+    const row = db.prepare("SELECT COUNT(*) as c FROM note_versions WHERE userId = ?").get(userId) as { c: number };
+    return row.c;
+  },
+
+  /**
+   * 转移用户（用户迁移时使用）。
+   *
+   * @param fromUserId 源用户 ID
+   * @param toUserId 目标用户 ID
+   * @returns 更新的行数
+   */
+  transferOwnership(fromUserId: string, toUserId: string): number {
+    const db = getDb();
+    const result = db.prepare("UPDATE note_versions SET userId = ? WHERE userId = ?").run(toUserId, fromUserId);
+    return result.changes;
+  },
 };

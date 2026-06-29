@@ -18,7 +18,7 @@ import { getDb } from "../db/schema";
 import { isSystemAdmin, requireAdmin } from "../middleware/acl";
 import { invalidateUserAuthCache, verifySudoFromRequest, extractClientIp } from "../lib/auth-security";
 import { disconnectUser } from "../services/realtime";
-import { noteAclRepository, workspaceInvitesRepository, noteYupdatesRepository, workspaceMembersRepository, shareCommentsRepository } from "../repositories";
+import { noteAclRepository, workspaceInvitesRepository, noteYupdatesRepository, workspaceMembersRepository, shareCommentsRepository, noteVersionsRepository } from "../repositories";
 import { logAudit } from "../services/audit";
 
 const users = new Hono();
@@ -508,7 +508,7 @@ users.get("/:id/data-summary", requireAdmin, (c) => {
     shares: count("SELECT COUNT(*) as c FROM shares WHERE ownerId = ?", targetId),
     ownedWorkspaces: count("SELECT COUNT(*) as c FROM workspaces WHERE ownerId = ?", targetId),
     workspaceMemberships: workspaceMembersRepository.countByUser(targetId),
-    noteVersions: count("SELECT COUNT(*) as c FROM note_versions WHERE userId = ?", targetId),
+    noteVersions: noteVersionsRepository.countByUser(targetId),
     shareComments: shareCommentsRepository.countByUser(targetId),
     attachments: count("SELECT COUNT(*) as c FROM attachments WHERE userId = ?", targetId),
   });
@@ -597,11 +597,7 @@ function transferAndDeleteUser(
     moved.tasks = run("UPDATE tasks SET userId = ? WHERE userId = ?", toId, fromId);
     moved.diaries = run("UPDATE diaries SET userId = ? WHERE userId = ?", toId, fromId);
     moved.shares = run("UPDATE shares SET ownerId = ? WHERE ownerId = ?", toId, fromId);
-    moved.noteVersions = run(
-      "UPDATE note_versions SET userId = ? WHERE userId = ?",
-      toId,
-      fromId,
-    );
+    moved.noteVersions = noteVersionsRepository.transferOwnership(fromId, toId);
     moved.shareComments = shareCommentsRepository.transferOwnership(fromId, toId);
     moved.attachments = run(
       "UPDATE attachments SET userId = ? WHERE userId = ?",

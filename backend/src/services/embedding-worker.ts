@@ -33,6 +33,7 @@ import {
   clearAllVectors,
 } from "./vec-store";
 import { extractAttachmentText, chunkAttachmentText } from "./attachment-indexer";
+import { attachmentChunksRepository } from "../repositories";
 
 // ====== 调参 ======
 const POLL_INTERVAL_MS = 5_000;          // 轮询间隔（无任务时）
@@ -378,9 +379,7 @@ async function processAttachmentOne(
     db.prepare(
       "DELETE FROM note_embeddings WHERE entityType = 'attachment' AND attachmentId = ?",
     ).run(att.id);
-    db.prepare(
-      "DELETE FROM attachment_chunks WHERE attachmentId = ?",
-    ).run(att.id);
+    attachmentChunksRepository.deleteByAttachmentId(att.id);
 
     const insE = db.prepare(`
       INSERT INTO note_embeddings
@@ -388,9 +387,6 @@ async function processAttachmentOne(
          entityType, attachmentId, createdAt)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'attachment', ?, datetime('now'))
     `);
-    const insC = db.prepare(
-      "INSERT INTO attachment_chunks (attachmentId, chunkIndex, chunkText, createdAt) VALUES (?, ?, ?, datetime('now'))",
-    );
 
     for (let i = 0; i < valid.length; i++) {
       const info = insE.run(
@@ -405,7 +401,7 @@ async function processAttachmentOne(
         att.id,
       );
       newRowIds.push(Number(info.lastInsertRowid));
-      insC.run(att.id, valid[i].idx, valid[i].text);
+      attachmentChunksRepository.create(att.id, valid[i].idx, valid[i].text);
     }
 
     db.prepare(
@@ -718,9 +714,7 @@ function rebuildAttachmentEmbeddingsInternal(
         }`,
       ).run(...params);
       // attachment_chunks 同步清理：按 attachmentId IN (scope 内的附件 id)
-      db.prepare(
-        `DELETE FROM attachment_chunks WHERE attachmentId IN (SELECT id FROM attachments ${rowidWhere})`,
-      ).run(...params);
+      attachmentChunksRepository.deleteByAttachmentWhere(rowidWhere, params);
       oldRowids = oldIds.map((r) => r.id);
     }
 

@@ -35,7 +35,7 @@ import {
   type EnabledFeaturesConfig,
   type WorkspaceFeature,
 } from "../middleware/acl";
-import { workspaceInvitesRepository } from "../repositories";
+import { workspaceInvitesRepository, noteAclRepository } from "../repositories";
 
 const app = new Hono();
 
@@ -290,9 +290,7 @@ app.delete("/:id/members/:userId", requireWorkspaceRole("admin"), (c) => {
     targetUserId,
   );
   // 同步清理 note_acl
-  db.prepare(
-    "DELETE FROM note_acl WHERE userId = ? AND noteId IN (SELECT id FROM notes WHERE workspaceId = ?)",
-  ).run(targetUserId, id);
+  noteAclRepository.deleteByUserAndWorkspace(targetUserId, id);
 
   return c.json({ success: true });
 });

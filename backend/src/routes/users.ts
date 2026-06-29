@@ -18,6 +18,7 @@ import { getDb } from "../db/schema";
 import { isSystemAdmin, requireAdmin } from "../middleware/acl";
 import { invalidateUserAuthCache, verifySudoFromRequest, extractClientIp } from "../lib/auth-security";
 import { disconnectUser } from "../services/realtime";
+import { noteAclRepository } from "../repositories";
 import { logAudit } from "../services/audit";
 
 const users = new Hono();
@@ -593,16 +594,11 @@ function transferAndDeleteUser(
     );
 
     // --- 3) note_acl：PK(noteId, userId) 同上 ---
-    const aclConflicts = db
-      .prepare(
-        `SELECT noteId FROM note_acl
-         WHERE userId = ? AND noteId IN (SELECT noteId FROM note_acl WHERE userId = ?)`,
-      )
-      .all(fromId, toId) as { noteId: string }[];
-    for (const { noteId } of aclConflicts) {
-      run("DELETE FROM note_acl WHERE noteId = ? AND userId = ?", noteId, fromId);
+    const aclConflicts = noteAclRepository.listCommonNotes(fromId, toId);
+    for (const noteId of aclConflicts) {
+      noteAclRepository.deleteByNoteAndUser(noteId, fromId);
     }
-    moved.noteAcl = run("UPDATE note_acl SET userId = ? WHERE userId = ?", toId, fromId);
+    moved.noteAcl = noteAclRepository.transferOwnership(fromId, toId);
 
     // --- 4) 其他表的简单 ownership 迁移 ---
     moved.notebooks = run("UPDATE notebooks SET userId = ? WHERE userId = ?", toId, fromId);

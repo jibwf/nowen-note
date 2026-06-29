@@ -15,6 +15,7 @@ import {
   resolveNoteNotebookMemberPermission,
   resolveNotebookMemberPermission,
 } from "../services/notebook-permissions";
+import { noteAclRepository } from "../repositories";
 
 export type WorkspaceRole = "owner" | "admin" | "editor" | "commenter" | "viewer";
 export type Permission = "read" | "comment" | "write" | "manage";
@@ -115,11 +116,9 @@ export function resolveNotePermission(
   }
 
   // 工作区笔记：检查 ACL 覆写
-  const acl = db
-    .prepare("SELECT permission FROM note_acl WHERE noteId = ? AND userId = ?")
-    .get(noteId, userId) as { permission: Permission } | undefined;
+  const acl = noteAclRepository.getPermission(noteId, userId);
   if (acl) {
-    return { permission: acl.permission, workspaceId: note.workspaceId, noteOwnerId: note.userId };
+    return { permission: acl.permission as Permission, workspaceId: note.workspaceId, noteOwnerId: note.userId };
   }
 
   // 工作区成员角色

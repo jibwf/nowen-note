@@ -27,6 +27,7 @@ export { taskCalendarFeedsRepository } from "./taskCalendarFeedsRepository";
 export { taskDependenciesRepository } from "./taskDependenciesRepository";
 export { workspaceInvitesRepository } from "./workspaceInvitesRepository";
 export { notebookShareLinksRepository } from "./notebookShareLinksRepository";
+export { noteAclRepository } from "./noteAclRepository";
 
 // 类型导出
 export type {

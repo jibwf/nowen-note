@@ -113,6 +113,50 @@ export const workspaceMembersRepository = {
   },
 
   /**
+   * 获取工作区成员列表（含用户信息）。
+   *
+   * @param workspaceId 工作区 ID
+   * @returns 成员列表
+   */
+  listByWorkspaceWithUser(workspaceId: string): Array<{
+    workspaceId: string;
+    userId: string;
+    role: string;
+    joinedAt: string;
+    username: string;
+    email: string | null;
+    avatarUrl: string | null;
+  }> {
+    const db = getDb();
+    return db
+      .prepare(
+        `SELECT m.workspaceId, m.userId, m.role, m.joinedAt,
+                u.username, u.email, u.avatarUrl
+         FROM workspace_members m
+         JOIN users u ON u.id = m.userId
+         WHERE m.workspaceId = ?
+         ORDER BY
+           CASE m.role
+             WHEN 'owner' THEN 1
+             WHEN 'admin' THEN 2
+             WHEN 'editor' THEN 3
+             WHEN 'commenter' THEN 4
+             WHEN 'viewer' THEN 5
+           END ASC,
+           m.joinedAt ASC`,
+      )
+      .all(workspaceId) as Array<{
+        workspaceId: string;
+        userId: string;
+        role: string;
+        joinedAt: string;
+        username: string;
+        email: string | null;
+        avatarUrl: string | null;
+      }>;
+  },
+
+  /**
    * 获取两个用户共同的工作区 ID 列表。
    *
    * @param userId1 用户 1 ID

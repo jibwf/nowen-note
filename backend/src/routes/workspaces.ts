@@ -113,9 +113,7 @@ app.post("/", async (c) => {
     db.prepare(
       `INSERT INTO workspaces (id, name, description, icon, ownerId) VALUES (?, ?, ?, ?, ?)`,
     ).run(id, name.trim(), description || "", icon || "🏢", userId);
-    db.prepare(
-      `INSERT INTO workspace_members (workspaceId, userId, role) VALUES (?, ?, 'owner')`,
-    ).run(id, userId);
+    workspaceMembersRepository.create(id, userId, 'owner');
   });
   tx();
 
@@ -214,26 +212,7 @@ app.get("/:id/members", (c) => {
   const role = isSystemAdmin(userId) ? "owner" : getUserWorkspaceRole(id, userId);
   if (!role) return c.json({ error: "无权访问该工作区" }, 403);
 
-  const members = db
-    .prepare(
-      `
-      SELECT m.workspaceId, m.userId, m.role, m.joinedAt,
-             u.username, u.email, u.avatarUrl
-      FROM workspace_members m
-      JOIN users u ON u.id = m.userId
-      WHERE m.workspaceId = ?
-      ORDER BY
-        CASE m.role
-          WHEN 'owner' THEN 1
-          WHEN 'admin' THEN 2
-          WHEN 'editor' THEN 3
-          WHEN 'commenter' THEN 4
-          WHEN 'viewer' THEN 5
-        END ASC,
-        m.joinedAt ASC
-    `,
-    )
-    .all(id);
+  const members = workspaceMembersRepository.listByWorkspaceWithUser(id);
 
   return c.json(members);
 });
@@ -364,9 +343,7 @@ app.post("/join", async (c) => {
   }
 
   // 检查是否已是成员
-  const existing = db
-    .prepare("SELECT role FROM workspace_members WHERE workspaceId = ? AND userId = ?")
-    .get(invite.workspaceId, userId);
+  const existing = workspaceMembersRepository.getRole(invite.workspaceId, userId);
   if (existing) {
     return c.json({
       success: true,

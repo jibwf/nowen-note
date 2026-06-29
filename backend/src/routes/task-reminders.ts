@@ -6,6 +6,7 @@ import {
   getUserWorkspaceRole,
   canManageResource,
 } from "../middleware/acl";
+import { taskRemindersRepository } from "../repositories";
 
 const taskReminders = new Hono();
 
@@ -148,10 +149,7 @@ taskReminders.get("/:taskId", (c) => {
   const task = db.prepare("SELECT id, userId, workspaceId FROM tasks WHERE id = ?").get(taskId) as any;
   if (!task) return c.json({ error: "Task not found" }, 404);
 
-  const rows = db.prepare(
-    "SELECT * FROM task_reminders WHERE taskId = ? AND userId = ? ORDER BY offsetMinutes ASC"
-  ).all(taskId, userId);
-
+  const rows = taskRemindersRepository.listByTaskId(taskId, userId);
   return c.json(rows);
 });
 
@@ -168,12 +166,8 @@ taskReminders.post("/:taskId", async (c) => {
   const offsetMinutes = body.offsetMinutes ?? 30;
   const id = crypto.randomUUID();
 
-  db.prepare(`
-    INSERT INTO task_reminders (id, taskId, userId, offsetMinutes, enabled)
-    VALUES (?, ?, ?, ?, 1)
-  `).run(id, taskId, userId, offsetMinutes);
-
-  const reminder = db.prepare("SELECT * FROM task_reminders WHERE id = ?").get(id);
+  taskRemindersRepository.create({ id, taskId, userId, offsetMinutes });
+  const reminder = taskRemindersRepository.getById(id);
   return c.json(reminder, 201);
 });
 
@@ -183,7 +177,7 @@ taskReminders.put("/:reminderId", async (c) => {
   const userId = c.req.header("X-User-Id")!;
   const reminderId = c.req.param("reminderId");
 
-  const existing = db.prepare("SELECT * FROM task_reminders WHERE id = ?").get(reminderId) as any;
+  const existing = taskRemindersRepository.getById(reminderId);
   if (!existing) return c.json({ error: "Reminder not found" }, 404);
   if (existing.userId !== userId) return c.json({ error: "无权修改", code: "FORBIDDEN" }, 403);
 
@@ -193,26 +187,21 @@ taskReminders.put("/:reminderId", async (c) => {
   const hasSnoozedUntil = Object.prototype.hasOwnProperty.call(body, "snoozedUntil");
   const snoozedUntil = hasSnoozedUntil ? body.snoozedUntil : existing.snoozedUntil;
 
-  db.prepare(`
-    UPDATE task_reminders SET offsetMinutes = ?, enabled = ?, snoozedUntil = ?, updatedAt = datetime('now')
-    WHERE id = ?
-  `).run(offsetMinutes, enabled ? 1 : 0, snoozedUntil, reminderId);
-
-  const updated = db.prepare("SELECT * FROM task_reminders WHERE id = ?").get(reminderId);
+  taskRemindersRepository.update(reminderId, { offsetMinutes, enabled: !!enabled, snoozedUntil });
+  const updated = taskRemindersRepository.getById(reminderId);
   return c.json(updated);
 });
 
 // 删除提醒
 taskReminders.delete("/:reminderId", (c) => {
-  const db = getDb();
   const userId = c.req.header("X-User-Id")!;
   const reminderId = c.req.param("reminderId");
 
-  const existing = db.prepare("SELECT * FROM task_reminders WHERE id = ?").get(reminderId) as any;
+  const existing = taskRemindersRepository.getById(reminderId);
   if (!existing) return c.json({ error: "Reminder not found" }, 404);
   if (existing.userId !== userId) return c.json({ error: "无权删除", code: "FORBIDDEN" }, 403);
 
-  db.prepare("DELETE FROM task_reminders WHERE id = ?").run(reminderId);
+  taskRemindersRepository.delete(reminderId);
   return c.json({ success: true });
 });
 
@@ -323,10 +312,7 @@ export function scanDueReminders(): PendingReminder[] {
  * 标记提醒已通知。
  */
 export function markReminderNotified(reminderId: string) {
-  const db = getDb();
-  db.prepare(
-    "UPDATE task_reminders SET lastNotifiedAt = datetime('now'), snoozedUntil = NULL WHERE id = ?"
-  ).run(reminderId);
+  taskRemindersRepository.markNotified(reminderId);
 }
 
 export default taskReminders;

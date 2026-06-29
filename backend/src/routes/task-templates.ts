@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { getDb } from '../db/schema';
 import crypto from 'crypto';
 import { getUserWorkspaceRole, canManageResource } from '../middleware/acl';
+import { taskTemplatesRepository } from '../repositories';
 
 const taskTemplates = new Hono();
 
@@ -26,24 +27,15 @@ function resolveScope(c: any, userId: string) {
 }
 
 taskTemplates.get('/', (c) => {
-  const db = getDb();
   const userId = c.req.header('X-User-Id')!;
   const scope = resolveScope(c, userId);
   if (scope.error) return c.json({ error: scope.error }, 403);
 
-  const rows = scope.workspaceId
-    ? db.prepare(
-        'SELECT * FROM task_templates WHERE workspaceId = ? ORDER BY createdAt DESC'
-      ).all(scope.workspaceId)
-    : db.prepare(
-        'SELECT * FROM task_templates WHERE userId = ? AND workspaceId IS NULL ORDER BY createdAt DESC'
-      ).all(userId);
-
+  const rows = taskTemplatesRepository.listByUser(userId, scope.workspaceId);
   return c.json(rows.map((r: any) => ({ ...r, items: JSON.parse(r.items || '[]') })));
 });
 
 taskTemplates.post('/', async (c) => {
-  const db = getDb();
   const userId = c.req.header('X-User-Id')!;
   const scope = resolveScope(c, userId);
   if (scope.error) return c.json({ error: scope.error }, 403);
@@ -55,20 +47,25 @@ taskTemplates.post('/', async (c) => {
   const items = normalizeTemplateItems(body.items);
 
   const id = crypto.randomUUID();
-  const now = new Date().toISOString();
-  db.prepare(
-    'INSERT INTO task_templates (id, userId, workspaceId, name, description, icon, color, items, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(id, userId, scope.workspaceId, body.name.trim(), body.description || null, body.icon || null, body.color || null, JSON.stringify(items), now, now);
+  taskTemplatesRepository.create({
+    id,
+    userId,
+    workspaceId: scope.workspaceId,
+    name: body.name.trim(),
+    description: body.description || null,
+    icon: body.icon || null,
+    color: body.color || null,
+    items,
+  });
 
-  const row = db.prepare('SELECT * FROM task_templates WHERE id = ?').get(id) as any;
-  return c.json({ ...row, items: JSON.parse(row.items || '[]') }, 201);
+  const row = taskTemplatesRepository.getById(id);
+  return c.json({ ...row, items: JSON.parse(row?.items || '[]') }, 201);
 });
 
 taskTemplates.put('/:id', async (c) => {
-  const db = getDb();
   const userId = c.req.header('X-User-Id')!;
   const id = c.req.param('id');
-  const row = db.prepare('SELECT * FROM task_templates WHERE id = ?').get(id) as any;
+  const row = taskTemplatesRepository.getById(id);
   if (!row) return c.json({ error: 'Not found' }, 404);
 
   if (row.workspaceId) {
@@ -82,40 +79,30 @@ taskTemplates.put('/:id', async (c) => {
   }
 
   const body = await c.req.json();
-  const updates: string[] = [];
-  const params: any[] = [];
+  const updates: any = {};
 
   if (body.name !== undefined) {
     if (!body.name || typeof body.name !== 'string' || !body.name.trim()) {
       return c.json({ error: 'Name is required', code: 'INVALID_NAME' }, 400);
     }
-    updates.push('name = ?');
-    params.push(body.name.trim());
+    updates.name = body.name.trim();
   }
-  if (body.description !== undefined) { updates.push('description = ?'); params.push(body.description || null); }
-  if (body.icon !== undefined) { updates.push('icon = ?'); params.push(body.icon || null); }
-  if (body.color !== undefined) { updates.push('color = ?'); params.push(body.color || null); }
-  if (body.items !== undefined) {
-    updates.push('items = ?');
-    params.push(JSON.stringify(normalizeTemplateItems(body.items)));
-  }
+  if (body.description !== undefined) updates.description = body.description || null;
+  if (body.icon !== undefined) updates.icon = body.icon || null;
+  if (body.color !== undefined) updates.color = body.color || null;
+  if (body.items !== undefined) updates.items = normalizeTemplateItems(body.items);
 
-  if (updates.length === 0) return c.json({ ...row, items: JSON.parse(row.items || '[]') });
+  if (Object.keys(updates).length === 0) return c.json({ ...row, items: JSON.parse(row.items || '[]') });
 
-  updates.push('updatedAt = ?');
-  params.push(new Date().toISOString());
-  params.push(id);
-
-  db.prepare('UPDATE task_templates SET ' + updates.join(', ') + ' WHERE id = ?').run(...params);
-  const updated = db.prepare('SELECT * FROM task_templates WHERE id = ?').get(id) as any;
-  return c.json({ ...updated, items: JSON.parse(updated.items || '[]') });
+  taskTemplatesRepository.update(id, updates);
+  const updated = taskTemplatesRepository.getById(id);
+  return c.json({ ...updated, items: JSON.parse(updated?.items || '[]') });
 });
 
 taskTemplates.delete('/:id', (c) => {
-  const db = getDb();
   const userId = c.req.header('X-User-Id')!;
   const id = c.req.param('id');
-  const row = db.prepare('SELECT * FROM task_templates WHERE id = ?').get(id) as any;
+  const row = taskTemplatesRepository.getById(id);
   if (!row) return c.json({ error: 'Not found' }, 404);
 
   if (row.workspaceId) {
@@ -128,7 +115,7 @@ taskTemplates.delete('/:id', (c) => {
     return c.json({ error: 'Not allowed' }, 403);
   }
 
-  db.prepare('DELETE FROM task_templates WHERE id = ?').run(id);
+  taskTemplatesRepository.delete(id);
   return c.json({ success: true });
 });
 

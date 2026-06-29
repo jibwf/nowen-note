@@ -17,6 +17,9 @@ export { aiCustomPromptsRepository } from "./aiCustomPromptsRepository";
 export { noteVersionsRepository } from "./noteVersionsRepository";
 export { favoritesRepository } from "./favoritesRepository";
 export { userSessionsRepository } from "./userSessionsRepository";
+export { taskRemindersRepository } from "./taskRemindersRepository";
+export { taskProjectsRepository } from "./taskProjectsRepository";
+export { taskTemplatesRepository } from "./taskTemplatesRepository";
 
 // 类型导出
 export type {

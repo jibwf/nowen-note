@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { getDb } from "../db/schema";
 import { v4 as uuid } from "uuid";
+import { attachmentFoldersRepository } from "../repositories";
 
 const app = new Hono();
 
@@ -12,20 +13,7 @@ app.get("/", (c) => {
   const db = getDb();
   const userId = c.req.header("X-User-Id") || "";
 
-  const folders = db
-    .prepare(
-      `SELECT id, name, parentId, createdAt, updatedAt
-       FROM attachment_folders
-       WHERE userId = ?
-       ORDER BY name COLLATE NOCASE`
-    )
-    .all(userId) as Array<{
-      id: string;
-      name: string;
-      parentId: string | null;
-      createdAt: string;
-      updatedAt: string;
-    }>;
+  const folders = attachmentFoldersRepository.listByUser(userId);
 
   // 统计每个文件夹下的附件数
   const counts = db
@@ -51,7 +39,6 @@ app.get("/", (c) => {
  * 创建文件夹
  */
 app.post("/", async (c) => {
-  const db = getDb();
   const userId = c.req.header("X-User-Id") || "";
   const body = await c.req.json();
   const name = (body.name || "").trim();
@@ -61,27 +48,19 @@ app.post("/", async (c) => {
   if (name.length > 100) return c.json({ error: "文件夹名称过长" }, 400);
 
   // 同级同名校验
-  const existing = db
-    .prepare(
-      "SELECT id FROM attachment_folders WHERE userId = ? AND name = ? AND (parentId = ? OR (parentId IS NULL AND ? IS NULL))"
-    )
-    .get(userId, name, parentId, parentId) as { id: string } | undefined;
-  if (existing) {
+  if (attachmentFoldersRepository.existsByName(userId, name, parentId)) {
     return c.json({ error: "同级已存在同名文件夹" }, 409);
   }
 
   // 如果有 parentId，校验父文件夹存在且属于当前用户
   if (parentId) {
-    const parent = db
-      .prepare("SELECT id FROM attachment_folders WHERE id = ? AND userId = ?")
-      .get(parentId, userId) as { id: string } | undefined;
-    if (!parent) return c.json({ error: "父文件夹不存在" }, 404);
+    if (!attachmentFoldersRepository.parentExists(parentId, userId)) {
+      return c.json({ error: "父文件夹不存在" }, 404);
+    }
   }
 
   const id = uuid();
-  db.prepare(
-    "INSERT INTO attachment_folders (id, userId, name, parentId) VALUES (?, ?, ?, ?)"
-  ).run(id, userId, name, parentId);
+  attachmentFoldersRepository.create({ id, userId, name, parentId });
 
   return c.json({
     id,
@@ -96,7 +75,6 @@ app.post("/", async (c) => {
  * 重命名文件夹
  */
 app.patch("/:id", async (c) => {
-  const db = getDb();
   const userId = c.req.header("X-User-Id") || "";
   const id = c.req.param("id");
   const body = await c.req.json();
@@ -105,21 +83,15 @@ app.patch("/:id", async (c) => {
   if (!name) return c.json({ error: "文件夹名称不能为空" }, 400);
   if (name.length > 100) return c.json({ error: "文件夹名称过长" }, 400);
 
-  const folder = db
-    .prepare("SELECT id, parentId FROM attachment_folders WHERE id = ? AND userId = ?")
-    .get(id, userId) as { id: string; parentId: string | null } | undefined;
+  const folder = attachmentFoldersRepository.getById(id, userId);
   if (!folder) return c.json({ error: "文件夹不存在" }, 404);
 
   // 同级同名校验（排除自身）
-  const dup = db
-    .prepare(
-      "SELECT id FROM attachment_folders WHERE userId = ? AND name = ? AND id != ? AND (parentId = ? OR (parentId IS NULL AND ? IS NULL))"
-    )
-    .get(userId, name, id, folder.parentId, folder.parentId) as { id: string } | undefined;
-  if (dup) return c.json({ error: "同级已存在同名文件夹" }, 409);
+  if (attachmentFoldersRepository.existsByName(userId, name, folder.parentId, id)) {
+    return c.json({ error: "同级已存在同名文件夹" }, 409);
+  }
 
-  db.prepare("UPDATE attachment_folders SET name = ?, updatedAt = datetime('now') WHERE id = ?")
-    .run(name, id);
+  attachmentFoldersRepository.updateName(id, name);
 
   return c.json({ id, name, parentId: folder.parentId });
 });
@@ -133,16 +105,14 @@ app.delete("/:id", (c) => {
   const userId = c.req.header("X-User-Id") || "";
   const id = c.req.param("id");
 
-  const folder = db
-    .prepare("SELECT id FROM attachment_folders WHERE id = ? AND userId = ?")
-    .get(id, userId) as { id: string } | undefined;
+  const folder = attachmentFoldersRepository.getById(id, userId);
   if (!folder) return c.json({ error: "文件夹不存在" }, 404);
 
   // 把该文件夹内附件的 folderId 清空
   db.prepare("UPDATE attachments SET folderId = NULL WHERE folderId = ? AND userId = ?")
     .run(id, userId);
 
-  db.prepare("DELETE FROM attachment_folders WHERE id = ?").run(id);
+  attachmentFoldersRepository.delete(id);
 
   return c.json({ success: true });
 });

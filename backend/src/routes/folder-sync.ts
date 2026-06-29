@@ -7,6 +7,7 @@ import {
 } from "../middleware/acl";
 import { broadcastNoteUpdated } from "../services/realtime";
 import { extractAttachmentText } from "../services/attachment-indexer";
+import { folderSyncFilesRepository } from "../repositories";
 
 const app = new Hono();
 

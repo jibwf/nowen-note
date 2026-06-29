@@ -20,6 +20,9 @@ export { userSessionsRepository } from "./userSessionsRepository";
 export { taskRemindersRepository } from "./taskRemindersRepository";
 export { taskProjectsRepository } from "./taskProjectsRepository";
 export { taskTemplatesRepository } from "./taskTemplatesRepository";
+export { folderSyncFilesRepository } from "./folderSyncFilesRepository";
+export { attachmentFoldersRepository } from "./attachmentFoldersRepository";
+export { mindmapFoldersRepository } from "./mindmapFoldersRepository";
 
 // 类型导出
 export type {

@@ -7,6 +7,7 @@ import {
   requireWorkspaceFeature,
 } from "../middleware/acl";
 import { ensureMindmapSchema } from "../lib/mindmap-schema";
+import { mindmapFoldersRepository } from "../repositories";
 
 const app = new Hono();
 
@@ -56,16 +57,11 @@ app.get("/", requireWorkspaceFeature("mindmaps"), (c) => {
   const scope = resolveScope(c.req.query("workspaceId") || "", userId);
   if (scope.error) return c.json({ error: scope.error, code: "FORBIDDEN" }, 403);
 
-  const sql =
-    scope.scope === "workspace"
-      ? "SELECT * FROM mindmap_folders WHERE workspaceId = ? ORDER BY sortOrder, name"
-      : "SELECT * FROM mindmap_folders WHERE userId = ? AND workspaceId IS NULL ORDER BY sortOrder, name";
-  const param = scope.scope === "workspace" ? scope.workspaceId : userId;
-  const rows = db.prepare(sql).all(param) as FolderRow[];
+  const rows = mindmapFoldersRepository.listByUser(userId, scope.workspaceId);
 
   // 附加每个文件夹内的导图数量
   const countStmt = db.prepare("SELECT COUNT(*) as cnt FROM mindmaps WHERE folderId = ?");
-  const result = rows.map((r: FolderRow) => ({
+  const result = rows.map((r) => ({
     ...r,
     mindmapCount: (countStmt.get(r.id) as any).cnt,
   }));
@@ -75,21 +71,18 @@ app.get("/", requireWorkspaceFeature("mindmaps"), (c) => {
 
 // ---------- 创建 ----------
 app.post("/", requireWorkspaceFeature("mindmaps"), async (c) => {
-  const db = getDb();
   const userId = c.req.header("X-User-Id") || "";
   const body = await c.req.json();
   const scope = resolveScope(c.req.query("workspaceId") || "", userId);
   if (scope.error) return c.json({ error: scope.error, code: "FORBIDDEN" }, 403);
 
   const parentId = body.parentId || null;
-  const depth = getFolderDepth(db, parentId);
+  const depth = mindmapFoldersRepository.getFolderDepth(parentId);
   if (depth >= 3) return c.json({ error: "最多支持三级文件夹" }, 400);
 
   const id = uuidv4();
   const name = body.name || "未命名文件夹";
-  db.prepare(
-    "INSERT INTO mindmap_folders (id, userId, workspaceId, parentId, name) VALUES (?, ?, ?, ?, ?)"
-  ).run(id, userId, scope.workspaceId, parentId, name);
+  mindmapFoldersRepository.create({ id, userId, workspaceId: scope.workspaceId, parentId, name });
 
   const row = db.prepare("SELECT * FROM mindmap_folders WHERE id = ?").get(id);
   return c.json(row, 201);
@@ -97,30 +90,29 @@ app.post("/", requireWorkspaceFeature("mindmaps"), async (c) => {
 
 // ---------- 重命名 ----------
 app.patch("/:id", async (c) => {
-  const db = getDb();
   const userId = c.req.header("X-User-Id") || "";
   const id = c.req.param("id");
   const body = await c.req.json();
 
-  const existing = db.prepare("SELECT * FROM mindmap_folders WHERE id = ?").get(id) as FolderRow | undefined;
+  const existing = mindmapFoldersRepository.getById(id);
   if (!existing) return c.json({ error: "文件夹不存在" }, 404);
   if (!canManageResource(existing.userId, existing.workspaceId, userId)) {
     return c.json({ error: "无权修改此文件夹", code: "FORBIDDEN" }, 403);
   }
 
   if (body.name !== undefined) {
-    db.prepare("UPDATE mindmap_folders SET name = ?, updatedAt = datetime('now') WHERE id = ?").run(body.name, id);
+    mindmapFoldersRepository.updateName(id, body.name);
   }
   if (body.parentId !== undefined) {
-    const newDepth = getFolderDepth(db, body.parentId);
+    const newDepth = mindmapFoldersRepository.getFolderDepth(body.parentId);
     if (newDepth >= 3) return c.json({ error: "最多支持三级文件夹" }, 400);
-    db.prepare("UPDATE mindmap_folders SET parentId = ?, updatedAt = datetime('now') WHERE id = ?").run(body.parentId, id);
+    mindmapFoldersRepository.updateParentId(id, body.parentId);
   }
   if (body.sortOrder !== undefined) {
-    db.prepare("UPDATE mindmap_folders SET sortOrder = ?, updatedAt = datetime('now') WHERE id = ?").run(body.sortOrder, id);
+    mindmapFoldersRepository.updateSortOrder(id, body.sortOrder);
   }
 
-  const row = db.prepare("SELECT * FROM mindmap_folders WHERE id = ?").get(id);
+  const row = mindmapFoldersRepository.getById(id);
   return c.json(row);
 });
 
@@ -130,7 +122,7 @@ app.delete("/:id", (c) => {
   const userId = c.req.header("X-User-Id") || "";
   const id = c.req.param("id");
 
-  const existing = db.prepare("SELECT * FROM mindmap_folders WHERE id = ?").get(id) as FolderRow | undefined;
+  const existing = mindmapFoldersRepository.getById(id);
   if (!existing) return c.json({ error: "文件夹不存在" }, 404);
   if (!canManageResource(existing.userId, existing.workspaceId, userId)) {
     return c.json({ error: "无权删除此文件夹", code: "FORBIDDEN" }, 403);
@@ -138,9 +130,8 @@ app.delete("/:id", (c) => {
 
   // 把文件夹内的导图移到未分类
   db.prepare("UPDATE mindmaps SET folderId = NULL, updatedAt = datetime('now') WHERE folderId = ?").run(id);
-  // 把子文件夹也移到顶层
-  db.prepare("UPDATE mindmap_folders SET parentId = NULL, updatedAt = datetime('now') WHERE parentId = ?").run(id);
-  db.prepare("DELETE FROM mindmap_folders WHERE id = ?").run(id);
+  // 删除文件夹（Repository 会处理子文件夹移到顶层）
+  mindmapFoldersRepository.delete(id);
   return c.json({ success: true });
 });
 

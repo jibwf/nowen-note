@@ -94,7 +94,6 @@ export interface DiagnosticsInfo {
 }
 
 export interface OpenFilePayload {
-  path: string;
   name: string;
   size: number;
   content: string;

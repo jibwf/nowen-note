@@ -31,6 +31,11 @@ function pickFilesFromArgv(argv) {
 function readFileSafe(filePath) {
   try {
     const abs = path.resolve(filePath);
+    // SEC-ELECTRON-01-D2: 拒绝 symlink，防止穿透读取任意文件
+    try {
+      const lstat = fs.lstatSync(abs);
+      if (lstat.isSymbolicLink()) return null;
+    } catch { /* 文件不存在等，后续 statSync 会处理 */ }
     const stat = fs.statSync(abs);
     if (!stat.isFile()) return null;
     if (stat.size > MAX_BYTES) {
@@ -39,7 +44,6 @@ function readFileSafe(filePath) {
     }
     const content = fs.readFileSync(abs, "utf8");
     return {
-      path: abs,
       name: path.basename(abs),
       size: stat.size,
       content,

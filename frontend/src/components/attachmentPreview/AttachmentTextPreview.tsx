@@ -367,7 +367,8 @@ function CodePane({ text, lang, wrap }: { text: string; lang: string; wrap: bool
   const lines = useMemo(() => text.split("\n"), [text]);
   const html = useMemo(() => {
     if (!lang) return escapeHtml(text);
-    return highlightCode(text, lang);
+    // SEC-ELECTRON-01-D3: lowlight 输出过 DOMPurify 兜底（lowlight 本身只生成 <span>，风险极低）
+    return DOMPurify.sanitize(highlightCode(text, lang));
   }, [text, lang]);
 
   return (

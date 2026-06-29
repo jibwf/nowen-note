@@ -402,12 +402,12 @@ module.exports = {
   files: [
     "electron/**/*",
     "!electron/builder.config.js",
+    "!electron/builder.lite.config.js",
     "!electron/node/**/*",
-    // 显式带上根 package.json 声明的生产依赖。
-    // electron-builder 默认会自动打包 dependencies 下的包，这里显式写一遍作为兜底
-    // 和可读性标注（尤其是 bonjour-service —— Electron 主进程用，必须进 app.asar）。
+    // package.json 用于 electron-builder 读取 dependencies 并自动收集运行时依赖
     "package.json",
-    "node_modules/**/*",
+    // node_modules/**/* 已删除：electron-builder 会自动从 package.json 的 dependencies
+    // 收集运行时依赖，无需手动指定整个 node_modules 目录
   ],
   // ==== 文件关联：双击 .md / .markdown / .txt 用 Nowen Note 打开 ====
   // 注意：AppImage 构建器不支持 ext 为数组，必须拆成多个独立条目

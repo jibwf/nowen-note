@@ -63,4 +63,33 @@ export const attachmentReferencesRepository = {
       .run(noteId, ...attachmentIds);
     return Number(info.changes || 0);
   },
+
+  /**
+   * 检查附件是否被指定笔记引用。
+   *
+   * @param attachmentId 附件 ID
+   * @param noteId 笔记 ID
+   * @returns 是否被引用
+   */
+  isReferencedByNote(attachmentId: string, noteId: string): boolean {
+    const db = getDb();
+    const row = db
+      .prepare("SELECT 1 FROM attachment_references WHERE attachmentId = ? AND noteId = ?")
+      .get(attachmentId, noteId);
+    return !!row;
+  },
+
+  /**
+   * 检查附件是否被任何笔记引用。
+   *
+   * @param attachmentId 附件 ID
+   * @returns 是否被引用
+   */
+  isReferenced(attachmentId: string): boolean {
+    const db = getDb();
+    const row = db
+      .prepare("SELECT 1 FROM attachment_references WHERE attachmentId = ?")
+      .get(attachmentId);
+    return !!row;
+  },
 };

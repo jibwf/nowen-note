@@ -3,6 +3,7 @@ import type { Context } from "hono";
 import crypto from "crypto";
 import { getDb } from "../db/schema";
 import { getUserWorkspaceRole } from "../middleware/acl";
+import { taskCalendarFeedsRepository } from "../repositories";
 
 const taskCalendar = new Hono();
 
@@ -101,10 +102,7 @@ function buildVEvent(task: any, feed: any, reminders: any[]): string {
 // GET /feed — 获取当前用户的订阅配置
 taskCalendar.get("/feed", (c) => {
   const userId = getUserId(c);
-  const db = getDb();
-  const row = db.prepare(
-    "SELECT * FROM task_calendar_feeds WHERE userId = ?"
-  ).get(userId) as any;
+  const row = taskCalendarFeedsRepository.getByUser(userId);
   if (!row) {
     return c.json({ feed: null });
   }
@@ -126,15 +124,10 @@ taskCalendar.get("/feed", (c) => {
 // POST /feed — 创建或启用订阅
 taskCalendar.post("/feed", (c) => {
   const userId = getUserId(c);
-  const db = getDb();
-  const existing = db.prepare(
-    "SELECT * FROM task_calendar_feeds WHERE userId = ?"
-  ).get(userId) as any;
+  const existing = taskCalendarFeedsRepository.getByUser(userId);
   if (existing) {
     if (!existing.enabled) {
-      db.prepare(
-        "UPDATE task_calendar_feeds SET enabled = 1, updatedAt = datetime('now') WHERE id = ?"
-      ).run(existing.id);
+      taskCalendarFeedsRepository.enable(existing.id);
     }
     return c.json({
       feed: {
@@ -149,10 +142,7 @@ taskCalendar.post("/feed", (c) => {
   }
   const id = crypto.randomUUID();
   const token = generateToken();
-  db.prepare(
-    `INSERT INTO task_calendar_feeds (id, userId, token, enabled, includeCompleted, includeDescription, defaultAlarmMinutes)
-     VALUES (?, ?, ?, 1, 0, 1, 30)`
-  ).run(id, userId, token);
+  taskCalendarFeedsRepository.create({ id, userId, token });
   return c.json({
     feed: {
       id,
@@ -168,42 +158,18 @@ taskCalendar.post("/feed", (c) => {
 // PATCH /feed — 更新配置
 taskCalendar.patch("/feed", async (c) => {
   const userId = getUserId(c);
-  const db = getDb();
   const body = await c.req.json().catch(() => ({}));
-  const existing = db.prepare(
-    "SELECT * FROM task_calendar_feeds WHERE userId = ?"
-  ).get(userId) as any;
+  const existing = taskCalendarFeedsRepository.getByUser(userId);
   if (!existing) {
     return c.json({ error: "Feed not found" }, 404);
   }
-  const updates: string[] = [];
-  const params: any[] = [];
-  if (body.enabled !== undefined) {
-    updates.push("enabled = ?");
-    params.push(body.enabled ? 1 : 0);
-  }
-  if (body.includeCompleted !== undefined) {
-    updates.push("includeCompleted = ?");
-    params.push(body.includeCompleted ? 1 : 0);
-  }
-  if (body.includeDescription !== undefined) {
-    updates.push("includeDescription = ?");
-    params.push(body.includeDescription ? 1 : 0);
-  }
-  if (body.defaultAlarmMinutes !== undefined) {
-    updates.push("defaultAlarmMinutes = ?");
-    params.push(Number(body.defaultAlarmMinutes) || 30);
-  }
-  if (updates.length > 0) {
-    updates.push("updatedAt = datetime('now')");
-    params.push(existing.id);
-    db.prepare(
-      `UPDATE task_calendar_feeds SET ${updates.join(", ")} WHERE id = ?`
-    ).run(...params);
-  }
-  const updated = db.prepare(
-    "SELECT * FROM task_calendar_feeds WHERE id = ?"
-  ).get(existing.id) as any;
+  taskCalendarFeedsRepository.update(existing.id, {
+    enabled: body.enabled !== undefined ? (body.enabled ? 1 : 0) : undefined,
+    includeCompleted: body.includeCompleted !== undefined ? (body.includeCompleted ? 1 : 0) : undefined,
+    includeDescription: body.includeDescription !== undefined ? (body.includeDescription ? 1 : 0) : undefined,
+    defaultAlarmMinutes: body.defaultAlarmMinutes !== undefined ? (Number(body.defaultAlarmMinutes) || 30) : undefined,
+  });
+  const updated = taskCalendarFeedsRepository.getById(existing.id);
   return c.json({
     feed: {
       id: updated.id,
@@ -219,17 +185,12 @@ taskCalendar.patch("/feed", async (c) => {
 // POST /feed/rotate-token — 重新生成 token
 taskCalendar.post("/feed/rotate-token", (c) => {
   const userId = getUserId(c);
-  const db = getDb();
-  const existing = db.prepare(
-    "SELECT * FROM task_calendar_feeds WHERE userId = ?"
-  ).get(userId) as any;
+  const existing = taskCalendarFeedsRepository.getByUser(userId);
   if (!existing) {
     return c.json({ error: "Feed not found" }, 404);
   }
   const newToken = generateToken();
-  db.prepare(
-    "UPDATE task_calendar_feeds SET token = ?, updatedAt = datetime('now') WHERE id = ?"
-  ).run(newToken, existing.id);
+  taskCalendarFeedsRepository.regenerateToken(existing.id, newToken);
   return c.json({ success: true });
 });
 
@@ -240,10 +201,7 @@ taskCalendar.get("/feed/:token", (c) => {
     return c.json({ error: "Not found" }, 404);
   }
   const rawToken = token.replace(/\.ics$/, "");
-  const db = getDb();
-  const feed = db.prepare(
-    "SELECT * FROM task_calendar_feeds WHERE token = ?"
-  ).get(rawToken) as any;
+  const feed = taskCalendarFeedsRepository.getByToken(rawToken);
   if (!feed) {
     return c.json({ error: "Not found" }, 404);
   }
@@ -252,9 +210,7 @@ taskCalendar.get("/feed/:token", (c) => {
   }
 
   // Update lastAccessedAt
-  db.prepare(
-    "UPDATE task_calendar_feeds SET lastAccessedAt = datetime('now') WHERE id = ?"
-  ).run(feed.id);
+  taskCalendarFeedsRepository.updateLastAccessedAt(feed.id);
 
   // Query tasks
   let sql = `
@@ -400,15 +356,12 @@ taskCalendar.post("/export-targets/:id/export-now", async (c) => {
 
 /** 根据 token 查询 feed 并生成 ICS 内容。返回 null 表示 token 无效或已禁用。 */
 export function buildIcsForToken(token: string): { body: string; feedId: string } | null {
-  const db = getDb();
-  const feed = db.prepare(
-    "SELECT * FROM task_calendar_feeds WHERE token = ? AND enabled = 1"
-  ).get(token) as any;
+  const feed = taskCalendarFeedsRepository.getEnabledByToken(token);
   if (!feed) return null;
 
   // Update lastAccessedAt（fire and forget）
   try {
-    db.prepare("UPDATE task_calendar_feeds SET lastAccessedAt = datetime('now') WHERE id = ?").run(feed.id);
+    taskCalendarFeedsRepository.updateLastAccessedAt(feed.id);
   } catch { /* ignore */ }
 
   let sql = `

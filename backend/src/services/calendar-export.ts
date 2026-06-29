@@ -7,7 +7,7 @@
 
 import crypto from "crypto";
 import { getDb } from "../db/schema";
-import { calendarExportTargetsRepository } from "../repositories";
+import { calendarExportTargetsRepository, taskCalendarFeedsRepository } from "../repositories";
 import type { CalendarExportTargetRecordBoolean } from "../repositories";
 
 // ====== 类型定义 ======
@@ -288,9 +288,7 @@ export function createExportTarget(
   },
 ): CalendarExportTargetPublic {
   // 校验 feed 属于当前用户
-  const feed = getDb()
-    .prepare("SELECT id FROM task_calendar_feeds WHERE id = ? AND userId = ?")
-    .get(input.feedId, userId) as { id: string } | undefined;
+  const feed = taskCalendarFeedsRepository.getByIdAndUser(input.feedId, userId);
   if (!feed) {
     throw new Error("Feed not found or access denied");
   }
@@ -437,9 +435,7 @@ export async function exportNow(
   }
 
   // 校验 feed 属于当前用户
-  const feed = getDb()
-    .prepare("SELECT id, enabled, token FROM task_calendar_feeds WHERE id = ? AND userId = ?")
-    .get(row.feedId, userId) as { id: string; enabled: number; token: string } | undefined;
+  const feed = taskCalendarFeedsRepository.getEnabledAndTokenByIdAndUser(row.feedId, userId);
   if (!feed) {
     const error = "Feed not found or access denied";
     updateExportStatus(targetId, "error", error);

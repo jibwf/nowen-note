@@ -36,20 +36,6 @@ function resolveScope(
   return { scope: "workspace", workspaceId };
 }
 
-// 验证文件夹层级深度（最多三级）
-function getFolderDepth(db: any, folderId: string | null): number {
-  if (!folderId) return 0;
-  let depth = 0;
-  let currentId: string | null = folderId;
-  while (currentId) {
-    depth++;
-    if (depth > 3) return depth;
-    const row = db.prepare("SELECT parentId FROM mindmap_folders WHERE id = ?").get(currentId) as FolderRow | undefined;
-    currentId = row?.parentId || null;
-  }
-  return depth;
-}
-
 // ---------- 列表 ----------
 app.get("/", requireWorkspaceFeature("mindmaps"), (c) => {
   const db = getDb();

@@ -101,9 +101,7 @@ app.post("/import-file", async (c) => {
   const workspaceId = nb.workspaceId;
 
   // 查找已有同步映射
-  const syncRow = db
-    .prepare("SELECT id, noteId, sha256 AS oldSha FROM folder_sync_files WHERE userId = ? AND sourcePathHash = ?")
-    .get(userId, sourcePathHash) as { id: string; noteId: string; oldSha: string } | undefined;
+  const syncRow = folderSyncFilesRepository.getBySourcePathHash(userId, sourcePathHash);
 
   // 确定更新目标
   let updateNoteId: string | null = null;
@@ -169,11 +167,9 @@ app.post("/import-file", async (c) => {
 
     // 更新映射
     if (syncRow) {
-      db.prepare("UPDATE folder_sync_files SET sha256 = ?, relativePath = ?, filename = ?, updatedAt = datetime('now') WHERE id = ?")
-        .run(sha256, relativePath, filename, syncRow.id);
+      folderSyncFilesRepository.update(syncRow.id, { sha256, relativePath, filename });
     } else {
-      db.prepare("INSERT INTO folder_sync_files (id, userId, sourcePathHash, relativePath, filename, sha256, noteId) VALUES (?, ?, ?, ?, ?, ?, ?)")
-        .run(uuid(), userId, sourcePathHash, relativePath, filename, sha256, updateNoteId);
+      folderSyncFilesRepository.create({ id: uuid(), userId, sourcePathHash, relativePath, filename, sha256, noteId: updateNoteId });
     }
 
     const updated = db.prepare("SELECT version, updatedAt FROM notes WHERE id = ?").get(updateNoteId) as { version: number; updatedAt: string };
@@ -202,8 +198,7 @@ app.post("/import-file", async (c) => {
   }
 
   // 创建映射
-  db.prepare("INSERT INTO folder_sync_files (id, userId, sourcePathHash, relativePath, filename, sha256, noteId) VALUES (?, ?, ?, ?, ?, ?, ?)")
-    .run(uuid(), userId, sourcePathHash, relativePath, filename, sha256, noteId);
+  folderSyncFilesRepository.create({ id: uuid(), userId, sourcePathHash, relativePath, filename, sha256, noteId });
 
   return c.json({ success: true, created: true, updated: false, skipped: false, noteId, sha256 });
 });
@@ -254,8 +249,7 @@ app.post("/import-attachment", async (c) => {
   }
 
   // 查找已有同步映射
-  const syncRow = db.prepare("SELECT id, noteId, sha256 AS oldSha FROM folder_sync_files WHERE userId = ? AND sourcePathHash = ?")
-    .get(userId, sourcePathHash) as { id: string; noteId: string; oldSha: string } | undefined;
+  const syncRow = folderSyncFilesRepository.getBySourcePathHash(userId, sourcePathHash);
 
   // sha256 去重
   if (syncRow && syncRow.oldSha === sha256) {
@@ -288,7 +282,7 @@ app.post("/import-attachment", async (c) => {
     const target = db.prepare("SELECT id, userId, isTrashed FROM notes WHERE id = ?").get(syncRow.noteId) as any;
     if (!target) {
       // 旧映射指向不存在的笔记，清理并创建新笔记
-      db.prepare("DELETE FROM folder_sync_files WHERE id = ?").run(syncRow.id);
+      folderSyncFilesRepository.delete(syncRow.id);
     } else if (target.userId !== userId) {
       return c.json({ error: "无权修改他人的笔记", code: "FORBIDDEN" }, 403);
     } else if (target.isTrashed === 1) {
@@ -347,11 +341,9 @@ app.post("/import-attachment", async (c) => {
 
     // 更新同步映射
     if (syncRow) {
-      db.prepare("UPDATE folder_sync_files SET sha256 = ?, relativePath = ?, filename = ?, noteId = ?, updatedAt = datetime('now') WHERE id = ?")
-        .run(sha256, relativePath, filename, updateNoteId, syncRow.id);
+      folderSyncFilesRepository.update(syncRow.id, { sha256, relativePath, filename, noteId: updateNoteId });
     } else {
-      db.prepare("INSERT INTO folder_sync_files (id, userId, sourcePathHash, relativePath, filename, sha256, noteId) VALUES (?, ?, ?, ?, ?, ?, ?)")
-        .run(uuid(), userId, sourcePathHash, relativePath, filename, sha256, updateNoteId);
+      folderSyncFilesRepository.create({ id: uuid(), userId, sourcePathHash, relativePath, filename, sha256, noteId: updateNoteId });
     }
 
     db.exec("COMMIT");
@@ -432,14 +424,7 @@ app.post("/check-dedup", async (c) => {
   if (!Array.isArray(hashes) || hashes.length === 0) return c.json({});
   if (hashes.length > 500) return c.json({ error: "单次最多检查 500 条", code: "TOO_MANY" }, 400);
 
-  const result: Record<string, string> = {};
-  const placeholders = hashes.map(() => "?").join(",");
-  const rows = db
-    .prepare(`SELECT sourcePathHash, noteId FROM folder_sync_files WHERE userId = ? AND sourcePathHash IN (${placeholders})`)
-    .all(userId, ...hashes) as { sourcePathHash: string; noteId: string }[];
-  for (const row of rows) {
-    result[row.sourcePathHash] = row.noteId;
-  }
+  const result = folderSyncFilesRepository.batchGetNoteIds(userId, hashes);
   return c.json(result);
 });
 

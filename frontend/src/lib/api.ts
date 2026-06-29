@@ -1764,6 +1764,17 @@ export const api = {
     /** 删除一份附件。一般用于编辑器内显式删除 + 管理页。 */
     remove: (id: string) =>
       request<{ success: boolean }>(`/attachments/${id}`, { method: "DELETE" }),
+
+    /** 远程图片本地化：下载远程图片并上传为本地附件（PASTE-REMOTE-IMAGE-LOCALIZE-01） */
+    importRemoteImage: (
+      noteId: string,
+      url: string,
+      source?: string,
+    ): Promise<{ url: string; deduplicated?: boolean }> =>
+      request<{ url: string; deduplicated?: boolean }>("/attachments/import-remote-image", {
+        method: "POST",
+        body: JSON.stringify({ noteId, url, source }),
+      }),
   },
 
   // ========== Task Attachments（待办事项的图片附件）==========

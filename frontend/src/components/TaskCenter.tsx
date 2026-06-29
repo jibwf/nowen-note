@@ -420,7 +420,7 @@ export default function TaskCenter() {
   }, []);
 
   const handleSelectAll = useCallback(() => {
-    const allIds = new Set(flatOrderedTasks.map((t) => t.id));
+    const allIds = new Set(flatOrderedTasks.map((t) => t.node.id));
     setSelectedIds(allIds);
   }, [flatOrderedTasks]);
 

@@ -26,6 +26,7 @@ export { mindmapFoldersRepository } from "./mindmapFoldersRepository";
 export { taskCalendarFeedsRepository } from "./taskCalendarFeedsRepository";
 export { taskDependenciesRepository } from "./taskDependenciesRepository";
 export { workspaceInvitesRepository } from "./workspaceInvitesRepository";
+export { notebookShareLinksRepository } from "./notebookShareLinksRepository";
 
 // 类型导出
 export type {

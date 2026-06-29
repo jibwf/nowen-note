@@ -11,6 +11,7 @@ import {
 } from "../middleware/acl";
 import { notebookRoleToPermission } from "../services/notebook-permissions";
 import { broadcastNoteDeleted } from "../services/realtime";
+import { notebookShareLinksRepository } from "../repositories";
 
 const app = new Hono();
 
@@ -191,22 +192,8 @@ app.get("/shared-with-me", (c) => {
 });
 
 app.get("/share/:token", (c) => {
-  const db = getDb();
   const token = c.req.param("token");
-  const link = db
-    .prepare(
-      `SELECT l.id, l.notebookId, l.role, l.enabled, l.expiresAt, l.createdAt,
-              nb.name, nb.icon, nb.color,
-              u.username AS ownerUsername, u.displayName AS ownerDisplayName
-         FROM notebook_share_links l
-         JOIN notebooks nb ON nb.id = l.notebookId
-         JOIN users u ON u.id = nb.userId
-        WHERE l.token = ?
-          AND l.enabled = 1
-          AND nb.isDeleted = 0
-          AND (l.expiresAt IS NULL OR l.expiresAt > datetime('now'))`,
-    )
-    .get(token);
+  const link = notebookShareLinksRepository.getByTokenWithDetails(token);
   if (!link) return c.json({ error: "share link not found" }, 404);
   return c.json(link);
 });
@@ -216,19 +203,7 @@ app.post("/share/:token/join", (c) => {
   const userId = c.req.header("X-User-Id") || "";
   const token = c.req.param("token");
 
-  const link = db
-    .prepare(
-      `SELECT l.notebookId, l.role, l.createdBy, nb.userId AS ownerId
-         FROM notebook_share_links l
-         JOIN notebooks nb ON nb.id = l.notebookId
-        WHERE l.token = ?
-          AND l.enabled = 1
-          AND nb.isDeleted = 0
-          AND (l.expiresAt IS NULL OR l.expiresAt > datetime('now'))`,
-    )
-    .get(token) as
-    | { notebookId: string; role: string; createdBy: string; ownerId: string }
-    | undefined;
+  const link = notebookShareLinksRepository.getEnabledByToken(token);
   if (!link) return c.json({ error: "share link not found" }, 404);
   if (link.ownerId === userId) {
     return c.json({ success: true, notebookId: link.notebookId, role: "owner" });
@@ -258,15 +233,7 @@ app.get("/:id/share-link", (c) => {
     return c.json({ error: "forbidden" }, 403);
   }
 
-  const link = db
-    .prepare(
-      `SELECT id, notebookId, token, role, enabled, expiresAt, createdBy, createdAt, updatedAt
-         FROM notebook_share_links
-        WHERE notebookId = ? AND enabled = 1
-        ORDER BY createdAt DESC
-        LIMIT 1`,
-    )
-    .get(id);
+  const link = notebookShareLinksRepository.getLatestEnabledByNotebook(id);
   return c.json(link || null);
 });
 
@@ -285,26 +252,20 @@ app.post("/:id/share-link", async (c) => {
     return c.json({ error: "forbidden" }, 403);
   }
 
-  db.prepare(
-    `UPDATE notebook_share_links
-        SET enabled = 0, updatedAt = datetime('now')
-      WHERE notebookId = ? AND enabled = 1`,
-  ).run(id);
+  notebookShareLinksRepository.disableAllByNotebook(id);
 
   const linkId = uuid();
   const token = generateShareToken();
-  db.prepare(
-    `INSERT INTO notebook_share_links (id, notebookId, token, role, enabled, expiresAt, createdBy)
-     VALUES (?, ?, ?, ?, 1, ?, ?)`,
-  ).run(linkId, id, token, role, expiresAt, userId);
+  notebookShareLinksRepository.create({
+    id: linkId,
+    notebookId: id,
+    token,
+    role,
+    expiresAt,
+    createdBy: userId,
+  });
 
-  const link = db
-    .prepare(
-      `SELECT id, notebookId, token, role, enabled, expiresAt, createdBy, createdAt, updatedAt
-         FROM notebook_share_links
-        WHERE id = ?`,
-    )
-    .get(linkId);
+  const link = notebookShareLinksRepository.getById(linkId);
   return c.json(link, 201);
 });
 
@@ -319,45 +280,29 @@ app.patch("/:id/share-link", async (c) => {
     return c.json({ error: "forbidden" }, 403);
   }
 
-  const link = db
-    .prepare("SELECT id FROM notebook_share_links WHERE notebookId = ? AND enabled = 1 ORDER BY createdAt DESC LIMIT 1")
-    .get(id) as { id: string } | undefined;
+  const link = notebookShareLinksRepository.getLatestEnabledByNotebook(id);
   if (!link) return c.json({ error: "share link not found" }, 404);
 
-  const fields: string[] = [];
-  const params: any[] = [];
+  const updates: any = {};
   if (body.role !== undefined) {
     const role = parseNotebookMemberRole(body.role);
     if (!role) return c.json({ error: "role must be editor or viewer" }, 400);
-    fields.push("role = ?");
-    params.push(role);
+    updates.role = role;
   }
   if (body.expiresAt !== undefined) {
-    fields.push("expiresAt = ?");
-    params.push(body.expiresAt ? String(body.expiresAt) : null);
+    updates.expiresAt = body.expiresAt ? String(body.expiresAt) : null;
   }
   if (body.enabled !== undefined) {
-    fields.push("enabled = ?");
-    params.push(body.enabled ? 1 : 0);
+    updates.enabled = body.enabled ? 1 : 0;
   }
-  if (fields.length === 0) return c.json({ error: "no changes" }, 400);
+  if (Object.keys(updates).length === 0) return c.json({ error: "no changes" }, 400);
 
-  fields.push("updatedAt = datetime('now')");
-  params.push(link.id);
-  db.prepare(`UPDATE notebook_share_links SET ${fields.join(", ")} WHERE id = ?`).run(...params);
-
-  const updated = db
-    .prepare(
-      `SELECT id, notebookId, token, role, enabled, expiresAt, createdBy, createdAt, updatedAt
-         FROM notebook_share_links
-        WHERE id = ?`,
-    )
-    .get(link.id);
+  notebookShareLinksRepository.update(link.id, updates);
+  const updated = notebookShareLinksRepository.getById(link.id);
   return c.json(updated);
 });
 
 app.delete("/:id/share-link", (c) => {
-  const db = getDb();
   const userId = c.req.header("X-User-Id") || "";
   const id = c.req.param("id");
 
@@ -366,11 +311,7 @@ app.delete("/:id/share-link", (c) => {
     return c.json({ error: "forbidden" }, 403);
   }
 
-  db.prepare(
-    `UPDATE notebook_share_links
-        SET enabled = 0, updatedAt = datetime('now')
-      WHERE notebookId = ? AND enabled = 1`,
-  ).run(id);
+  notebookShareLinksRepository.disableAllByNotebook(id);
 
   return c.json({ success: true });
 });

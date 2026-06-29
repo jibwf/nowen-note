@@ -40,6 +40,7 @@ import {
   canManageResource,
   requireWorkspaceFeature,
 } from "../middleware/acl";
+import { diaryAttachmentsRepository } from "../repositories";
 
 const diary = new Hono();
 
@@ -809,10 +810,7 @@ diary.delete("/:id", async (c) => {
   }
 
   // 先查出图片 id（DELETE CASCADE 之后行就没了，查不到 path）
-  const imgRows = db
-    .prepare("SELECT id FROM diary_attachments WHERE diaryId = ?")
-    .all(id) as { id: string }[];
-  const imgIds = imgRows.map((r) => r.id);
+  const imgIds = diaryAttachmentsRepository.listIdsByDiaryId(id);
 
   await deleteDiaryMediaFilesByIds(imgIds);
   // diary_attachments 通过 ON DELETE CASCADE 自动清理
@@ -929,18 +927,7 @@ diary.post("/attachments", requireWorkspaceFeature("diaries"), async (c) => {
   // 单用户当前悬空附件数限制：防止恶意客户端只上传不发布把磁盘怼爆。
   // 这里用一个简单上限 50 张：正常用户撑死也就一次发 9 张；触发就回 429。
   // Y2: 按 scope 分别计数。
-  const orphanCountQuery = scope.scope === "workspace"
-    ? db.prepare(
-        "SELECT COUNT(*) as count FROM diary_attachments WHERE userId = ? AND diaryId IS NULL AND workspaceId = ?",
-      )
-    : db.prepare(
-        "SELECT COUNT(*) as count FROM diary_attachments WHERE userId = ? AND diaryId IS NULL AND workspaceId IS NULL",
-      );
-  const orphanCount = (
-    scope.scope === "workspace"
-      ? (orphanCountQuery.get(userId, scope.workspaceId) as any)
-      : (orphanCountQuery.get(userId) as any)
-  ).count;
+  const orphanCount = diaryAttachmentsRepository.countOrphans(userId, scope.workspaceId);
   if (orphanCount >= 50) {
     return c.json(
       { error: "上传过于频繁，请稍后再试", code: "TOO_MANY_PENDING" },
@@ -996,13 +983,7 @@ diary.delete("/attachments/:id", async (c) => {
   const userId = c.req.header("X-User-Id") || "";
   const id = c.req.param("id");
 
-  const row = db
-    .prepare(
-      "SELECT id, userId, diaryId, path FROM diary_attachments WHERE id = ?",
-    )
-    .get(id) as
-    | { id: string; userId: string; diaryId: string | null; path: string }
-    | undefined;
+  const row = diaryAttachmentsRepository.getByIdForDelete(id);
   if (!row) return c.json({ error: "图片不存在" }, 404);
   if (row.userId !== userId) {
     return c.json({ error: "无权删除该图片" }, 403);
@@ -1019,7 +1000,7 @@ diary.delete("/attachments/:id", async (c) => {
   } catch {
     /* 磁盘删失败不阻塞 DB 删 */
   }
-  db.prepare("DELETE FROM diary_attachments WHERE id = ?").run(id);
+  diaryAttachmentsRepository.delete(id);
   return c.json({ success: true });
 });
 
@@ -1138,24 +1119,14 @@ function parseRangeHeader(
 // ===========================================================================
 async function sweepOrphanDiaryImages(): Promise<number> {
   try {
-    const db = getDb();
     const cutoffIso = new Date(Date.now() - ORPHAN_TTL_MS)
       .toISOString()
       .slice(0, 19)
       .replace("T", " ");
-    const orphans = db
-      .prepare(
-        `SELECT id FROM diary_attachments
-          WHERE diaryId IS NULL AND createdAt < ?`,
-      )
-      .all(cutoffIso) as { id: string }[];
-    if (!orphans.length) return 0;
-    const ids = orphans.map((o) => o.id);
+    const ids = diaryAttachmentsRepository.listExpiredOrphans(cutoffIso);
+    if (!ids.length) return 0;
     const removed = await deleteDiaryMediaFilesByIds(ids);
-    const placeholders = ids.map(() => "?").join(",");
-    db.prepare(
-      `DELETE FROM diary_attachments WHERE id IN (${placeholders})`,
-    ).run(...ids);
+    diaryAttachmentsRepository.deleteByIds(ids);
     if (removed > 0) {
       console.log(
         `[diary] swept ${ids.length} orphan diary images (unlinked ${removed} files)`,

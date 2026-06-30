@@ -14,7 +14,12 @@
  */
 
 import { getDb } from "../db/schema";
+import { SqliteAdapter } from "../db/adapters";
 import type { Tag, TagWithCount } from "./types";
+
+function getAdapter() {
+  return new SqliteAdapter(getDb());
+}
 
 export const tagsRepository = {
   /**
@@ -182,5 +187,101 @@ export const tagsRepository = {
   deleteById(tagId: string): void {
     const db = getDb();
     db.prepare("DELETE FROM tags WHERE id = ?").run(tagId);
+  },
+
+  async listByUserAsync(
+    userId: string,
+    workspaceId: string | null = null,
+    includeEmpty: boolean = false,
+  ): Promise<TagWithCount[]> {
+    const havingClause = includeEmpty ? "" : "HAVING COUNT(nt.noteId) > 0";
+    if (workspaceId) {
+      return getAdapter().queryMany<TagWithCount>(
+        `SELECT t.*, COUNT(nt.noteId) AS noteCount
+         FROM tags t
+         LEFT JOIN note_tags nt ON nt.tagId = t.id
+         LEFT JOIN notes n ON n.id = nt.noteId AND n.workspaceId = ? AND n.isTrashed = 0
+         WHERE t.workspaceId = ?
+         GROUP BY t.id
+         ${havingClause}
+         ORDER BY t.name ASC`,
+        [workspaceId, workspaceId],
+      );
+    } else {
+      return getAdapter().queryMany<TagWithCount>(
+        `SELECT t.*, COUNT(nt.noteId) AS noteCount
+         FROM tags t
+         LEFT JOIN note_tags nt ON nt.tagId = t.id
+         LEFT JOIN notes n ON n.id = nt.noteId
+                           AND (n.workspaceId IS NULL)
+                           AND n.userId = ?
+                           AND n.isTrashed = 0
+         WHERE t.userId = ? AND t.workspaceId IS NULL
+         GROUP BY t.id
+         ${havingClause}
+         ORDER BY t.name ASC`,
+        [userId, userId],
+      );
+    }
+  },
+
+  async getOwnerAsync(tagId: string): Promise<{ userId: string; workspaceId: string | null } | undefined> {
+    return getAdapter().queryOne<{ userId: string; workspaceId: string | null }>(
+      "SELECT userId, workspaceId FROM tags WHERE id = ?",
+      [tagId],
+    );
+  },
+
+  async getByIdAsync(tagId: string): Promise<Tag | undefined> {
+    return getAdapter().queryOne<Tag>("SELECT * FROM tags WHERE id = ?", [tagId]);
+  },
+
+  async getByIdWithCountAsync(tagId: string): Promise<TagWithCount | undefined> {
+    return getAdapter().queryOne<TagWithCount>(
+      `SELECT t.*, COUNT(nt.noteId) AS noteCount
+       FROM tags t LEFT JOIN note_tags nt ON t.id = nt.tagId
+       WHERE t.id = ? GROUP BY t.id`,
+      [tagId],
+    );
+  },
+
+  async createAsync(input: {
+    id: string;
+    userId: string;
+    workspaceId: string | null;
+    name: string;
+    color: string;
+  }): Promise<void> {
+    await getAdapter().execute(
+      `INSERT INTO tags (id, userId, workspaceId, name, color) VALUES (?, ?, ?, ?, ?)`,
+      [input.id, input.userId, input.workspaceId, input.name, input.color],
+    );
+  },
+
+  async updateByIdAsync(tagId: string, patch: { name?: string; color?: string }): Promise<void> {
+    const fields: string[] = [];
+    const values: unknown[] = [];
+
+    if (patch.name !== undefined) {
+      fields.push("name = ?");
+      values.push(patch.name);
+    }
+    if (patch.color !== undefined) {
+      fields.push("color = ?");
+      values.push(patch.color);
+    }
+
+    if (fields.length === 0) return;
+
+    values.push(tagId);
+    await getAdapter().execute(`UPDATE tags SET ${fields.join(", ")} WHERE id = ?`, values);
+  },
+
+  async deleteTagLinksAsync(tagId: string): Promise<void> {
+    await getAdapter().execute("DELETE FROM note_tags WHERE tagId = ?", [tagId]);
+  },
+
+  async deleteByIdAsync(tagId: string): Promise<void> {
+    await getAdapter().execute("DELETE FROM tags WHERE id = ?", [tagId]);
   },
 };

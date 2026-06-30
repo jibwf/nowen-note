@@ -12,7 +12,12 @@
  */
 
 import { getDb } from "../db/schema";
+import { SqliteAdapter } from "../db/adapters";
 import type { Tag } from "./types";
+
+function getAdapter() {
+  return new SqliteAdapter(getDb());
+}
 
 export const noteTagsRepository = {
   /**
@@ -95,6 +100,46 @@ export const noteTagsRepository = {
           `SELECT DISTINCT noteId FROM note_tags WHERE tagId IN (${placeholders})`,
         )
         .all(...tagIds) as { noteId: string }[];
+      return rows.map((r) => r.noteId);
+    }
+  },
+
+  async addTagToNoteAsync(noteId: string, tagId: string): Promise<void> {
+    await getAdapter().execute("INSERT OR IGNORE INTO note_tags (noteId, tagId) VALUES (?, ?)", [noteId, tagId]);
+  },
+
+  async removeTagFromNoteAsync(noteId: string, tagId: string): Promise<void> {
+    await getAdapter().execute("DELETE FROM note_tags WHERE noteId = ? AND tagId = ?", [noteId, tagId]);
+  },
+
+  async listTagsByNoteIdAsync(noteId: string): Promise<Tag[]> {
+    return getAdapter().queryMany<Tag>(
+      `SELECT t.* FROM tags t
+       JOIN note_tags nt ON t.id = nt.tagId
+       WHERE nt.noteId = ?`,
+      [noteId],
+    );
+  },
+
+  async listNoteIdsByTagFilterAsync(tagIds: string[], mode: "and" | "or" = "and"): Promise<string[]> {
+    if (tagIds.length === 0) return [];
+
+    if (mode === "and" && tagIds.length > 1) {
+      const placeholders = tagIds.map(() => "?").join(",");
+      const rows = await getAdapter().queryMany<{ noteId: string }>(
+        `SELECT noteId FROM note_tags
+         WHERE tagId IN (${placeholders})
+         GROUP BY noteId
+         HAVING COUNT(DISTINCT tagId) >= ?`,
+        [...tagIds, tagIds.length],
+      );
+      return rows.map((r) => r.noteId);
+    } else {
+      const placeholders = tagIds.map(() => "?").join(",");
+      const rows = await getAdapter().queryMany<{ noteId: string }>(
+        `SELECT DISTINCT noteId FROM note_tags WHERE tagId IN (${placeholders})`,
+        tagIds,
+      );
       return rows.map((r) => r.noteId);
     }
   },

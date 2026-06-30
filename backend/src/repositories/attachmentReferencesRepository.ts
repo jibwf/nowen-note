@@ -24,7 +24,7 @@ export const attachmentReferencesRepository = {
   listByNoteId(noteId: string): string[] {
     const db = getDb();
     const rows = db
-      .prepare("SELECT attachmentId FROM attachment_references WHERE noteId = ?")
+      .prepare('SELECT "attachmentId" FROM attachment_references WHERE "noteId" = ?')
       .all(noteId) as { attachmentId: string }[];
     return rows.map((r) => r.attachmentId);
   },
@@ -39,7 +39,7 @@ export const attachmentReferencesRepository = {
     if (attachmentIds.length === 0) return;
     const db = getDb();
     const insertOne = db.prepare(
-      "INSERT OR IGNORE INTO attachment_references (attachmentId, noteId) VALUES (?, ?)"
+      'INSERT OR IGNORE INTO attachment_references ("attachmentId", "noteId") VALUES (?, ?)'
     );
     for (const id of attachmentIds) {
       try {
@@ -63,7 +63,7 @@ export const attachmentReferencesRepository = {
     const placeholders = attachmentIds.map(() => "?").join(",");
     const info = db
       .prepare(
-        `DELETE FROM attachment_references WHERE noteId = ? AND attachmentId IN (${placeholders})`
+        `DELETE FROM attachment_references WHERE "noteId" = ? AND "attachmentId" IN (${placeholders})`
       )
       .run(noteId, ...attachmentIds);
     return Number(info.changes || 0);
@@ -79,7 +79,7 @@ export const attachmentReferencesRepository = {
   isReferencedByNote(attachmentId: string, noteId: string): boolean {
     const db = getDb();
     const row = db
-      .prepare("SELECT 1 FROM attachment_references WHERE attachmentId = ? AND noteId = ?")
+      .prepare('SELECT 1 FROM attachment_references WHERE "attachmentId" = ? AND "noteId" = ?')
       .get(attachmentId, noteId);
     return !!row;
   },
@@ -93,14 +93,14 @@ export const attachmentReferencesRepository = {
   isReferenced(attachmentId: string): boolean {
     const db = getDb();
     const row = db
-      .prepare("SELECT 1 FROM attachment_references WHERE attachmentId = ?")
+      .prepare('SELECT 1 FROM attachment_references WHERE "attachmentId" = ?')
       .get(attachmentId);
     return !!row;
   },
 
   async listByNoteIdAsync(noteId: string): Promise<string[]> {
     const rows = await getAdapter().queryMany<{ attachmentId: string }>(
-      "SELECT attachmentId FROM attachment_references WHERE noteId = ?",
+      'SELECT "attachmentId" FROM attachment_references WHERE "noteId" = ?',
       [noteId],
     );
     return rows.map((r) => r.attachmentId);
@@ -111,7 +111,7 @@ export const attachmentReferencesRepository = {
     for (const id of attachmentIds) {
       try {
         await getAdapter().execute(
-          "INSERT OR IGNORE INTO attachment_references (attachmentId, noteId) VALUES (?, ?)",
+          'INSERT OR IGNORE INTO attachment_references ("attachmentId", "noteId") VALUES (?, ?)',
           [id, noteId],
         );
       } catch {
@@ -124,7 +124,7 @@ export const attachmentReferencesRepository = {
     if (attachmentIds.length === 0) return 0;
     const placeholders = attachmentIds.map(() => "?").join(",");
     const result = await getAdapter().execute(
-      `DELETE FROM attachment_references WHERE noteId = ? AND attachmentId IN (${placeholders})`,
+      `DELETE FROM attachment_references WHERE "noteId" = ? AND "attachmentId" IN (${placeholders})`,
       [noteId, ...attachmentIds],
     );
     return Number(result.changes || 0);
@@ -132,7 +132,7 @@ export const attachmentReferencesRepository = {
 
   async isReferencedByNoteAsync(attachmentId: string, noteId: string): Promise<boolean> {
     const row = await getAdapter().queryOne<{ _1: number }>(
-      "SELECT 1 FROM attachment_references WHERE attachmentId = ? AND noteId = ?",
+      'SELECT 1 FROM attachment_references WHERE "attachmentId" = ? AND "noteId" = ?',
       [attachmentId, noteId],
     );
     return !!row;
@@ -140,7 +140,7 @@ export const attachmentReferencesRepository = {
 
   async isReferencedAsync(attachmentId: string): Promise<boolean> {
     const row = await getAdapter().queryOne<{ _1: number }>(
-      "SELECT 1 FROM attachment_references WHERE attachmentId = ?",
+      'SELECT 1 FROM attachment_references WHERE "attachmentId" = ?',
       [attachmentId],
     );
     return !!row;

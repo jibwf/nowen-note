@@ -24,6 +24,7 @@
     "jszip": "^3.10.1",
     "lunar-javascript": "^1.7.7",
     "mammoth": "^1.11.0",
+    "pg": "^8.22.0",
     "sharp": "^0.33.5",
     "sqlite-vec": "^0.1.9",
     "unpdf": "^1.6.2",
@@ -39,6 +40,7 @@
     "@types/better-sqlite3": "^7.6.12",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.10.5",
+    "@types/pg": "^8.20.0",
     "@types/uuid": "^10.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"

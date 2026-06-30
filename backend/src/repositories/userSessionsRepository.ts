@@ -68,7 +68,7 @@ export const userSessionsRepository = {
   }): string {
     const db = getDb();
     db.prepare(
-      `INSERT INTO user_sessions (id, userId, ip, userAgent, deviceLabel, expiresAt)
+      `INSERT INTO user_sessions (id, "userId", ip, "userAgent", "deviceLabel", "expiresAt")
        VALUES (?, ?, ?, ?, ?, ?)`
     ).run(
       input.id,
@@ -93,9 +93,9 @@ export const userSessionsRepository = {
     return db
       .prepare(
         `SELECT id FROM user_sessions
-         WHERE userId = ? AND deviceLabel = ? AND revokedAt IS NULL
-           AND (expiresAt IS NULL OR datetime(expiresAt) > datetime('now'))
-         ORDER BY lastSeenAt DESC LIMIT 1`
+         WHERE "userId" = ? AND "deviceLabel" = ? AND "revokedAt" IS NULL
+           AND ("expiresAt" IS NULL OR datetime("expiresAt") > datetime('now'))
+         ORDER BY "lastSeenAt" DESC LIMIT 1`
       )
       .get(userId, deviceLabel) as { id: string } | undefined;
   },
@@ -112,12 +112,12 @@ export const userSessionsRepository = {
     if (ip !== undefined && expiresAt !== undefined) {
       db.prepare(
         `UPDATE user_sessions
-         SET lastSeenAt = datetime('now'), ip = ?, expiresAt = ?
+         SET "lastSeenAt" = datetime('now'), ip = ?, "expiresAt" = ?
          WHERE id = ?`
       ).run(ip || "", expiresAt, sessionId);
     } else {
       db.prepare(
-        "UPDATE user_sessions SET lastSeenAt = datetime('now') WHERE id = ?"
+        "UPDATE user_sessions SET "lastSeenAt" = datetime('now') WHERE id = ?"
       ).run(sessionId);
     }
   },
@@ -132,7 +132,7 @@ export const userSessionsRepository = {
   getByIdAndUser(sessionId: string, userId: string): { id: string; revokedAt: string | null } | undefined {
     const db = getDb();
     return db
-      .prepare("SELECT id, revokedAt FROM user_sessions WHERE id = ? AND userId = ?")
+      .prepare("SELECT id, "revokedAt" FROM user_sessions WHERE id = ? AND "userId" = ?")
       .get(sessionId, userId) as { id: string; revokedAt: string | null } | undefined;
   },
 
@@ -145,7 +145,7 @@ export const userSessionsRepository = {
   getById(sessionId: string): { id: string; userId: string; revokedAt: string | null } | undefined {
     const db = getDb();
     return db
-      .prepare("SELECT id, userId, revokedAt FROM user_sessions WHERE id = ?")
+      .prepare("SELECT id, "userId", "revokedAt" FROM user_sessions WHERE id = ?")
       .get(sessionId) as { id: string; userId: string; revokedAt: string | null } | undefined;
   },
 
@@ -159,8 +159,8 @@ export const userSessionsRepository = {
     const db = getDb();
     db.prepare(
       `UPDATE user_sessions
-       SET revokedAt = datetime('now'), revokedReason = ?
-       WHERE id = ? AND revokedAt IS NULL`
+       SET "revokedAt" = datetime('now'), "revokedReason" = ?
+       WHERE id = ? AND "revokedAt" IS NULL`
     ).run(reason || null, sessionId);
   },
 
@@ -175,8 +175,8 @@ export const userSessionsRepository = {
     const db = getDb();
     const result = db.prepare(
       `UPDATE user_sessions
-       SET revokedAt = datetime('now'), revokedReason = 'user_bulk_revoked'
-       WHERE userId = ? AND revokedAt IS NULL AND id != ?`
+       SET "revokedAt" = datetime('now'), "revokedReason" = 'user_bulk_revoked'
+       WHERE "userId" = ? AND "revokedAt" IS NULL AND id != ?`
     ).run(userId, currentSessionId);
     return result.changes;
   },
@@ -191,8 +191,8 @@ export const userSessionsRepository = {
     const db = getDb();
     const result = db.prepare(
       `UPDATE user_sessions
-       SET revokedAt = datetime('now'), revokedReason = 'user_bulk_revoked'
-       WHERE userId = ? AND revokedAt IS NULL`
+       SET "revokedAt" = datetime('now'), "revokedReason" = 'user_bulk_revoked'
+       WHERE "userId" = ? AND "revokedAt" IS NULL`
     ).run(userId);
     return result.changes;
   },
@@ -207,9 +207,9 @@ export const userSessionsRepository = {
     const db = getDb();
     const result = db.prepare(
       `DELETE FROM user_sessions
-       WHERE userId = ? AND (
-         revokedAt IS NOT NULL
-         OR (expiresAt IS NOT NULL AND datetime(expiresAt) <= datetime('now'))
+       WHERE "userId" = ? AND (
+         "revokedAt" IS NOT NULL
+         OR ("expiresAt" IS NOT NULL AND datetime("expiresAt") <= datetime('now'))
        )`
     ).run(userId);
     return result.changes;
@@ -225,11 +225,11 @@ export const userSessionsRepository = {
     const db = getDb();
     return db
       .prepare(
-        `SELECT id, createdAt, lastSeenAt, expiresAt, ip, userAgent, deviceLabel
+        `SELECT id, "createdAt", "lastSeenAt", "expiresAt", ip, "userAgent", "deviceLabel"
          FROM user_sessions
-         WHERE userId = ? AND revokedAt IS NULL
-           AND (expiresAt IS NULL OR datetime(expiresAt) > datetime('now'))
-         ORDER BY lastSeenAt DESC`
+         WHERE "userId" = ? AND "revokedAt" IS NULL
+           AND ("expiresAt" IS NULL OR datetime("expiresAt") > datetime('now'))
+         ORDER BY "lastSeenAt" DESC`
       )
       .all(userId) as SessionListItem[];
   },
@@ -247,7 +247,7 @@ export const userSessionsRepository = {
     expiresAt?: string;
   }): Promise<string> {
     await getAdapter().execute(
-      `INSERT INTO user_sessions (id, userId, ip, userAgent, deviceLabel, expiresAt)
+      `INSERT INTO user_sessions (id, "userId", ip, "userAgent", "deviceLabel", "expiresAt")
        VALUES (?, ?, ?, ?, ?, ?)`,
       [
         input.id,
@@ -264,9 +264,9 @@ export const userSessionsRepository = {
   async findByDeviceAsync(userId: string, deviceLabel: string): Promise<{ id: string } | undefined> {
     return getAdapter().queryOne<{ id: string }>(
       `SELECT id FROM user_sessions
-       WHERE userId = ? AND deviceLabel = ? AND revokedAt IS NULL
-         AND (expiresAt IS NULL OR datetime(expiresAt) > datetime('now'))
-       ORDER BY lastSeenAt DESC LIMIT 1`,
+       WHERE "userId" = ? AND "deviceLabel" = ? AND "revokedAt" IS NULL
+         AND ("expiresAt" IS NULL OR datetime("expiresAt") > datetime('now'))
+       ORDER BY "lastSeenAt" DESC LIMIT 1`,
       [userId, deviceLabel],
     );
   },
@@ -275,13 +275,13 @@ export const userSessionsRepository = {
     if (ip !== undefined && expiresAt !== undefined) {
       await getAdapter().execute(
         `UPDATE user_sessions
-         SET lastSeenAt = datetime('now'), ip = ?, expiresAt = ?
+         SET "lastSeenAt" = datetime('now'), ip = ?, "expiresAt" = ?
          WHERE id = ?`,
         [ip || "", expiresAt, sessionId],
       );
     } else {
       await getAdapter().execute(
-        "UPDATE user_sessions SET lastSeenAt = datetime('now') WHERE id = ?",
+        "UPDATE user_sessions SET "lastSeenAt" = datetime('now') WHERE id = ?",
         [sessionId],
       );
     }
@@ -289,14 +289,14 @@ export const userSessionsRepository = {
 
   async getByIdAndUserAsync(sessionId: string, userId: string): Promise<{ id: string; revokedAt: string | null } | undefined> {
     return getAdapter().queryOne<{ id: string; revokedAt: string | null }>(
-      "SELECT id, revokedAt FROM user_sessions WHERE id = ? AND userId = ?",
+      "SELECT id, "revokedAt" FROM user_sessions WHERE id = ? AND "userId" = ?",
       [sessionId, userId],
     );
   },
 
   async getByIdAsync(sessionId: string): Promise<{ id: string; userId: string; revokedAt: string | null } | undefined> {
     return getAdapter().queryOne<{ id: string; userId: string; revokedAt: string | null }>(
-      "SELECT id, userId, revokedAt FROM user_sessions WHERE id = ?",
+      "SELECT id, "userId", "revokedAt" FROM user_sessions WHERE id = ?",
       [sessionId],
     );
   },
@@ -308,19 +308,19 @@ export const userSessionsRepository = {
   async revokeAsync(sessionId: string, reason?: string): Promise<void> {
     await getAdapter().execute(
       `UPDATE user_sessions
-       SET revokedAt = datetime('now'), revokedReason = ?
-       WHERE id = ? AND revokedAt IS NULL`,
+       SET "revokedAt" = datetime('now'), "revokedReason" = ?
+       WHERE id = ? AND "revokedAt" IS NULL`,
       [reason || null, sessionId],
     );
   },
 
   async listActiveByUserAsync(userId: string): Promise<SessionListItem[]> {
     return getAdapter().queryMany<SessionListItem>(
-      `SELECT id, createdAt, lastSeenAt, expiresAt, ip, userAgent, deviceLabel
+      `SELECT id, "createdAt", "lastSeenAt", "expiresAt", ip, "userAgent", "deviceLabel"
        FROM user_sessions
-       WHERE userId = ? AND revokedAt IS NULL
-         AND (expiresAt IS NULL OR datetime(expiresAt) > datetime('now'))
-       ORDER BY lastSeenAt DESC`,
+       WHERE "userId" = ? AND "revokedAt" IS NULL
+         AND ("expiresAt" IS NULL OR datetime("expiresAt") > datetime('now'))
+       ORDER BY "lastSeenAt" DESC`,
       [userId],
     );
   },
@@ -332,8 +332,8 @@ export const userSessionsRepository = {
   async revokeAllOtherAsync(userId: string, currentSessionId: string): Promise<number> {
     const result = await getAdapter().execute(
       `UPDATE user_sessions
-       SET revokedAt = datetime('now'), revokedReason = 'user_bulk_revoked'
-       WHERE userId = ? AND revokedAt IS NULL AND id != ?`,
+       SET "revokedAt" = datetime('now'), "revokedReason" = 'user_bulk_revoked'
+       WHERE "userId" = ? AND "revokedAt" IS NULL AND id != ?`,
       [userId, currentSessionId],
     );
     return result.changes;
@@ -342,8 +342,8 @@ export const userSessionsRepository = {
   async revokeAllAsync(userId: string): Promise<number> {
     const result = await getAdapter().execute(
       `UPDATE user_sessions
-       SET revokedAt = datetime('now'), revokedReason = 'user_bulk_revoked'
-       WHERE userId = ? AND revokedAt IS NULL`,
+       SET "revokedAt" = datetime('now'), "revokedReason" = 'user_bulk_revoked'
+       WHERE "userId" = ? AND "revokedAt" IS NULL`,
       [userId],
     );
     return result.changes;
@@ -352,9 +352,9 @@ export const userSessionsRepository = {
   async cleanupExpiredAsync(userId: string): Promise<number> {
     const result = await getAdapter().execute(
       `DELETE FROM user_sessions
-       WHERE userId = ? AND (
-         revokedAt IS NOT NULL
-         OR (expiresAt IS NOT NULL AND datetime(expiresAt) <= datetime('now'))
+       WHERE "userId" = ? AND (
+         "revokedAt" IS NOT NULL
+         OR ("expiresAt" IS NOT NULL AND datetime("expiresAt") <= datetime('now'))
        )`,
       [userId],
     );

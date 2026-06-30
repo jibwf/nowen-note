@@ -175,3 +175,41 @@ test("replaceLinksForSourceAsync INSERT OR IGNORE deduplicates", async () => {
   assert.equal(links.length, 1);
   clean();
 });
+
+test("replaceLinksForSourceAsync DELETE + INSERT atomicity: rollback on INSERT failure", async () => {
+  clean();
+  seedBase();
+  // 1. Insert existing links
+  await noteLinksRepository.replaceLinksForSourceAsync(USER_ID, NOTE_1, [
+    { targetNoteId: NOTE_2, targetBlockId: null, linkType: "note", linkText: "old link", excerpt: null },
+  ]);
+  assert.equal(getLinks(NOTE_1).length, 1);
+
+  // 2. Create a trigger that forces INSERT to fail
+  getDb().exec(`
+    CREATE TEMP TRIGGER IF NOT EXISTS fail_insert_note_links
+    BEFORE INSERT ON note_links
+    WHEN NEW.linkText = 'FORCE_FAIL'
+    BEGIN
+      SELECT RAISE(ABORT, 'forced failure for atomicity test');
+    END;
+  `);
+
+  // 3. Attempt replaceLinksForSourceAsync with a link that triggers failure
+  await assert.rejects(
+    () => noteLinksRepository.replaceLinksForSourceAsync(USER_ID, NOTE_1, [
+      { targetNoteId: NOTE_3, targetBlockId: null, linkType: "note", linkText: "FORCE_FAIL", excerpt: null },
+    ]),
+    (err: Error) => err.message.includes("forced failure"),
+  );
+
+  // 4. Verify old links still exist (DELETE was rolled back)
+  const links = getLinks(NOTE_1);
+  assert.equal(links.length, 1, "old link should be preserved after rollback");
+  assert.equal(links[0].targetNoteId, NOTE_2);
+  assert.equal(links[0].linkText, "old link");
+
+  // Cleanup trigger
+  getDb().exec("DROP TRIGGER IF EXISTS fail_insert_note_links");
+  clean();
+});

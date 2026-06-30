@@ -50,16 +50,16 @@ export const notebookShareLinksRepository = {
     const db = getDb();
     return db
       .prepare(
-        `SELECT l.id, l.notebookId, l.role, l.enabled, l.expiresAt, l.createdAt,
+        `SELECT l.id, l."notebookId", l.role, l.enabled, l."expiresAt", l."createdAt",
                 nb.name, nb.icon, nb.color,
-                u.username AS ownerUsername, u.displayName AS ownerDisplayName
+                u.username AS "ownerUsername", u."displayName" AS "ownerDisplayName"
          FROM notebook_share_links l
-         JOIN notebooks nb ON nb.id = l.notebookId
-         JOIN users u ON u.id = nb.userId
+         JOIN notebooks nb ON nb.id = l."notebookId"
+         JOIN users u ON u.id = nb."userId"
          WHERE l.token = ?
            AND l.enabled = 1
-           AND nb.isDeleted = 0
-           AND (l.expiresAt IS NULL OR l.expiresAt > datetime('now'))`
+           AND nb."isDeleted" = 0
+           AND (l."expiresAt" IS NULL OR l."expiresAt" > datetime('now'))`
       )
       .get(token) as any;
   },
@@ -79,13 +79,13 @@ export const notebookShareLinksRepository = {
     const db = getDb();
     return db
       .prepare(
-        `SELECT l.notebookId, l.role, l.createdBy, nb.userId AS ownerId
+        `SELECT l."notebookId", l.role, l."createdBy", nb."userId" AS "ownerId"
          FROM notebook_share_links l
-         JOIN notebooks nb ON nb.id = l.notebookId
+         JOIN notebooks nb ON nb.id = l."notebookId"
          WHERE l.token = ?
            AND l.enabled = 1
-           AND nb.isDeleted = 0
-           AND (l.expiresAt IS NULL OR l.expiresAt > datetime('now'))`
+           AND nb."isDeleted" = 0
+           AND (l."expiresAt" IS NULL OR l."expiresAt" > datetime('now'))`
       )
       .get(token) as any;
   },
@@ -100,10 +100,10 @@ export const notebookShareLinksRepository = {
     const db = getDb();
     return db
       .prepare(
-        `SELECT id, notebookId, token, role, enabled, expiresAt, createdBy, createdAt, updatedAt
+        `SELECT id, "notebookId", token, role, enabled, "expiresAt", "createdBy", "createdAt", "updatedAt"
          FROM notebook_share_links
-         WHERE notebookId = ? AND enabled = 1
-         ORDER BY createdAt DESC
+         WHERE "notebookId" = ? AND enabled = 1
+         ORDER BY "createdAt" DESC
          LIMIT 1`
       )
       .get(notebookId) as NotebookShareLinkRecord | undefined;
@@ -118,8 +118,8 @@ export const notebookShareLinksRepository = {
     const db = getDb();
     db.prepare(
       `UPDATE notebook_share_links
-       SET enabled = 0, updatedAt = datetime('now')
-       WHERE notebookId = ? AND enabled = 1`
+       SET enabled = 0, "updatedAt" = datetime('now')
+       WHERE "notebookId" = ? AND enabled = 1`
     ).run(notebookId);
   },
 
@@ -138,7 +138,7 @@ export const notebookShareLinksRepository = {
   }): void {
     const db = getDb();
     db.prepare(
-      `INSERT INTO notebook_share_links (id, notebookId, token, role, enabled, expiresAt, createdBy)
+      `INSERT INTO notebook_share_links (id, "notebookId", token, role, enabled, "expiresAt", "createdBy")
        VALUES (?, ?, ?, ?, 1, ?, ?)`
     ).run(input.id, input.notebookId, input.token, input.role, input.expiresAt, input.createdBy);
   },
@@ -153,7 +153,7 @@ export const notebookShareLinksRepository = {
     const db = getDb();
     return db
       .prepare(
-        `SELECT id, notebookId, token, role, enabled, expiresAt, createdBy, createdAt, updatedAt
+        `SELECT id, "notebookId", token, role, enabled, "expiresAt", "createdBy", "createdAt", "updatedAt"
          FROM notebook_share_links
          WHERE id = ?`
       )
@@ -184,13 +184,13 @@ export const notebookShareLinksRepository = {
       params.push(input.enabled);
     }
     if (input.expiresAt !== undefined) {
-      updates.push("expiresAt = ?");
+      updates.push("\"expiresAt\" = ?");
       params.push(input.expiresAt);
     }
 
     if (updates.length === 0) return;
 
-    updates.push("updatedAt = datetime('now')");
+    updates.push("\"updatedAt\" = datetime('now')");
     params.push(linkId);
 
     db.prepare(`UPDATE notebook_share_links SET ${updates.join(", ")} WHERE id = ?`).run(...params);
@@ -201,16 +201,16 @@ export const notebookShareLinksRepository = {
     name: string; icon: string; color: string; ownerUsername: string; ownerDisplayName: string | null;
   } | undefined> {
     return getAdapter().queryOne(
-      `SELECT l.id, l.notebookId, l.role, l.enabled, l.expiresAt, l.createdAt,
+      `SELECT l.id, l."notebookId", l.role, l.enabled, l."expiresAt", l."createdAt",
               nb.name, nb.icon, nb.color,
-              u.username AS ownerUsername, u.displayName AS ownerDisplayName
+              u.username AS "ownerUsername", u."displayName" AS "ownerDisplayName"
        FROM notebook_share_links l
-       JOIN notebooks nb ON nb.id = l.notebookId
-       JOIN users u ON u.id = nb.userId
+       JOIN notebooks nb ON nb.id = l."notebookId"
+       JOIN users u ON u.id = nb."userId"
        WHERE l.token = ?
          AND l.enabled = 1
-         AND nb.isDeleted = 0
-         AND (l.expiresAt IS NULL OR l.expiresAt > datetime('now'))`,
+         AND nb."isDeleted" = 0
+         AND (l."expiresAt" IS NULL OR l."expiresAt" > datetime('now'))`,
       [token],
     );
   },
@@ -219,23 +219,23 @@ export const notebookShareLinksRepository = {
     notebookId: string; role: string; createdBy: string; ownerId: string;
   } | undefined> {
     return getAdapter().queryOne(
-      `SELECT l.notebookId, l.role, l.createdBy, nb.userId AS ownerId
+      `SELECT l."notebookId", l.role, l."createdBy", nb."userId" AS "ownerId"
        FROM notebook_share_links l
-       JOIN notebooks nb ON nb.id = l.notebookId
+       JOIN notebooks nb ON nb.id = l."notebookId"
        WHERE l.token = ?
          AND l.enabled = 1
-         AND nb.isDeleted = 0
-         AND (l.expiresAt IS NULL OR l.expiresAt > datetime('now'))`,
+         AND nb."isDeleted" = 0
+         AND (l."expiresAt" IS NULL OR l."expiresAt" > datetime('now'))`,
       [token],
     );
   },
 
   async getLatestEnabledByNotebookAsync(notebookId: string): Promise<NotebookShareLinkRecord | undefined> {
     return getAdapter().queryOne<NotebookShareLinkRecord>(
-      `SELECT id, notebookId, token, role, enabled, expiresAt, createdBy, createdAt, updatedAt
+      `SELECT id, "notebookId", token, role, enabled, "expiresAt", "createdBy", "createdAt", "updatedAt"
        FROM notebook_share_links
-       WHERE notebookId = ? AND enabled = 1
-       ORDER BY createdAt DESC
+       WHERE "notebookId" = ? AND enabled = 1
+       ORDER BY "createdAt" DESC
        LIMIT 1`,
       [notebookId],
     );
@@ -244,15 +244,15 @@ export const notebookShareLinksRepository = {
   async disableAllByNotebookAsync(notebookId: string): Promise<void> {
     await getAdapter().execute(
       `UPDATE notebook_share_links
-       SET enabled = 0, updatedAt = datetime('now')
-       WHERE notebookId = ? AND enabled = 1`,
+       SET enabled = 0, "updatedAt" = datetime('now')
+       WHERE "notebookId" = ? AND enabled = 1`,
       [notebookId],
     );
   },
 
   async createAsync(input: { id: string; notebookId: string; token: string; role: string; expiresAt: string | null; createdBy: string }): Promise<void> {
     await getAdapter().execute(
-      `INSERT INTO notebook_share_links (id, notebookId, token, role, enabled, expiresAt, createdBy)
+      `INSERT INTO notebook_share_links (id, "notebookId", token, role, enabled, "expiresAt", "createdBy")
        VALUES (?, ?, ?, ?, 1, ?, ?)`,
       [input.id, input.notebookId, input.token, input.role, input.expiresAt, input.createdBy],
     );
@@ -260,7 +260,7 @@ export const notebookShareLinksRepository = {
 
   async getByIdAsync(linkId: string): Promise<NotebookShareLinkRecord | undefined> {
     return getAdapter().queryOne<NotebookShareLinkRecord>(
-      `SELECT id, notebookId, token, role, enabled, expiresAt, createdBy, createdAt, updatedAt
+      `SELECT id, "notebookId", token, role, enabled, "expiresAt", "createdBy", "createdAt", "updatedAt"
        FROM notebook_share_links WHERE id = ?`,
       [linkId],
     );
@@ -272,10 +272,10 @@ export const notebookShareLinksRepository = {
 
     if (input.role !== undefined) { updates.push("role = ?"); params.push(input.role); }
     if (input.enabled !== undefined) { updates.push("enabled = ?"); params.push(input.enabled); }
-    if (input.expiresAt !== undefined) { updates.push("expiresAt = ?"); params.push(input.expiresAt); }
+    if (input.expiresAt !== undefined) { updates.push("\"expiresAt\" = ?"); params.push(input.expiresAt); }
 
     if (updates.length === 0) return;
-    updates.push("updatedAt = datetime('now')");
+    updates.push("\"updatedAt\" = datetime('now')");
     params.push(linkId);
     await getAdapter().execute(`UPDATE notebook_share_links SET ${updates.join(", ")} WHERE id = ?`, params);
   },

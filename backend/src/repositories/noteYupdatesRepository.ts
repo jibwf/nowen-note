@@ -8,6 +8,11 @@
  */
 
 import { getDb } from "../db/schema";
+import { SqliteAdapter } from "../db/adapters";
+
+function getAdapter() {
+  return new SqliteAdapter(getDb());
+}
 
 export const noteYupdatesRepository = {
   /**
@@ -84,6 +89,50 @@ export const noteYupdatesRepository = {
   transferOwnership(fromUserId: string, toUserId: string): number {
     const db = getDb();
     const result = db.prepare("UPDATE note_yupdates SET userId = ? WHERE userId = ?").run(toUserId, fromUserId);
+    return result.changes;
+  },
+
+  async listAfterIdAsync(noteId: string, afterId: number): Promise<Array<{ id: number; update_blob: Buffer }>> {
+    return getAdapter().queryMany<{ id: number; update_blob: Buffer }>(
+      "SELECT id, update_blob FROM note_yupdates WHERE noteId = ? AND id > ? ORDER BY id ASC",
+      [noteId, afterId],
+    );
+  },
+
+  async createAsync(noteId: string, userId: string, update: Buffer): Promise<number> {
+    const result = await getAdapter().execute(
+      "INSERT INTO note_yupdates (noteId, userId, update_blob, clock) VALUES (?, ?, ?, ?)",
+      [noteId, userId, update, Date.now()],
+    );
+    return Number(result.lastInsertRowid);
+  },
+
+  async getMaxIdAsync(noteId: string): Promise<{ maxId: number | null } | undefined> {
+    return getAdapter().queryOne<{ maxId: number | null }>(
+      "SELECT MAX(id) as maxId FROM note_yupdates WHERE noteId = ?",
+      [noteId],
+    );
+  },
+
+  async deleteUpToAsync(noteId: string, maxId: number): Promise<void> {
+    await getAdapter().execute(
+      "DELETE FROM note_yupdates WHERE noteId = ? AND id <= ?",
+      [noteId, maxId],
+    );
+  },
+
+  async deleteByNoteIdAsync(noteId: string): Promise<void> {
+    await getAdapter().execute(
+      "DELETE FROM note_yupdates WHERE noteId = ?",
+      [noteId],
+    );
+  },
+
+  async transferOwnershipAsync(fromUserId: string, toUserId: string): Promise<number> {
+    const result = await getAdapter().execute(
+      "UPDATE note_yupdates SET userId = ? WHERE userId = ?",
+      [toUserId, fromUserId],
+    );
     return result.changes;
   },
 };

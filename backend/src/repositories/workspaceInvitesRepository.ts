@@ -8,6 +8,11 @@
  */
 
 import { getDb } from "../db/schema";
+import { SqliteAdapter } from "../db/adapters";
+
+function getAdapter() {
+  return new SqliteAdapter(getDb());
+}
 
 /** workspace_invites 记录 */
 export interface WorkspaceInviteRecord {
@@ -114,6 +119,65 @@ export const workspaceInvitesRepository = {
   transferOwnership(fromUserId: string, toUserId: string): number {
     const db = getDb();
     const result = db.prepare("UPDATE workspace_invites SET createdBy = ? WHERE createdBy = ?").run(toUserId, fromUserId);
+    return result.changes;
+  },
+
+  async getByIdAsync(inviteId: string): Promise<WorkspaceInviteRecord | undefined> {
+    return getAdapter().queryOne<WorkspaceInviteRecord>(
+      "SELECT * FROM workspace_invites WHERE id = ?",
+      [inviteId],
+    );
+  },
+
+  async listByWorkspaceAsync(workspaceId: string): Promise<WorkspaceInviteRecord[]> {
+    return getAdapter().queryMany<WorkspaceInviteRecord>(
+      "SELECT * FROM workspace_invites WHERE workspaceId = ? ORDER BY createdAt DESC",
+      [workspaceId],
+    );
+  },
+
+  async getByCodeAsync(code: string): Promise<WorkspaceInviteRecord | undefined> {
+    return getAdapter().queryOne<WorkspaceInviteRecord>(
+      "SELECT * FROM workspace_invites WHERE code = ?",
+      [code],
+    );
+  },
+
+  async createAsync(input: {
+    id: string;
+    workspaceId: string;
+    code: string;
+    role: string;
+    maxUses: number;
+    expiresAt: string | null;
+    createdBy: string;
+  }): Promise<void> {
+    await getAdapter().execute(
+      `INSERT INTO workspace_invites (id, workspaceId, code, role, maxUses, expiresAt, createdBy)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [input.id, input.workspaceId, input.code, input.role, input.maxUses, input.expiresAt, input.createdBy],
+    );
+  },
+
+  async deleteAsync(inviteId: string, workspaceId: string): Promise<void> {
+    await getAdapter().execute(
+      "DELETE FROM workspace_invites WHERE id = ? AND workspaceId = ?",
+      [inviteId, workspaceId],
+    );
+  },
+
+  async incrementUseCountAsync(inviteId: string): Promise<void> {
+    await getAdapter().execute(
+      "UPDATE workspace_invites SET useCount = useCount + 1 WHERE id = ?",
+      [inviteId],
+    );
+  },
+
+  async transferOwnershipAsync(fromUserId: string, toUserId: string): Promise<number> {
+    const result = await getAdapter().execute(
+      "UPDATE workspace_invites SET createdBy = ? WHERE createdBy = ?",
+      [toUserId, fromUserId],
+    );
     return result.changes;
   },
 };

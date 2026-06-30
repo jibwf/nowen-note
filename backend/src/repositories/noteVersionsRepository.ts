@@ -13,6 +13,11 @@
  */
 
 import { getDb } from "../db/schema";
+import { SqliteAdapter } from "../db/adapters";
+
+function getAdapter() {
+  return new SqliteAdapter(getDb());
+}
 
 /** note_versions 记录（列表视图，不含 content/contentText） */
 export interface NoteVersionListItem {
@@ -258,6 +263,140 @@ export const noteVersionsRepository = {
   transferOwnership(fromUserId: string, toUserId: string): number {
     const db = getDb();
     const result = db.prepare("UPDATE note_versions SET userId = ? WHERE userId = ?").run(toUserId, fromUserId);
+    return result.changes;
+  },
+
+  async listByNoteIdAsync(noteId: string, limit: number, offset: number): Promise<NoteVersionListItem[]> {
+    return getAdapter().queryMany<NoteVersionListItem>(
+      `SELECT nv.id, nv.noteId, nv.userId, nv.title, nv.version, nv.changeType, nv.changeSummary, nv.createdAt,
+              u.username
+       FROM note_versions nv
+       LEFT JOIN users u ON nv.userId = u.id
+       WHERE nv.noteId = ?
+       ORDER BY nv.version DESC
+       LIMIT ? OFFSET ?`,
+      [noteId, limit, offset],
+    );
+  },
+
+  async countByNoteIdAsync(noteId: string): Promise<number> {
+    const row = await getAdapter().queryOne<{ count: number }>(
+      "SELECT COUNT(*) as count FROM note_versions WHERE noteId = ?",
+      [noteId],
+    );
+    return row?.count ?? 0;
+  },
+
+  async getByIdAndNoteIdAsync(id: string, noteId: string): Promise<NoteVersionRecord | undefined> {
+    return getAdapter().queryOne<NoteVersionRecord>(
+      "SELECT * FROM note_versions WHERE id = ? AND noteId = ?",
+      [id, noteId],
+    );
+  },
+
+  async getLastEditByNoteIdAsync(noteId: string): Promise<{ createdAt: string } | undefined> {
+    return getAdapter().queryOne<{ createdAt: string }>(
+      `SELECT createdAt FROM note_versions
+       WHERE noteId = ? AND changeType = 'edit'
+       ORDER BY version DESC
+       LIMIT 1`,
+      [noteId],
+    );
+  },
+
+  async createAsync(input: {
+    id: string;
+    noteId: string;
+    userId: string;
+    title: string;
+    content: string;
+    contentText: string;
+    version: number;
+    changeType: 'edit' | 'guest_edit' | 'restore';
+    changeSummary?: string;
+    createdAt?: string;
+  }): Promise<void> {
+    const hasChangeSummary = input.changeSummary !== undefined;
+    const hasCreatedAt = input.createdAt !== undefined;
+
+    if (hasChangeSummary && hasCreatedAt) {
+      await getAdapter().execute(
+        `INSERT INTO note_versions (id, noteId, userId, title, content, contentText, version, changeType, changeSummary, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [input.id, input.noteId, input.userId, input.title, input.content, input.contentText, input.version, input.changeType, input.changeSummary, input.createdAt],
+      );
+    } else if (hasChangeSummary) {
+      await getAdapter().execute(
+        `INSERT INTO note_versions (id, noteId, userId, title, content, contentText, version, changeType, changeSummary)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [input.id, input.noteId, input.userId, input.title, input.content, input.contentText, input.version, input.changeType, input.changeSummary],
+      );
+    } else if (hasCreatedAt) {
+      await getAdapter().execute(
+        `INSERT INTO note_versions (id, noteId, userId, title, content, contentText, version, changeType, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [input.id, input.noteId, input.userId, input.title, input.content, input.contentText, input.version, input.changeType, input.createdAt],
+      );
+    } else {
+      await getAdapter().execute(
+        `INSERT INTO note_versions (id, noteId, userId, title, content, contentText, version, changeType)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [input.id, input.noteId, input.userId, input.title, input.content, input.contentText, input.version, input.changeType],
+      );
+    }
+  },
+
+  async deleteByNoteIdAsync(noteId: string): Promise<number> {
+    const result = await getAdapter().execute(
+      "DELETE FROM note_versions WHERE noteId = ?",
+      [noteId],
+    );
+    return result.changes;
+  },
+
+  async pruneOldVersionsAsync(keepRecent: number, keepDays: number): Promise<number> {
+    const cutoff = `datetime('now', '-${keepDays} days')`;
+    const result = await getAdapter().execute(
+      `DELETE FROM note_versions
+       WHERE changeType = 'edit'
+         AND createdAt < ${cutoff}
+         AND id NOT IN (
+           SELECT id FROM note_versions v2
+           WHERE v2.noteId = note_versions.noteId
+             AND v2.changeType = 'edit'
+           ORDER BY v2.version DESC
+           LIMIT ?
+         )`,
+      [keepRecent],
+    );
+    return result.changes;
+  },
+
+  async listByNoteIdsAsync(noteIds: string[]): Promise<NoteVersionRecord[]> {
+    if (noteIds.length === 0) return [];
+    const placeholders = noteIds.map(() => "?").join(",");
+    return getAdapter().queryMany<NoteVersionRecord>(
+      `SELECT id, noteId, userId, title, content, contentText, version,
+              changeType, changeSummary, createdAt
+       FROM note_versions
+       WHERE noteId IN (${placeholders})`,
+      noteIds,
+    );
+  },
+
+  async countByUserAsync(userId: string): Promise<number> {
+    const row = await getAdapter().queryOne<{ c: number }>(
+      "SELECT COUNT(*) as c FROM note_versions WHERE userId = ?",
+      [userId],
+    );
+    return row?.c ?? 0;
+  },
+
+  async transferOwnershipAsync(fromUserId: string, toUserId: string): Promise<number> {
+    const result = await getAdapter().execute(
+      "UPDATE note_versions SET userId = ? WHERE userId = ?",
+      [toUserId, fromUserId],
+    );
     return result.changes;
   },
 };

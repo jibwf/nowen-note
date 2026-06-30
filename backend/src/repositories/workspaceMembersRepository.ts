@@ -8,6 +8,11 @@
  */
 
 import { getDb } from "../db/schema";
+import { SqliteAdapter } from "../db/adapters";
+
+function getAdapter() {
+  return new SqliteAdapter(getDb());
+}
 
 export const workspaceMembersRepository = {
   /**
@@ -172,5 +177,102 @@ export const workspaceMembersRepository = {
       )
       .all(userId1, userId2) as { workspaceId: string }[];
     return rows.map((r) => r.workspaceId);
+  },
+
+  async countByWorkspaceAsync(workspaceId: string): Promise<number> {
+    const row = await getAdapter().queryOne<{ c: number }>(
+      "SELECT COUNT(*) as c FROM workspace_members WHERE workspaceId = ?",
+      [workspaceId],
+    );
+    return row?.c ?? 0;
+  },
+
+  async getRoleAsync(workspaceId: string, userId: string): Promise<{ role: string } | undefined> {
+    return getAdapter().queryOne<{ role: string }>(
+      "SELECT role FROM workspace_members WHERE workspaceId = ? AND userId = ?",
+      [workspaceId, userId],
+    );
+  },
+
+  async createAsync(workspaceId: string, userId: string, role: string): Promise<void> {
+    await getAdapter().execute(
+      "INSERT INTO workspace_members (workspaceId, userId, role) VALUES (?, ?, ?)",
+      [workspaceId, userId, role],
+    );
+  },
+
+  async updateRoleAsync(workspaceId: string, userId: string, role: string): Promise<void> {
+    await getAdapter().execute(
+      "UPDATE workspace_members SET role = ? WHERE workspaceId = ? AND userId = ?",
+      [role, workspaceId, userId],
+    );
+  },
+
+  async deleteAsync(workspaceId: string, userId: string): Promise<void> {
+    await getAdapter().execute(
+      "DELETE FROM workspace_members WHERE workspaceId = ? AND userId = ?",
+      [workspaceId, userId],
+    );
+  },
+
+  async countByUserAsync(userId: string): Promise<number> {
+    const row = await getAdapter().queryOne<{ c: number }>(
+      "SELECT COUNT(*) as c FROM workspace_members WHERE userId = ?",
+      [userId],
+    );
+    return row?.c ?? 0;
+  },
+
+  async listWorkspaceIdsByUserAsync(userId: string): Promise<string[]> {
+    const rows = await getAdapter().queryMany<{ workspaceId: string }>(
+      "SELECT workspaceId FROM workspace_members WHERE userId = ?",
+      [userId],
+    );
+    return rows.map((r) => r.workspaceId);
+  },
+
+  async transferOwnershipAsync(fromUserId: string, toUserId: string): Promise<number> {
+    const result = await getAdapter().execute(
+      "UPDATE workspace_members SET userId = ? WHERE userId = ?",
+      [toUserId, fromUserId],
+    );
+    return result.changes;
+  },
+
+  async listCommonWorkspacesAsync(userId1: string, userId2: string): Promise<string[]> {
+    const rows = await getAdapter().queryMany<{ workspaceId: string }>(
+      `SELECT workspaceId FROM workspace_members
+       WHERE userId = ? AND workspaceId IN (SELECT workspaceId FROM workspace_members WHERE userId = ?)`,
+      [userId1, userId2],
+    );
+    return rows.map((r) => r.workspaceId);
+  },
+
+  async listByWorkspaceWithUserAsync(workspaceId: string): Promise<Array<{
+    workspaceId: string;
+    userId: string;
+    role: string;
+    joinedAt: string;
+    username: string;
+    email: string | null;
+    avatarUrl: string | null;
+  }>> {
+    return getAdapter().queryMany<any>(
+      `SELECT m.workspaceId, m.userId, m.role, m.joinedAt,
+              u.username, u.email, u.avatarUrl
+       FROM workspace_members m
+       JOIN users u ON u.id = m.userId
+       WHERE m.workspaceId = ?
+       ORDER BY
+         CASE m.role
+           WHEN 'owner' THEN 1
+           WHEN 'admin' THEN 2
+           WHEN 'editor' THEN 3
+           WHEN 'commenter' THEN 4
+           WHEN 'viewer' THEN 5
+         END ASC,
+         m.joinedAt ASC`,
+      [workspaceId],
+    );
   },
 };

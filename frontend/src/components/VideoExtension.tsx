@@ -29,7 +29,7 @@ import {
   NodeViewWrapper,
   type ReactNodeViewProps,
 } from "@tiptap/react";
-import React from "react";
+import React, { useState } from "react";
 import { resolveAttachmentUrl } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
@@ -188,10 +188,53 @@ export function createVideoFileAttrs(input: VideoFileInput) {
   };
 }
 
+export function getVideoDisplayStyle(ratio: number | null): {
+  isPortrait: boolean;
+  wrapper: React.CSSProperties;
+  video: React.CSSProperties;
+} {
+  const safeRatio = typeof ratio === "number" && Number.isFinite(ratio) && ratio > 0 ? ratio : null;
+  const isPortrait = safeRatio !== null && safeRatio < 1;
+  const aspectRatio = safeRatio ? String(safeRatio) : "16 / 9";
+  const maxWidth = safeRatio === null
+    ? "min(480px, 100%)"
+    : isPortrait
+      ? "min(320px, 100%)"
+      : "min(640px, 100%)";
+  const width = safeRatio === null
+    ? "min(480px, 100%)"
+    : isPortrait
+      ? "min(320px, calc(100vw - 48px))"
+      : "min(640px, 100%)";
+
+  return {
+    isPortrait,
+    wrapper: {
+      width: "fit-content",
+      maxWidth,
+      margin: "12px auto",
+      borderRadius: 10,
+      overflow: "hidden",
+      background: "#000",
+    },
+    video: {
+      width,
+      maxWidth: "100%",
+      aspectRatio,
+      objectFit: "contain",
+      background: "#000",
+      display: "block",
+    },
+  };
+}
+
 const VideoNodeView: React.FC<ReactNodeViewProps> = ({ node, selected, deleteNode }) => {
   const src: string = node.attrs.src || "";
   const platform: VideoPlatform = node.attrs.platform || "unknown";
   const kind: VideoKind = node.attrs.kind || "iframe";
+  const [ratio, setRatio] = useState<number | null>(null);
+  const [hovered, setHovered] = useState(false);
+  const displayStyle = getVideoDisplayStyle(ratio);
   const displaySrc = kind === "file" ? resolveAttachmentUrl(src) : src;
   const filename: string = node.attrs.filename || "视频";
   const originalUrl: string = node.attrs.originalUrl || src;
@@ -211,12 +254,15 @@ const VideoNodeView: React.FC<ReactNodeViewProps> = ({ node, selected, deleteNod
       className="video-node-wrapper"
       data-video-platform={platform}
       data-selected={selected ? "true" : "false"}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
+        ...(kind === "file" ? displayStyle.wrapper : {}),
         position: "relative",
-        margin: "12px auto",
-        maxWidth: "720px",
+        margin: kind === "file" ? displayStyle.wrapper.margin : "12px auto",
+        maxWidth: kind === "file" ? displayStyle.wrapper.maxWidth : "720px",
         outline: selected ? "2px solid var(--color-accent-primary, #3b82f6)" : "none",
-        borderRadius: 8,
+        borderRadius: kind === "file" ? displayStyle.wrapper.borderRadius : 8,
         overflow: "hidden",
         background: "#000",
       }}
@@ -228,30 +274,30 @@ const VideoNodeView: React.FC<ReactNodeViewProps> = ({ node, selected, deleteNod
             controls
             playsInline
             preload="metadata"
-            style={{ width: "100%", display: "block", aspectRatio: "16 / 9", background: "#000" }}
+            onLoadedMetadata={(event) => {
+              const video = event.currentTarget;
+              if (video.videoWidth && video.videoHeight) {
+                setRatio(video.videoWidth / video.videoHeight);
+              }
+            }}
+            style={displayStyle.video}
           >
             您的浏览器不支持 video 标签。
           </video>
-          <div
-            contentEditable={false}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "8px 10px",
-              color: "#fff",
-              background: "rgba(0,0,0,.78)",
-              fontSize: 12,
-            }}
-          >
-            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {filename}
-            </span>
-            <button type="button" onClick={copyLink} style={videoToolbarButtonStyle}>复制链接</button>
-            <button type="button" onClick={() => window.open(openUrl, "_blank", "noopener,noreferrer")} style={videoToolbarButtonStyle}>打开</button>
-            <a href={downloadUrl} download={filename} style={videoToolbarButtonStyle}>下载</a>
-            <button type="button" onClick={deleteNode} style={videoToolbarDangerButtonStyle}>删除</button>
-          </div>
+          {(hovered || selected) && (
+            <div
+              contentEditable={false}
+              style={videoToolbarOverlayStyle}
+            >
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {filename}
+              </span>
+              <button type="button" onClick={copyLink} style={videoToolbarButtonStyle}>复制</button>
+              <button type="button" onClick={() => window.open(openUrl, "_blank", "noopener,noreferrer")} style={videoToolbarButtonStyle}>打开</button>
+              <a href={downloadUrl} download={filename} style={videoToolbarButtonStyle}>下载</a>
+              <button type="button" onClick={deleteNode} style={videoToolbarDangerButtonStyle}>删除</button>
+            </div>
+          )}
         </>
       ) : (
         <div style={{ position: "relative", width: "100%", aspectRatio: "16 / 9" }}>
@@ -573,16 +619,33 @@ export function isVideoNode(node: PMNode): boolean {
 const videoToolbarButtonStyle: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,.25)",
   borderRadius: 4,
-  padding: "2px 6px",
+  padding: "1px 6px",
   color: "#fff",
   background: "rgba(255,255,255,.08)",
   cursor: "pointer",
-  fontSize: 12,
+  fontSize: 11,
   textDecoration: "none",
+  lineHeight: "18px",
 };
 
 const videoToolbarDangerButtonStyle: React.CSSProperties = {
   ...videoToolbarButtonStyle,
   borderColor: "rgba(248,113,113,.55)",
   color: "#fecaca",
+};
+
+const videoToolbarOverlayStyle: React.CSSProperties = {
+  position: "absolute",
+  top: 6,
+  left: 6,
+  right: 6,
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "4px 6px",
+  color: "#fff",
+  background: "rgba(0,0,0,.62)",
+  borderRadius: 6,
+  fontSize: 11,
+  backdropFilter: "blur(6px)",
 };

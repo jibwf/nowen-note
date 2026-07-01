@@ -87,6 +87,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 type MindMapSelectionRect = { x: number; y: number; width: number; height: number };
+type ClientRectLike = { left: number; top: number; right: number; bottom: number };
 
 export function getNodeScreenRect(
   node: Pick<LayoutNode, "x" | "y" | "width" | "height">,
@@ -119,6 +120,47 @@ export function hitTestSelectionRect(
   return nodes
     .filter((node) => rectsIntersect(selectionRect, getNodeScreenRect(node, pan, zoom)))
     .map((node) => node.id);
+}
+
+export function createClientSelectionRect(
+  startClientX: number,
+  startClientY: number,
+  endClientX: number,
+  endClientY: number,
+): ClientRectLike {
+  return {
+    left: Math.min(startClientX, endClientX),
+    top: Math.min(startClientY, endClientY),
+    right: Math.max(startClientX, endClientX),
+    bottom: Math.max(startClientY, endClientY),
+  };
+}
+
+export function rectsIntersectClient(a: ClientRectLike, b: ClientRectLike): boolean {
+  return (
+    a.left <= b.right &&
+    a.right >= b.left &&
+    a.top <= b.bottom &&
+    a.bottom >= b.top
+  );
+}
+
+export function hitTestSelectionElements(
+  selectionClientRect: ClientRectLike,
+  elements: Array<Pick<HTMLElement, "dataset" | "getBoundingClientRect">>,
+): string[] {
+  return elements
+    .filter((el) => {
+      const rect = el.getBoundingClientRect();
+      return rectsIntersectClient(selectionClientRect, {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+      });
+    })
+    .map((el) => el.dataset.mindmapNodeId)
+    .filter(Boolean) as string[];
 }
 
 function getSubtreeHeight(node: LayoutNode): number {
@@ -375,15 +417,18 @@ const NodeBox = React.memo(function NodeBox({
     <g>
       <foreignObject x={node.x} y={node.y} width={node.width} height={node.height}>
         <div
+          data-mindmap-node-id={node.id}
           className={cn(
             "flex items-center h-full px-3 rounded-[12px] cursor-pointer select-none transition-all duration-150 ease-out text-sm font-medium whitespace-nowrap overflow-hidden",
-            isSelected && (MT.nodeSelectedRing + " shadow-sm"), isSearchMatch && "ring-2 ring-amber-400/70", isSearchActive && "ring-2 ring-amber-500 shadow-lg shadow-amber-500/20", isDragTarget && "ring-2 ring-emerald-500 bg-emerald-50/50 dark:bg-emerald-900/20"
+            isSearchMatch && "ring-2 ring-amber-400/70", isSearchActive && "ring-2 ring-amber-500 shadow-lg shadow-amber-500/20", isDragTarget && "ring-2 ring-emerald-500 bg-emerald-50/50 dark:bg-emerald-900/20"
           )}
           style={{
             background: isRoot ? (nodeData?.style?.bg || MT.rootBg) : (nodeData?.style?.bg || color.bg),
             color: isRoot ? (nodeData?.style?.color || MT.rootText) : (nodeData?.style?.color || color.text),
             border: `1px solid ${nodeData?.style?.border || color.border}`,
-            boxShadow: isRoot ? MT.rootShadow : MT.nodeShadow,
+            boxShadow: isSelected
+              ? "0 0 0 2px rgba(59,130,246,0.65), 0 4px 12px rgba(59,130,246,0.18)"
+              : isRoot ? MT.rootShadow : MT.nodeShadow,
             fontSize: isRoot ? 14 : 13,
             fontWeight: isRoot ? 700 : 500,
           }}
@@ -1864,9 +1909,11 @@ export default function MindMapCenter() {
     };
   }, [toCanvasPoint]);
 
-  const hitTestSelection = useCallback((rect: MindMapSelectionRect) => {
-    return hitTestSelectionRect(rect, layoutNodes, pan, zoom);
-  }, [layoutNodes, pan, zoom]);
+  const hitTestSelectionByDom = useCallback((selectionClientRect: ClientRectLike) => {
+    if (!canvasEl) return [];
+    const elements = Array.from(canvasEl.querySelectorAll<HTMLElement>("[data-mindmap-node-id]"));
+    return hitTestSelectionElements(selectionClientRect, elements);
+  }, [canvasEl]);
 
   const handleCanvasPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (e.pointerType === "touch") return;
@@ -1916,13 +1963,14 @@ export default function MindMapCenter() {
       return;
     }
 
-    const rect = createSelectionRect(pointer.startX, pointer.startY, e.clientX, e.clientY);
-    setSelectionRect(rect);
-    const ids = rect.width > 3 || rect.height > 3 ? hitTestSelection(rect) : [];
-    if (ids.length > 0 || rect.width > 3 || rect.height > 3) suppressCanvasClickRef.current = true;
+    const visualRect = createSelectionRect(pointer.startX, pointer.startY, e.clientX, e.clientY);
+    const clientRect = createClientSelectionRect(pointer.startX, pointer.startY, e.clientX, e.clientY);
+    setSelectionRect(visualRect);
+    const ids = visualRect.width > 3 || visualRect.height > 3 ? hitTestSelectionByDom(clientRect) : [];
+    if (ids.length > 0 || visualRect.width > 3 || visualRect.height > 3) suppressCanvasClickRef.current = true;
     setSelectedNodeIds(ids);
     setSelectedNodeId(ids[ids.length - 1] || null);
-  }, [createSelectionRect, hitTestSelection]);
+  }, [createSelectionRect, hitTestSelectionByDom]);
 
   const handleCanvasPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const pointer = pointerStateRef.current;
@@ -1942,9 +1990,10 @@ export default function MindMapCenter() {
       };
       applyViewport({ ...nextPan, zoom, userSet: true }, { userSet: true, persist: true });
     } else if (pointer.mode === "select") {
-      const rect = createSelectionRect(pointer.startX, pointer.startY, e.clientX, e.clientY);
-      const ids = rect.width > 3 || rect.height > 3 ? hitTestSelection(rect) : [];
-      if (rect.width > 3 || rect.height > 3) {
+      const visualRect = createSelectionRect(pointer.startX, pointer.startY, e.clientX, e.clientY);
+      const clientRect = createClientSelectionRect(pointer.startX, pointer.startY, e.clientX, e.clientY);
+      const ids = visualRect.width > 3 || visualRect.height > 3 ? hitTestSelectionByDom(clientRect) : [];
+      if (visualRect.width > 3 || visualRect.height > 3) {
         suppressCanvasClickRef.current = true;
         setSelectedNodeIds(ids);
         setSelectedNodeId(ids[ids.length - 1] || null);
@@ -1953,7 +2002,7 @@ export default function MindMapCenter() {
     }
 
     pointerStateRef.current = { mode: "none", pointerId: null, startX: 0, startY: 0, panX: 0, panY: 0 };
-  }, [applyViewport, createSelectionRect, hitTestSelection, zoom]);
+  }, [applyViewport, createSelectionRect, hitTestSelectionByDom, zoom]);
 
   // 列表右键菜单
   const [folderContextMenu, setFolderContextMenu] = useState<{ x: number; y: number; folderId: string; folderName: string } | null>(null);

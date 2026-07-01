@@ -14,9 +14,16 @@ describe("MindMapEditor UX guardrails", () => {
 
   it("keeps box selection and canonical selected node ids wired", () => {
     expect(source).toContain("selectionRect");
-    expect(source).toContain("hitTestSelection");
+    expect(source).toContain("hitTestSelectionByDom");
     expect(source).toContain("setSelectedNodeIds(ids)");
     expect(source).toContain("e.ctrlKey || e.metaKey || e.shiftKey");
+  });
+
+  it("uses real DOM rectangles for box selection hit testing", () => {
+    expect(source).toContain("data-mindmap-node-id");
+    expect(source).toContain("getBoundingClientRect");
+    expect(source).toContain("createClientSelectionRect(pointer.startX, pointer.startY, e.clientX, e.clientY)");
+    expect(source).toContain("hitTestSelectionByDom(clientRect)");
   });
 
   it("deletes multi-selected non-root nodes through one guarded path", () => {

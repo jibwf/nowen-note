@@ -72,6 +72,7 @@ import {
   COLOR_PRESETS,
   HIGHLIGHT_PRESETS,
 } from "@/components/FontSizeExtension";
+import { LineHeightExtension, LINE_HEIGHT_PRESETS } from "@/components/LineHeightExtension";
 import CodeBlockView from "@/components/CodeBlockView";
 import { SearchReplacePanel, createSearchReplaceExtension, searchReplacePluginKey } from "@/components/SearchReplacePanel";
 import { Video as VideoExtension, createVideoFileAttrs } from "@/components/VideoExtension";
@@ -1092,6 +1093,131 @@ function FontSizePopover({ editor, iconSize = 15, compact = false }: FontSizePop
   );
 }
 
+const LINE_HEIGHT_ATTR_TYPES = ["paragraph", "heading", "listItem", "taskItem", "blockquote", "tableCell", "tableHeader"];
+
+function getCurrentLineHeight(editor: any): string | null {
+  for (const type of LINE_HEIGHT_ATTR_TYPES) {
+    const value = editor.getAttributes(type)?.lineHeight;
+    if (value) return value;
+  }
+  return null;
+}
+
+interface LineHeightPopoverProps {
+  editor: any;
+  iconSize?: number;
+  compact?: boolean;
+}
+function LineHeightPopover({ editor, iconSize = 15, compact = false }: LineHeightPopoverProps) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const popRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const currentLineHeight = getCurrentLineHeight(editor);
+
+  useEffect(() => {
+    if (!open || !btnRef.current) return;
+    const update = () => {
+      const r = btnRef.current!.getBoundingClientRect();
+      const POP_W = 180;
+      let left = r.left;
+      if (left + POP_W > window.innerWidth - 8) left = window.innerWidth - POP_W - 8;
+      if (left < 8) left = 8;
+      setPos({ top: r.bottom + 4, left });
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onInteract = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (ref.current?.contains(target)) return;
+      if (popRef.current?.contains(target)) return;
+      if ((target as Element)?.closest?.('[data-popover]')) return;
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", onInteract, true);
+    return () => document.removeEventListener("mousedown", onInteract, true);
+  }, [open]);
+
+  const apply = (value: string) => {
+    editor.chain().focus().setLineHeight(value).run();
+    setOpen(false);
+  };
+  const clear = () => {
+    editor.chain().focus().unsetLineHeight().run();
+    setOpen(false);
+  };
+
+  const btnSize = compact ? 14 : iconSize;
+  const currentLabel = LINE_HEIGHT_PRESETS.find((preset) => preset.value === currentLineHeight)?.label;
+
+  return (
+    <div ref={ref} className="relative" onMouseDown={(e) => e.preventDefault()}>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        title={currentLineHeight ? `行距: ${currentLabel || currentLineHeight}` : "行距"}
+        className={cn(
+          "p-1.5 rounded-md transition-colors flex items-center gap-0.5",
+          currentLineHeight
+            ? "bg-accent-primary/20 text-accent-primary"
+            : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary",
+        )}
+      >
+        <Rows3 size={btnSize} />
+        <ChevronDown size={10} className="opacity-60" />
+      </button>
+      {open && createPortal(
+        <div
+          ref={popRef}
+          style={{ position: "fixed", top: pos.top, left: pos.left }}
+          className="z-[100] w-[180px] p-2 rounded-lg shadow-lg bg-app-elevated border border-app-border"
+          data-popover=""
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <div className="text-[11px] text-tx-tertiary px-1 pb-1">行距</div>
+          <div className="space-y-1">
+            {LINE_HEIGHT_PRESETS.map((preset) => (
+              <button
+                key={preset.key}
+                type="button"
+                onClick={() => apply(preset.value)}
+                className={cn(
+                  "w-full px-2 py-1.5 rounded text-left hover:bg-app-hover flex items-center justify-between gap-2",
+                  currentLineHeight === preset.value && "bg-accent-primary/15 text-accent-primary",
+                )}
+              >
+                <span className="text-[13px] font-medium leading-tight">{preset.label}</span>
+                <span className="text-[10px] text-tx-tertiary">{Number(preset.value).toFixed(1)}</span>
+              </button>
+            ))}
+          </div>
+          <div className="border-t border-app-border my-2" />
+          <button
+            type="button"
+            onClick={clear}
+            className="w-full px-2 py-1 text-xs rounded text-tx-secondary hover:bg-app-hover flex items-center gap-1"
+          >
+            <Eraser size={12} />
+            清除行距
+          </button>
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
 /**
  * 颜色 / 高亮选择器（双 Tab）
  * - 前景色：基于 TextStyle + Color 扩展（setColor / unsetColor）
@@ -1611,6 +1737,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         types: ['heading', 'paragraph'],
       }),
       IndentExtension,
+      LineHeightExtension,
       BlockIdExtension, // BLOCK-ID-01: heading blockId 稳定生成
 
       slashExtension.current,
@@ -3850,6 +3977,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
             背景色复用 Highlight multicolor，由 ColorPopover 的「背景」Tab 暴露。
             原先单独的 Highlighter 切换按钮被 ColorPopover 覆盖，移除以避免重复。 */}
         <FontSizePopover editor={editor} iconSize={iconSize} />
+        <LineHeightPopover editor={editor} iconSize={iconSize} />
         <ColorPopover editor={editor} iconSize={iconSize} />
         <ToolbarButton
           onClick={openLinkEditor}
@@ -4267,6 +4395,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
           </ToolbarButton>
           {/* 字号 + 颜色 / 背景色：选区气泡同步暴露，移动端常用 */}
           <FontSizePopover editor={editor} iconSize={14} compact />
+          <LineHeightPopover editor={editor} iconSize={14} compact />
           <ColorPopover editor={editor} iconSize={14} compact />
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleCode().run()}

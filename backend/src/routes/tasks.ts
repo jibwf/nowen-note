@@ -791,7 +791,7 @@ tasks.post("/batch", async (c) => {
 
       const completeIds = toComplete.map((t) => t.id);
       const cph = completeIds.map(() => "?").join(",");
-      db.prepare("UPDATE tasks SET isCompleted = 1, status = 'done', updatedAt = datetime(\"now\") WHERE id IN (" + cph + ")")
+      db.prepare("UPDATE tasks SET isCompleted = 1, status = 'done', updatedAt = datetime('now') WHERE id IN (" + cph + ")")
         .run(...completeIds);
 
       let generatedCount = 0;

@@ -205,6 +205,36 @@ test("restore creates a reversible snapshot of the current content", async () =>
   assert.equal(restoreB.json.version, 4);
 });
 
+test("restoring a rich text version keeps tiptap-json contentFormat", async () => {
+  seedNote("markdown");
+  const richTextContent = JSON.stringify({
+    type: "doc",
+    content: [{ type: "paragraph", content: [{ type: "text", text: "Rich text" }] }],
+  });
+  await noteVersionsRepository.createAsync({
+    id: "version-rich-text",
+    noteId: NOTE_ID,
+    userId: USER_ID,
+    title: "Rich text title",
+    content: richTextContent,
+    contentText: "Rich text",
+    contentFormat: "tiptap-json",
+    version: 1,
+    changeType: "edit",
+  });
+
+  const restoreRes = await requestJson("POST", `/shares/note/${NOTE_ID}/versions/version-rich-text/restore`);
+
+  assert.equal(restoreRes.status, 200);
+  assert.equal(restoreRes.json.contentFormat, "tiptap-json");
+  const row = db().prepare("SELECT title, content, contentText, contentFormat, version FROM notes WHERE id = ?").get(NOTE_ID) as any;
+  assert.equal(row.title, "Rich text title");
+  assert.equal(row.content, richTextContent);
+  assert.equal(row.contentText, "Rich text");
+  assert.equal(row.contentFormat, "tiptap-json");
+  assert.equal(row.version, 2);
+});
+
 test("shared content update requires version", async () => {
   seedNote();
   seedEditableShare();

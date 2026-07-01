@@ -170,6 +170,9 @@ taskCalendar.patch("/feed", async (c) => {
     defaultAlarmMinutes: body.defaultAlarmMinutes !== undefined ? (Number(body.defaultAlarmMinutes) || 30) : undefined,
   });
   const updated = taskCalendarFeedsRepository.getById(existing.id);
+  if (!updated) {
+    return c.json({ error: "Feed not found" }, 404);
+  }
   return c.json({
     feed: {
       id: updated.id,
@@ -208,6 +211,7 @@ taskCalendar.get("/feed/:token", (c) => {
   if (!feed.enabled) {
     return c.json({ error: "Feed disabled" }, 403);
   }
+  const db = getDb();
 
   // Update lastAccessedAt
   taskCalendarFeedsRepository.updateLastAccessedAt(feed.id);
@@ -358,6 +362,7 @@ taskCalendar.post("/export-targets/:id/export-now", async (c) => {
 export function buildIcsForToken(token: string): { body: string; feedId: string } | null {
   const feed = taskCalendarFeedsRepository.getEnabledByToken(token);
   if (!feed) return null;
+  const db = getDb();
 
   // Update lastAccessedAt（fire and forget）
   try {

@@ -505,8 +505,8 @@ app.post("/cleanup-orphans", (c) => {
       for (const r of rows) {
         if (r?.path) knownPaths.add(r.path);
       }
-      for (const r of taskRows) {
-        if (r?.path) knownPaths.add(r.path);
+      for (const p of taskRows) {
+        if (p) knownPaths.add(p);
       }
       // 递归扫描目录（兼容 YYYY/MM/uuid.ext 子目录结构）
       const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]+$/i;

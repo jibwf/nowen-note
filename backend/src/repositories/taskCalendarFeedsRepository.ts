@@ -18,6 +18,7 @@ function getAdapter() {
 export interface TaskCalendarFeedRecord {
   id: string;
   userId: string;
+  workspaceId: string | null;
   token: string;
   enabled: number;
   includeCompleted: number;

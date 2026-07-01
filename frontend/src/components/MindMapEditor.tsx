@@ -2,17 +2,18 @@
 import {
   BrainCircuit, Plus, Trash2, Edit2,
   ZoomIn, ZoomOut, Maximize2, Minimize2, Scan,
-  Loader2, Check, Map, Menu, PanelLeftClose, Image, FileImage, FileDown, MoreHorizontal,
+  Loader2, Check, Map as MapIcon, Menu, PanelLeftClose, Image, FileImage, FileDown, MoreHorizontal,
   User as UserIcon, Undo2, Redo2, PanelLeft, ChevronRight, ChevronDown, Link as LinkIcon, StickyNote, Palette, ExternalLink, FileText, ArrowDownToLine, Spline, Square, Pipette, Search as SearchIcon, ChevronUp, Star, Folder as FolderIcon, FolderPlus
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { api, getCurrentWorkspace } from "@/lib/api";
-import { MindMap, MindMapListItem, MindMapNode, MindMapData, MindMapRelation, MindMapBoundary } from "@/types";
+import { MindMap, MindMapListItem, MindMapNode, MindMapData, MindMapRelation, MindMapBoundary, MindMapViewport } from "@/types";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { useMindMapHistory } from "@/hooks/useMindMapHistory";
 import { buildXmindContent, buildZip, downloadBlob } from "@/lib/mindmapExport";
 import { markdownToMindMapData, mindMapDataToMarkdown } from "@/lib/mindmapTransform";
+import { computeLayoutBounds, fitMindMapToViewport, isValidViewport } from "@/lib/mindmapViewport";
 /* ===== macOS-style Mindmap Theme Tokens ===== */
 const MT = {
   canvasBg: "var(--mm-canvas-bg, #f5f5f7)",
@@ -79,6 +80,10 @@ function buildLayout(node: MindMapNode, depth: number, parent: LayoutNode | null
     ln.children = node.children.map((c) => buildLayout(c, depth + 1, ln));
   }
   return ln;
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && !!target.closest("input, textarea, [contenteditable='true']");
 }
 
 function getSubtreeHeight(node: LayoutNode): number {
@@ -264,7 +269,7 @@ function MarkerIcons({ markers }: { markers?: string[] }) {
 }
 
 /* ===== 连线组件 ===== */
-function Edge({ from, to }: { from: LayoutNode; to: LayoutNode }) {
+const Edge = React.memo(function Edge({ from, to }: { from: LayoutNode; to: LayoutNode }) {
   const toIsLeft = to.x + to.width < from.x;
   let x1: number, y1: number, x2: number, y2: number;
   if (toIsLeft) {
@@ -288,10 +293,10 @@ function Edge({ from, to }: { from: LayoutNode; to: LayoutNode }) {
       className=""
     />
   );
-}
+});
 
 /* ===== 节点组件 ===== */
-function NodeBox({
+const NodeBox = React.memo(function NodeBox({
   node, isSelected, isEditing, editValue,
   onSelect, onDoubleClick, onEditChange, onEditSubmit,
   onToggleCollapse, isMobile, onContextMenu, nodeData,
@@ -348,11 +353,12 @@ function NodeBox({
             fontWeight: isRoot ? 700 : 500,
           }}
           draggable={!!onDragStart}
+          onPointerDown={(e) => e.stopPropagation()}
           onDragStart={onDragStart}
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           onDrop={onDrop}
-          onClick={(e) => { e.stopPropagation(); onSelect(); }}
+          onClick={(e) => { e.stopPropagation(); onSelect(e); }}
           onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(); }}
           onContextMenu={onContextMenu}
           onTouchStart={(e) => {
@@ -422,7 +428,7 @@ function NodeBox({
 
     </g>
   );
-}
+});
 
 /* ===== 列表项组件 ===== */
 
@@ -787,12 +793,29 @@ export default function MindMapCenter() {
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 60, y: 0 });
+  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [selectionRect, setSelectionRect] = useState<null | { x: number; y: number; width: number; height: number }>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const mapDataRef = useRef<MindMapData | null>(null);
+  const activeMapRef = useRef<MindMap | null>(null);
+  const viewportSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingAutoFitMapIdRef = useRef<string | null>(null);
+  const viewportUserSetRef = useRef(false);
+  const panFrameRef = useRef<number | null>(null);
+  const suppressCanvasClickRef = useRef(false);
+  const pointerStateRef = useRef<{
+    mode: "none" | "pan" | "select";
+    pointerId: number | null;
+    startX: number;
+    startY: number;
+    panX: number;
+    panY: number;
+  }>({ mode: "none", pointerId: null, startX: 0, startY: 0, panX: 0, panY: 0 });
   // callback ref：画布挂载后保存 DOM，触发 useEffect 绑定 non-passive wheel listener
   const [canvasEl, setCanvasEl] = useState<HTMLDivElement | null>(null);
   const setCanvasNode = useCallback((node: HTMLDivElement | null) => {
@@ -917,6 +940,17 @@ export default function MindMapCenter() {
         const parsed = JSON.parse(map.data);
         setMapData(parsed);
         setLayoutMode(parsed.layout || "right");
+        if (parsed.viewport?.userSet && isValidViewport(parsed.viewport)) {
+          setPan({ x: parsed.viewport.x, y: parsed.viewport.y });
+          setZoom(parsed.viewport.zoom);
+          viewportUserSetRef.current = true;
+          pendingAutoFitMapIdRef.current = null;
+        } else {
+          setPan({ x: 0, y: 0 });
+          setZoom(1);
+          viewportUserSetRef.current = false;
+          pendingAutoFitMapIdRef.current = map.id;
+        }
         // Initialize history
         const entry: HistoryEntry = { data: JSON.parse(JSON.stringify(parsed)) };
         historyRef.current = { stack: [entry], idx: 0 };
@@ -924,12 +958,14 @@ export default function MindMapCenter() {
         setHistoryIndex(0);
       } catch {
         setMapData({ root: { id: "root", text: map.title, children: [] } });
+        setPan({ x: 0, y: 0 });
+        setZoom(1);
+        viewportUserSetRef.current = false;
+        pendingAutoFitMapIdRef.current = map.id;
       }
       setSelectedNodeId(null);
       setSelectedNodeIds([]);
       setEditingNodeId(null);
-      setZoom(1);
-      setPan({ x: 60, y: 0 });
     } catch (err) {
       console.error("Failed to load mindmap:", err);
     }
@@ -1054,6 +1090,15 @@ export default function MindMapCenter() {
     }, []
   );
 
+  const removeNodes = useCallback((root: MindMapNode, nodeIds: Set<string>): MindMapNode => {
+    return {
+      ...root,
+      children: root.children
+        .filter((child) => !nodeIds.has(child.id))
+        .map((child) => removeNodes(child, nodeIds)),
+    };
+  }, []);
+
   const findParentNode = useCallback(
     (root: MindMapNode, nodeId: string, parent: MindMapNode | null = null): MindMapNode | null => {
       if (root.id === nodeId) return parent;
@@ -1078,6 +1123,7 @@ export default function MindMapCenter() {
     const newData = { ...mapData, root: newRoot };
     setMapData(newData);
     setSelectedNodeId(newId);
+    setSelectedNodeIds([newId]);
     setEditingNodeId(newId);
     setEditValue(newNode.text);
     pushHistory(newData);
@@ -1107,6 +1153,7 @@ export default function MindMapCenter() {
     const newData = { ...mapData, root: newRoot };
     setMapData(newData);
     setSelectedNodeId(newId);
+    setSelectedNodeIds([newId]);
     setEditingNodeId(newId);
     setEditValue(newNode.text);
     pushHistory(newData);
@@ -1120,9 +1167,23 @@ export default function MindMapCenter() {
     const newData = { ...mapData, root: newRoot };
     setMapData(newData);
     setSelectedNodeId(null);
+    setSelectedNodeIds([]);
     pushHistory(newData);
     triggerSave(newData);
   }, [mapData, removeNode, triggerSave]);
+
+  const handleDeleteSelectedNodes = useCallback(() => {
+    if (!mapData) return;
+    const ids = new Set((selectedNodeIds.length > 0 ? selectedNodeIds : selectedNodeId ? [selectedNodeId] : []).filter((id) => id !== "root"));
+    if (ids.size === 0) return;
+    const newRoot = removeNodes(mapData.root, ids);
+    const newData = { ...mapData, root: newRoot };
+    setMapData(newData);
+    setSelectedNodeId(null);
+    setSelectedNodeIds([]);
+    pushHistory(newData);
+    triggerSave(newData);
+  }, [mapData, pushHistory, removeNodes, selectedNodeId, selectedNodeIds, triggerSave]);
 
   // 操作：编辑提交
   const handleEditSubmit = useCallback(() => {
@@ -1240,11 +1301,8 @@ export default function MindMapCenter() {
     toast.success(t("mindMap.relationCreated"));
   }, [drawingRelation, relationStart, mapData, pushHistory, triggerSave, t]);
 
-  // Boundary creation
-  const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
-
   const handleCreateBoundary = useCallback(() => {
-    if (!mapData || selectedNodes.size < 2) {
+    if (!mapData || selectedNodeIds.length < 2) {
       toast.error(t("mindMap.selectNodesFirst"));
       return;
     }
@@ -1253,16 +1311,15 @@ export default function MindMapCenter() {
     const color = colors[existing.length % colors.length];
     const boundary: MindMapBoundary = {
       id: "bnd_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
-      nodeIds: Array.from(selectedNodes),
+      nodeIds: selectedNodeIds,
       color,
     };
     const newData = { ...mapData, boundaries: [...existing, boundary] };
     setMapData(newData);
     pushHistory(newData);
     triggerSave(newData);
-    setSelectedNodes(new Set());
     toast.success(t("mindMap.boundaryCreated"));
-  }, [mapData, selectedNodes, pushHistory, triggerSave, t]);
+  }, [mapData, selectedNodeIds, pushHistory, triggerSave, t]);
   const handleSetColor = useCallback((style: { bg: string; color: string; border: string } | undefined) => {
     if (!mapData || !selectedNodeId) return;
     const newRoot = updateNode(mapData.root, selectedNodeId, (n) => ({ ...n, style: style || undefined }));
@@ -1357,10 +1414,41 @@ export default function MindMapCenter() {
     }
   }, [activeMap]);
 
+  const applyViewport = useCallback((viewport: MindMapViewport, options: { userSet?: boolean; persist?: boolean } = {}) => {
+    const next = { ...viewport, userSet: options.userSet ?? viewport.userSet };
+    viewportUserSetRef.current = !!next.userSet;
+    setPan({ x: next.x, y: next.y });
+    setZoom(next.zoom);
+    if (!options.persist) return;
+
+    if (viewportSaveTimerRef.current) clearTimeout(viewportSaveTimerRef.current);
+    viewportSaveTimerRef.current = setTimeout(() => {
+      const current = mapDataRef.current;
+      const currentMap = activeMapRef.current;
+      if (!current || !currentMap) return;
+      const nextData = { ...current, viewport: next };
+      mapDataRef.current = nextData;
+      setMapData(nextData);
+      triggerSave(nextData);
+    }, 700);
+  }, [triggerSave]);
+
   // 缩放
-  const handleZoomIn = () => setZoom((z) => Math.min(z + 0.15, 2.5));
-  const handleZoomOut = () => setZoom((z) => Math.max(z - 0.15, 0.3));
-  const handleZoomReset = () => { setZoom(1); setPan({ x: 60, y: 0 }); };
+  const zoomBy = useCallback((delta: number) => {
+    const centerX = canvasSize.width / 2;
+    const centerY = canvasSize.height / 2;
+    const newZoom = Math.max(0.3, Math.min(2.5, zoom + delta));
+    const scale = newZoom / zoom;
+    const nextPan = {
+      x: centerX - (centerX - pan.x) * scale,
+      y: centerY - (centerY - pan.y) * scale,
+    };
+    applyViewport({ ...nextPan, zoom: newZoom, userSet: true }, { userSet: true, persist: true });
+  }, [applyViewport, canvasSize.height, canvasSize.width, pan, zoom]);
+
+  const handleZoomIn = () => zoomBy(0.15);
+  const handleZoomOut = () => zoomBy(-0.15);
+  const handleZoomReset = () => fitCurrentMap({ userSet: true, persist: true });
 
   // 全屏时锁定 body 滚动 + Esc 退出
   useEffect(() => {
@@ -1380,22 +1468,6 @@ export default function MindMapCenter() {
     };
   }, [isFullscreen, editingNodeId]);
 
-  // 平移（鼠标）
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button === 1 || (e.button === 0 && e.target === canvasEl) || (e.button === 0 && e.target === svgRef.current)) {
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-    }
-  }, [pan, canvasEl]);
-
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (isPanning) {
-      setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
-    }
-  }, [isPanning, panStart]);
-
-  const handleMouseUp = useCallback(() => setIsPanning(false), []);
-
   // 滚轮缩放：画布挂载后用原生 addEventListener 绑定，确保 { passive: false } 使 preventDefault 生效
   useEffect(() => {
     if (!canvasEl) return;
@@ -1414,20 +1486,19 @@ export default function MindMapCenter() {
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
 
-      setZoom((z) => {
-        const newZoom = Math.max(0.3, Math.min(2.5, z + delta));
-        const scale = newZoom / z;
-        setPan((p) => ({
-          x: mouseX - (mouseX - p.x) * scale,
-          y: mouseY - (mouseY - p.y) * scale,
-        }));
-        return newZoom;
-      });
+      const newZoom = Math.max(0.3, Math.min(2.5, zoom + delta));
+      const scale = newZoom / zoom;
+      applyViewport({
+        x: mouseX - (mouseX - pan.x) * scale,
+        y: mouseY - (mouseY - pan.y) * scale,
+        zoom: newZoom,
+        userSet: true,
+      }, { userSet: true, persist: true });
     };
 
     canvasEl.addEventListener("wheel", onWheel, { passive: false });
     return () => canvasEl.removeEventListener("wheel", onWheel);
-  }, [canvasEl]);
+  }, [applyViewport, canvasEl, pan, zoom]);
 
   // 触摸手势（移动端）
   const touchRef = useRef<{ startX: number; startY: number; panX: number; panY: number; dist: number; zoom: number; isTap: boolean; tapTimer: ReturnType<typeof setTimeout> | null }>({
@@ -1546,6 +1617,7 @@ export default function MindMapCenter() {
     const newData = { ...mapData, root: newRoot };
     setMapData(newData);
     setSelectedNodeId(newNode.id);
+    setSelectedNodeIds([newNode.id]);
     pushHistory(newData);
     triggerSave(newData);
     if (clipboard.isCut) setClipboard(null);
@@ -1555,7 +1627,15 @@ export default function MindMapCenter() {
   // 键盘快捷键
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (isEditableTarget(e.target)) return;
       if (!mapData) return;
+      if (e.key === " ") setIsSpacePressed(true);
+      if (e.key === "Escape") {
+        setSelectedNodeIds([]);
+        setSelectedNodeId(null);
+        setSelectionRect(null);
+        return;
+      }
       // Undo: Ctrl+Z
       if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
         if (editingNodeId) return;
@@ -1567,44 +1647,53 @@ export default function MindMapCenter() {
         e.preventDefault(); handleRedo(); return;
       }
 
-      if (!selectedNodeId || editingNodeId) return;
+      if (editingNodeId) return;
+      const activeNodeId = selectedNodeIds.length === 1 ? selectedNodeIds[0] : selectedNodeId;
+      if ((e.key === "Delete" || e.key === "Backspace") && (selectedNodeIds.length > 0 || selectedNodeId)) {
+        e.preventDefault();
+        handleDeleteSelectedNodes();
+        return;
+      }
+      if (!activeNodeId) return;
 
 
       if (e.key === "Tab") {
         e.preventDefault();
-        handleAddChild(selectedNodeId);
-      } else if (e.key === "Delete" || e.key === "Backspace") {
-        if (selectedNodeId !== "root") {
-          e.preventDefault();
-          handleDeleteNode(selectedNodeId);
-        }
+        handleAddChild(activeNodeId);
       } else if (e.key === "Enter") {
         e.preventDefault();
-        handleAddSibling(selectedNodeId);
+        handleAddSibling(activeNodeId);
       } else if (e.key === "F2") {
         e.preventDefault();
-        const node = findNode(mapData.root, selectedNodeId);
+        const node = findNode(mapData.root, activeNodeId);
         if (node) {
-          setEditingNodeId(selectedNodeId);
+          setEditingNodeId(activeNodeId);
           setEditValue(node.text);
         }
       } else if (e.key === " ") {
         e.preventDefault();
-        handleToggleCollapse(selectedNodeId);
+        handleToggleCollapse(activeNodeId);
       } else if ((e.ctrlKey || e.metaKey) && e.key === "c") {
         e.preventDefault();
-        handleCopyNode(selectedNodeId);
+        if (selectedNodeIds.length <= 1) handleCopyNode(activeNodeId);
       } else if ((e.ctrlKey || e.metaKey) && e.key === "x") {
         e.preventDefault();
-        handleCutNode(selectedNodeId);
+        if (selectedNodeIds.length <= 1) handleCutNode(activeNodeId);
       } else if ((e.ctrlKey || e.metaKey) && e.key === "v") {
         e.preventDefault();
-        handlePasteNode();
+        if (selectedNodeIds.length <= 1) handlePasteNode();
       }
     };
+    const keyupHandler = (e: KeyboardEvent) => {
+      if (e.key === " ") setIsSpacePressed(false);
+    };
     window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [mapData, selectedNodeId, editingNodeId, handleAddChild, handleAddSibling, handleDeleteNode, handleToggleCollapse, findNode, findParentNode, handleCopyNode, handleCutNode, handlePasteNode]);
+    window.addEventListener("keyup", keyupHandler);
+    return () => {
+      window.removeEventListener("keydown", handler);
+      window.removeEventListener("keyup", keyupHandler);
+    };
+  }, [mapData, selectedNodeId, selectedNodeIds, editingNodeId, handleUndo, handleRedo, handleAddChild, handleAddSibling, handleDeleteSelectedNodes, handleToggleCollapse, findNode, handleCopyNode, handleCutNode, handlePasteNode]);
 
   // 构建布局
   const { layoutNodes, edges, viewBox, bounds } = useMemo(() => {
@@ -1655,22 +1744,186 @@ export default function MindMapCenter() {
     };
     collectEdges(root);
 
-    // 计算 viewBox 边界
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    all.forEach((n) => {
-      minX = Math.min(minX, n.x);
-      minY = Math.min(minY, n.y);
-      maxX = Math.max(maxX, n.x + n.width);
-      maxY = Math.max(maxY, n.y + n.height + 36);
-    });
     const pad = 80;
-    const vb = `${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`;
-    const bounds = { minX: minX - pad, minY: minY - pad, width: maxX - minX + pad * 2, height: maxY - minY + pad * 2 };
+    const rawBounds = computeLayoutBounds(all.map((n) => ({ x: n.x, y: n.y, width: n.width, height: n.height + 36 })), pad);
+    const viewBox = `${rawBounds.minX} ${rawBounds.minY} ${rawBounds.width} ${rawBounds.height}`;
+    const bounds = { minX: rawBounds.minX, minY: rawBounds.minY, width: rawBounds.width, height: rawBounds.height };
 
-    return { layoutNodes: all, edges: edgeList, viewBox: vb, bounds };
-  }, [mapData, layoutMode]);
+    return { layoutNodes: all, edges: edgeList, viewBox, bounds };
+  }, [focusedNodeId, mapData, layoutMode]);
+
+  const nodeById = useMemo(() => {
+    const map = new Map<string, MindMapNode>();
+    if (!mapData) return map;
+    const walk = (node: MindMapNode) => {
+      map.set(node.id, node);
+      node.children?.forEach(walk);
+    };
+    walk(mapData.root);
+    return map;
+  }, [mapData]);
 
   const [showMiniMap, setShowMiniMap] = useState(!isMobile);
+
+  useEffect(() => {
+    mapDataRef.current = mapData;
+  }, [mapData]);
+
+  useEffect(() => {
+    activeMapRef.current = activeMap;
+  }, [activeMap]);
+
+  useEffect(() => {
+    if (!canvasEl) return;
+    const updateSize = () => {
+      const rect = canvasEl.getBoundingClientRect();
+      setCanvasSize({ width: rect.width, height: rect.height });
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(canvasEl);
+    return () => observer.disconnect();
+  }, [canvasEl]);
+
+  const fitCurrentMap = useCallback((options: { userSet?: boolean; persist?: boolean } = {}) => {
+    if (layoutNodes.length === 0 || canvasSize.width <= 0 || canvasSize.height <= 0) return;
+    const viewport = fitMindMapToViewport(layoutNodes, canvasSize, {
+      padding: 120,
+      minZoom: 0.6,
+      maxZoom: 1,
+    });
+    applyViewport({ ...viewport, userSet: options.userSet ?? false }, { userSet: options.userSet ?? false, persist: options.persist });
+  }, [applyViewport, canvasSize, layoutNodes]);
+
+  useEffect(() => {
+    if (!activeMap?.id || pendingAutoFitMapIdRef.current !== activeMap.id) return;
+    if (layoutNodes.length === 0 || canvasSize.width <= 0 || canvasSize.height <= 0) return;
+
+    const frame = requestAnimationFrame(() => {
+      fitCurrentMap({ userSet: false, persist: false });
+      pendingAutoFitMapIdRef.current = null;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeMap?.id, canvasSize, fitCurrentMap, layoutNodes]);
+
+  useEffect(() => {
+    if (!mapData || mapData.viewport?.userSet || viewportUserSetRef.current) return;
+    const frame = requestAnimationFrame(() => fitCurrentMap({ userSet: false, persist: false }));
+    return () => cancelAnimationFrame(frame);
+  }, [canvasSize.width, canvasSize.height, fitCurrentMap, isFullscreen, mapData?.viewport?.userSet, showOutline, sidebarOpen]);
+
+  const toCanvasPoint = useCallback((clientX: number, clientY: number) => {
+    const rect = canvasEl?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }, [canvasEl]);
+
+  const hitTestSelection = useCallback((rect: { x: number; y: number; width: number; height: number }) => {
+    const x1 = (rect.x - pan.x) / zoom;
+    const y1 = (rect.y - pan.y) / zoom;
+    const x2 = (rect.x + rect.width - pan.x) / zoom;
+    const y2 = (rect.y + rect.height - pan.y) / zoom;
+    const minX = Math.min(x1, x2);
+    const minY = Math.min(y1, y2);
+    const maxX = Math.max(x1, x2);
+    const maxY = Math.max(y1, y2);
+
+    return layoutNodes
+      .filter((node) => (
+        node.x <= maxX &&
+        node.x + node.width >= minX &&
+        node.y <= maxY &&
+        node.y + node.height >= minY
+      ))
+      .map((node) => node.id);
+  }, [layoutNodes, pan, zoom]);
+
+  const handleCanvasPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "touch") return;
+    if (editingNodeId) return;
+    if (e.button !== 0 && e.button !== 1) return;
+    const target = e.target as HTMLElement;
+    if (target.closest("input, textarea, [contenteditable='true']")) return;
+
+    const point = toCanvasPoint(e.clientX, e.clientY);
+    const shouldPan = e.button === 1 || isSpacePressed;
+    pointerStateRef.current = {
+      mode: shouldPan ? "pan" : "select",
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      panX: pan.x,
+      panY: pan.y,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+
+    if (shouldPan) {
+      setIsPanning(true);
+      setSelectionRect(null);
+      return;
+    }
+
+    setSelectedNodeIds([]);
+    setSelectedNodeId(null);
+    setSelectionRect({ x: point.x, y: point.y, width: 0, height: 0 });
+  }, [editingNodeId, isSpacePressed, pan, toCanvasPoint]);
+
+  const handleCanvasPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const pointer = pointerStateRef.current;
+    if (pointer.pointerId !== e.pointerId || pointer.mode === "none") return;
+
+    if (pointer.mode === "pan") {
+      const nextPan = {
+        x: pointer.panX + e.clientX - pointer.startX,
+        y: pointer.panY + e.clientY - pointer.startY,
+      };
+      if (panFrameRef.current !== null) cancelAnimationFrame(panFrameRef.current);
+      panFrameRef.current = requestAnimationFrame(() => {
+        setPan(nextPan);
+        panFrameRef.current = null;
+      });
+      return;
+    }
+
+    const start = toCanvasPoint(pointer.startX, pointer.startY);
+    const current = toCanvasPoint(e.clientX, e.clientY);
+    const rect = {
+      x: Math.min(start.x, current.x),
+      y: Math.min(start.y, current.y),
+      width: Math.abs(current.x - start.x),
+      height: Math.abs(current.y - start.y),
+    };
+    setSelectionRect(rect);
+    const ids = rect.width > 3 || rect.height > 3 ? hitTestSelection(rect) : [];
+    if (ids.length > 0 || rect.width > 3 || rect.height > 3) suppressCanvasClickRef.current = true;
+    setSelectedNodeIds(ids);
+    setSelectedNodeId(ids[ids.length - 1] || null);
+  }, [hitTestSelection, toCanvasPoint]);
+
+  const handleCanvasPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const pointer = pointerStateRef.current;
+    if (pointer.pointerId !== e.pointerId) return;
+
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* pointer capture may already be released */
+    }
+
+    if (pointer.mode === "pan") {
+      setIsPanning(false);
+      const nextPan = {
+        x: pointer.panX + e.clientX - pointer.startX,
+        y: pointer.panY + e.clientY - pointer.startY,
+      };
+      applyViewport({ ...nextPan, zoom, userSet: true }, { userSet: true, persist: true });
+    } else if (pointer.mode === "select") {
+      setSelectionRect(null);
+    }
+
+    pointerStateRef.current = { mode: "none", pointerId: null, startX: 0, startY: 0, panX: 0, panY: 0 };
+  }, [applyViewport, zoom]);
 
   // 列表右键菜单
   const [folderContextMenu, setFolderContextMenu] = useState<{ x: number; y: number; folderId: string; folderName: string } | null>(null);
@@ -1942,14 +2195,6 @@ export default function MindMapCenter() {
     a.click();
     URL.revokeObjectURL(url);
   }, [listContextMenu, loadMapData, buildXmindContent]);
-
-  // 自动居中
-  useEffect(() => {
-    if (mapData && containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      setPan({ x: 60, y: rect.height / 2 - 40 });
-    }
-  }, [activeMap?.id]);
 
   return (
     <div className={cn(
@@ -2282,7 +2527,7 @@ export default function MindMapCenter() {
                   )}
                   title={t("mindMap.miniMap")}
                 >
-                  <Map size={16} />
+                  <MapIcon size={16} />
                 </button>
                 {drawingRelation && (
                   <span className="text-xs text-amber-500 animate-pulse ml-1">{t("mindMap.drawingRelation")}</span>
@@ -2364,31 +2609,37 @@ export default function MindMapCenter() {
                 style={{
                   backgroundImage: `radial-gradient(circle, var(--mm-canvas-dot, rgba(0,0,0,0.06)) 1px, transparent 1px)`,
                   backgroundSize: "20px 20px",
-                  transform: `translate(${pan.x}px, ${pan.y}px)`,
                   userSelect: "none",
                   touchAction: "none",
-                  cursor: "inherit",
+                  cursor: isPanning ? "grabbing" : isSpacePressed ? "grab" : "crosshair",
                 }}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
+                onPointerDown={handleCanvasPointerDown}
+                onPointerMove={handleCanvasPointerMove}
+                onPointerUp={handleCanvasPointerUp}
+                onPointerCancel={handleCanvasPointerUp}
 
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
-                onClick={(e) => { if (!e.ctrlKey && !e.metaKey) setSelectedNodeIds([]); setSelectedNodeId(null); setEditingNodeId(null); setDragNodeId(null); setDropTargetId(null); }}
+                onClick={(e) => {
+                  if (suppressCanvasClickRef.current) {
+                    suppressCanvasClickRef.current = false;
+                    return;
+                  }
+                  if (!e.ctrlKey && !e.metaKey) setSelectedNodeIds([]);
+                  setSelectedNodeId(null);
+                  setEditingNodeId(null);
+                  setDragNodeId(null);
+                  setDropTargetId(null);
+                }}
               >
                 <svg
                   ref={svgRef}
                   width="100%"
                   height="100%"
-                  viewBox={viewBox}
-                  style={{
-                    transform: `scale(${zoom})`,
-                    transformOrigin: "0 0",
-                  }}
+                  viewBox={`0 0 ${Math.max(1, canvasSize.width)} ${Math.max(1, canvasSize.height)}`}
                 >
+                <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
                 {/* Edges */}
                 {edges.map((e, i) => (
                   <Edge key={`${e.from.id}-${e.to.id}-${i}`} from={e.from} to={e.to} />
@@ -2466,7 +2717,19 @@ export default function MindMapCenter() {
                     isDragTarget={dropTargetId === n.id}
                     isEditing={editingNodeId === n.id}
                     editValue={editValue}
-                    onSelect={(e?: React.MouseEvent) => { if (drawingRelation) { handleRelationClick(n.id); return; } if (e && (e.ctrlKey || e.metaKey)) { setSelectedNodeIds((ids) => ids.includes(n.id) ? ids.filter((id) => id !== n.id) : [...ids, n.id]); setSelectedNodeId(n.id); } else { setSelectedNodeIds([n.id]); setSelectedNodeId(n.id); }}}
+                    onSelect={(e?: React.MouseEvent) => {
+                      if (drawingRelation) { handleRelationClick(n.id); return; }
+                      if (e && (e.ctrlKey || e.metaKey || e.shiftKey)) {
+                        setSelectedNodeIds((ids) => {
+                          const next = ids.includes(n.id) ? ids.filter((id) => id !== n.id) : [...ids, n.id];
+                          setSelectedNodeId(next[next.length - 1] || null);
+                          return next;
+                        });
+                      } else {
+                        setSelectedNodeIds([n.id]);
+                        setSelectedNodeId(n.id);
+                      }
+                    }}
                     onDoubleClick={() => {
                       setEditingNodeId(n.id);
                       setEditValue(n.text);
@@ -2476,32 +2739,39 @@ export default function MindMapCenter() {
                     onToggleCollapse={() => handleToggleCollapse(n.id)}
                     isMobile={isMobile}
                     onContextMenu={(e) => e.preventDefault()}
-                    markerIcons={<MarkerIcons markers={findNode(mapData.root, n.id)?.markers} />}
-                    nodeData={findNode(mapData.root, n.id) ?? undefined}
+                    markerIcons={<MarkerIcons markers={nodeById.get(n.id)?.markers} />}
+                    nodeData={nodeById.get(n.id)}
                   />
                 ))}
+                </g>
               </svg>
+
+                {selectionRect && (
+                  <div
+                    className="pointer-events-none absolute border border-blue-500/70 bg-blue-500/10 rounded-sm"
+                    style={{
+                      left: selectionRect.x,
+                      top: selectionRect.y,
+                      width: selectionRect.width,
+                      height: selectionRect.height,
+                    }}
+                  />
+                )}
 
                 {/* Floating toolbar: HTML absolute overlay */}
                 {(() => {
-                  if (!selectedNodeId || editingNodeId === selectedNodeId) return null;
-                  const node = layoutNodes.find(n => n.id === selectedNodeId);
+                  const toolbarNodeId = selectedNodeIds.length > 1 ? null : selectedNodeIds[0] || selectedNodeId;
+                  if (!toolbarNodeId || editingNodeId === toolbarNodeId) return null;
+                  const node = layoutNodes.find(n => n.id === toolbarNodeId);
                   if (!node) return null;
                   return (
                     <FloatingToolbar
                       position={(() => {
-                        const svg = svgRef.current;
                         const container = canvasEl;
-                        if (!svg || !container) return { x: 0, y: 0 };
-                        const point = svg.createSVGPoint();
-                        point.x = node.x + node.width / 2;
-                        point.y = node.y + node.height + 4;
-                        const ctm = svg.getScreenCTM();
-                        if (!ctm) return { x: 0, y: 0 };
-                        const screen = point.matrixTransform(ctm);
+                        if (!container) return { x: 0, y: 0 };
                         const rect = container.getBoundingClientRect();
-                        let x = screen.x - rect.left;
-                        let y = screen.y - rect.top;
+                        let x = pan.x + (node.x + node.width / 2) * zoom;
+                        let y = pan.y + (node.y + node.height + 4) * zoom;
                         const toolbarWidth = 320;
                         const toolbarHeight = 36;
                         const pad = 8;
@@ -2518,13 +2788,13 @@ export default function MindMapCenter() {
                       onSetLink={handleSetLink}
                       onSetNote={handleSetNote}
                       onSetColor={handleSetColor}
-                      currentStyle={findNode(mapData!.root, selectedNodeId)?.style}
+                      currentStyle={nodeById.get(toolbarNodeId)?.style}
                       onApplyTheme={handleApplyTheme}
-                      onStartRelation={() => { setDrawingRelation(true); setRelationStart(selectedNodeId); toast.success(t("mindMap.relationStart")); }}
+                      onStartRelation={() => { setDrawingRelation(true); setRelationStart(toolbarNodeId); toast.success(t("mindMap.relationStart")); }}
                       onCreateBoundary={handleCreateBoundary}
-                      onFocusNode={() => setFocusedNodeId(selectedNodeId)}
-                      onCopy={() => handleCopyNode(selectedNodeId)}
-                      onCut={() => handleCutNode(selectedNodeId)}
+                      onFocusNode={() => setFocusedNodeId(toolbarNodeId)}
+                      onCopy={() => handleCopyNode(toolbarNodeId)}
+                      onCut={() => handleCutNode(toolbarNodeId)}
                       onPaste={handlePasteNode}
                       t={t}
                     />
@@ -2550,12 +2820,14 @@ export default function MindMapCenter() {
                       const rect = svg.getBoundingClientRect();
                       const svgX = ((e.clientX - rect.left) / rect.width) * bounds.width + bounds.minX;
                       const svgY = ((e.clientY - rect.top) / rect.height) * bounds.height + bounds.minY;
-                      if (containerRef.current) {
-                        const cr = containerRef.current.getBoundingClientRect();
-                        setPan({
+                      if (canvasEl) {
+                        const cr = canvasEl.getBoundingClientRect();
+                        applyViewport({
                           x: cr.width / 2 - svgX * zoom,
                           y: cr.height / 2 - svgY * zoom,
-                        });
+                          zoom,
+                          userSet: true,
+                        }, { userSet: true, persist: true });
                       }
                     }}
                   >
@@ -2591,12 +2863,12 @@ export default function MindMapCenter() {
                       );
                     })}
                     {/* 视口指示框 */}
-                    {containerRef.current && (() => {
-                      const cr = containerRef.current!.getBoundingClientRect();
+                    {canvasEl && (() => {
+                      const cr = canvasEl.getBoundingClientRect();
                       const vpX = -pan.x / zoom;
-                      const vpY = (-pan.y + 40) / zoom;
+                      const vpY = -pan.y / zoom;
                       const vpW = cr.width / zoom;
-                      const vpH = (cr.height - 80) / zoom;
+                      const vpH = cr.height / zoom;
                       return (
                         <rect
                           x={vpX} y={vpY}

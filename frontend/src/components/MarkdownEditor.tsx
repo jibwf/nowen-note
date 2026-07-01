@@ -96,6 +96,7 @@ import {
   ExternalLink,
   Eye,
   Columns2,
+  Film,
 } from "lucide-react";
 import { MarkdownPreview } from "./MarkdownPreview";
 
@@ -109,6 +110,7 @@ import { cn } from "@/lib/utils";
 import { normalizeToMarkdown, markdownToPlainText } from "@/lib/contentFormat";
 import { api } from "@/lib/api";
 import { uploadAndInsertImage } from "@/lib/imageUploadService";
+import { isVideoFile, uploadMediaAttachment, type MediaUploadResult } from "@/lib/mediaUploadService";
 import type { NoteEditorHandle, NoteEditorHeading, NoteEditorProps } from "@/components/editors/types";
 import type { FormatMenuPayload } from "@/lib/desktopBridge";
 import {
@@ -322,6 +324,18 @@ function computeStats(text: string) {
   const cjkChars = (plain.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length;
   const words = englishWords + cjkChars;
   return { chars, charsNoSpace, words };
+}
+
+function escapeMarkdownTitle(title: string): string {
+  return title.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+}
+
+function encodeMarkdownUrl(url: string): string {
+  return url.replace(/\s/g, "%20").replace(/\)/g, "%29");
+}
+
+function buildMarkdownVideoSnippet(result: MediaUploadResult): string {
+  return `\n\n@[video](${encodeMarkdownUrl(result.previewUrl)} "${escapeMarkdownTitle(result.filename)}")\n\n`;
 }
 
 // ---------------------------------------------------------------------------
@@ -557,6 +571,54 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
     };
     input.click();
   }, [editable, insertImageFromFile]);
+
+  const insertVideoFromFile = useCallback((file: File, source: "editor" | "paste" | "drag-drop" = "editor") => {
+    const currentNote = noteRef.current;
+    if (!currentNote?.id) {
+      toast.error(tr("tiptap.attachmentUploadFailed") || "Attachment upload failed");
+      return;
+    }
+
+    toast.info(tr("tiptap.attachmentUploading") || "Uploading attachment...");
+    uploadMediaAttachment({
+      noteId: currentNote.id,
+      file,
+      source,
+    })
+      .then((result) => {
+        const v = viewRef.current;
+        if (!v) return;
+        replaceSelection(v, buildMarkdownVideoSnippet(result));
+        toast.success(tr("tiptap.attachmentUploaded") || "Attachment uploaded");
+      })
+      .catch((err: any) => {
+        console.error("Video upload failed:", err);
+        const msg = String(err?.message || "");
+        if (/���|max\s+\d+\s*MB/i.test(msg)) {
+          toast.error(tr("tiptap.attachmentTooLarge") || "File too large");
+        } else {
+          toast.error(tr("tiptap.attachmentUploadFailed") || "Attachment upload failed");
+        }
+      });
+  }, [tr]);
+
+  const triggerVideoPicker = useCallback(() => {
+    const view = viewRef.current;
+    if (!view || !editable) return;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "video/*";
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      if (!isVideoFile(file)) {
+        toast.error(tr("tiptap.videoUrlInvalid") || "Cannot recognize this video");
+        return;
+      }
+      insertVideoFromFile(file, "editor");
+    };
+    input.click();
+  }, [editable, insertVideoFromFile, tr]);
 
   /**
    * �����ʽ�����ϴ� �� �� Markdown ��ǰ��괦���룺
@@ -884,8 +946,21 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
         EditorView.domEventHandlers({
           paste(event) {
             if (!editable) return false;
-            // 1) ����ͼƬ����ͼճ����
+            // 1) 视频文件优先走 Markdown 视频语法
             const items = event.clipboardData?.items;
+            if (items) {
+              for (const item of items) {
+                if (item.type.startsWith("video/")) {
+                  const file = item.getAsFile();
+                  if (file) {
+                    event.preventDefault();
+                    insertVideoFromFile(file, "paste");
+                    return true;
+                  }
+                }
+              }
+            }
+            // 2) ����ͼƬ����ͼճ����
             if (items) {
               for (const item of items) {
                 if (item.type.startsWith("image/")) {
@@ -898,11 +973,19 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
                 }
               }
             }
-            // 2) ��ͼƬ�ļ�����Դ���������Ƶ��ļ����� ����
+            // 3) ��ͼƬ�ļ�����Դ���������Ƶ��ļ����� ����
             const files = Array.from(event.clipboardData?.files || []);
             if (files.length > 0) {
               event.preventDefault();
-              for (const f of files) insertAttachmentFromFile(f);
+              for (const f of files) {
+                if (isVideoFile(f)) {
+                  insertVideoFromFile(f, "paste");
+                } else if (f.type.startsWith("image/")) {
+                  insertImageFromFile(f);
+                } else {
+                  insertAttachmentFromFile(f);
+                }
+              }
               return true;
             }
             return false;
@@ -912,8 +995,15 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
             const files = event.dataTransfer?.files;
             if (!files || files.length === 0) return false;
             event.preventDefault();
+            const pos = viewRef.current?.posAtCoords({ x: event.clientX, y: event.clientY });
+            const v = viewRef.current;
+            if (v && typeof pos === "number") {
+              v.dispatch({ selection: { anchor: pos } });
+            }
             for (const f of Array.from(files)) {
-              if (f.type.startsWith("image/")) {
+              if (isVideoFile(f)) {
+                insertVideoFromFile(f, "drag-drop");
+              } else if (f.type.startsWith("image/")) {
                 insertImageFromFile(f);
               } else {
                 insertAttachmentFromFile(f);
@@ -1317,6 +1407,9 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
           </ToolbarButton>
           <ToolbarButton onClick={triggerImagePicker} title={tr("tiptap.insertImage") || "����ͼƬ"}>
             <ImagePlus size={iconSize} />
+          </ToolbarButton>
+          <ToolbarButton onClick={triggerVideoPicker} title={tr("tiptap.insertVideo") || "插入视频"}>
+            <Film size={iconSize} />
           </ToolbarButton>
           <ToolbarButton onClick={triggerAttachmentPicker} title={tr("tiptap.insertAttachment") || "���븽��"}>
             <Paperclip size={iconSize} />

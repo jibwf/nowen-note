@@ -561,12 +561,20 @@ export interface MindMapBoundary {
   label?: string;
 }
 
+export interface MindMapViewport {
+  x: number;
+  y: number;
+  zoom: number;
+  userSet?: boolean;
+}
+
 export interface MindMapData {
   root: MindMapNode;
   layout?: "right" | "left-right";
   relations?: MindMapRelation[];
   boundaries?: MindMapBoundary[];
   theme?: string;
+  viewport?: MindMapViewport;
 }
 
 export interface MindMap {

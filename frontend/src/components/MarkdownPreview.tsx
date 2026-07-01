@@ -6,11 +6,13 @@
  * 不依赖 @tailwindcss/typography，直接为元素提供 nowen-note 风格样式。
  */
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
+import { preprocessMarkdownVideos } from "@/lib/markdownVideoSyntax";
+import { MarkdownVideoPreview } from "@/components/MarkdownVideoPreview";
 
 interface MarkdownPreviewProps {
   markdown: string;
@@ -58,6 +60,20 @@ function PreviewLink({ href, children }: { href?: string; children?: React.React
       {children}
     </a>
   );
+}
+
+function PreviewMediaImage({ src, alt }: { src?: string; alt?: string }) {
+  const normalizedAlt = alt || "";
+  if (normalizedAlt.startsWith("nowen-video:")) {
+    return (
+      <MarkdownVideoPreview
+        src={src || ""}
+        title={normalizedAlt.slice("nowen-video:".length)}
+      />
+    );
+  }
+
+  return <PreviewImage src={src} alt={alt} />;
 }
 
 /** 行内 code */
@@ -128,7 +144,7 @@ const components: Record<string, React.FC<any>> = {
 
   // 链接和图片
   a: PreviewLink,
-  img: PreviewImage,
+  img: PreviewMediaImage,
 
   // 代码
   code: ({ className, children, ...props }: any) => {
@@ -194,6 +210,7 @@ const components: Record<string, React.FC<any>> = {
 
 export function MarkdownPreview({ markdown, className, compact }: MarkdownPreviewProps) {
   const { t } = useTranslation();
+  const renderedMarkdown = useMemo(() => preprocessMarkdownVideos(markdown), [markdown]);
 
   if (!markdown || !markdown.trim()) {
     return (
@@ -212,7 +229,7 @@ export function MarkdownPreview({ markdown, className, compact }: MarkdownPrevie
       )}
     >
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {markdown}
+        {renderedMarkdown}
       </ReactMarkdown>
     </div>
   );

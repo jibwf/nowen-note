@@ -269,6 +269,7 @@ app.get("/api/settings", (c) => {
   for (const row of rows) {
     result[row.key] = row.value;
   }
+  c.header("Cache-Control", "no-store");
   return c.json(result);
 });
 

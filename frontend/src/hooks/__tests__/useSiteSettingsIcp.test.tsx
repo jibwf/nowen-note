@@ -76,7 +76,9 @@ describe("SiteSettingsProvider ICP 备案号", () => {
     });
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/settings");
+      expect(fetchMock).toHaveBeenCalledWith("/api/settings", expect.objectContaining({
+        cache: "no-store",
+      }));
     });
     expect(host.querySelector("[data-testid='icp']")?.textContent).toBe("empty");
 

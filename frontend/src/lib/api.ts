@@ -773,7 +773,7 @@ export const api = {
     feature_personal_export_enabled?: string;
     feature_personal_import_enabled?: string;
   }> => {
-    const res = await fetch(`${getBaseUrl()}/settings`);
+    const res = await fetch(`${getBaseUrl()}/settings`, { cache: "no-store" });
     if (!res.ok)
       return {
         site_title: "nowen-note",

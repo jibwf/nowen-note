@@ -5,6 +5,8 @@ import { api } from "@/lib/api";
 export interface SiteConfig {
   title: string;
   favicon: string;
+  /** ICP 备案号；为空时不展示底部备案信息。 */
+  icpBeian: string;
   editorFontFamily: string; // 空串=默认(Inter), 自定义字体 id, 或内置字体名
   // 注：v6 起，"个人空间导出/导入"不再是站点级全站开关；它已下沉为 users 表
   // 的 personalExportEnabled / personalImportEnabled 两列，由管理员在
@@ -15,6 +17,7 @@ export interface SiteConfig {
 const DEFAULT_CONFIG: SiteConfig = {
   title: "nowen-note",
   favicon: "",
+  icpBeian: "",
   editorFontFamily: "",
 };
 
@@ -33,7 +36,8 @@ export function getBuiltinFontName(font: typeof BUILTIN_FONTS[number]): string {
 
 interface SiteSettingsContextValue {
   siteConfig: SiteConfig;
-  updateSiteConfig: (title: string, favicon: string) => Promise<void>;
+  updateSiteConfig: (title: string, favicon: string, icpBeian?: string) => Promise<void>;
+  updateIcpBeian: (icpBeian: string) => Promise<void>;
   updateEditorFont: (fontId: string) => Promise<void>;
   isLoaded: boolean;
 }
@@ -41,6 +45,7 @@ interface SiteSettingsContextValue {
 const SiteSettingsContext = createContext<SiteSettingsContextValue>({
   siteConfig: DEFAULT_CONFIG,
   updateSiteConfig: async () => {},
+  updateIcpBeian: async () => {},
   updateEditorFont: async () => {},
   isLoaded: false,
 });
@@ -92,6 +97,34 @@ function applyToDOM(title: string, faviconUrl: string) {
   document.head.appendChild(apple);
 }
 
+function isNativeClientRuntime(): boolean {
+  try {
+    const w = window as any;
+    return !!w.nowenDesktop?.isDesktop
+      || !!w.Capacitor?.isNativePlatform?.()
+      || (!!w.Capacitor?.platform && w.Capacitor.platform !== "web");
+  } catch {
+    return false;
+  }
+}
+
+function applyIcpBeianToDOM(icpBeian: string) {
+  const footer = document.getElementById("beian-footer");
+  const link = document.getElementById("beian-link") as HTMLAnchorElement | null;
+  if (!footer || !link) return;
+
+  const text = String(icpBeian || "").trim();
+  if (!text || isNativeClientRuntime()) {
+    footer.classList.remove("is-visible");
+    link.textContent = "";
+    return;
+  }
+
+  link.textContent = text;
+  link.href = "https://beian.miit.gov.cn/";
+  footer.classList.add("is-visible");
+}
+
 function applyEditorFont(fontId: string, customFontName?: string) {
   const builtin = BUILTIN_FONTS.find(f => f.id === fontId);
   if (builtin) {
@@ -134,10 +167,12 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
       const config: SiteConfig = {
         title: data.site_title || "nowen-note",
         favicon: data.site_favicon || "",
+        icpBeian: (data as any).site_icp_beian || "",
         editorFontFamily: data.editor_font_family || "",
       };
       setSiteConfig(config);
       applyToDOM(config.title, config.favicon);
+      applyIcpBeianToDOM(config.icpBeian);
 
       // 加载自定义字体名
       if (config.editorFontFamily && !BUILTIN_FONTS.find(f => f.id === config.editorFontFamily)) {
@@ -155,24 +190,38 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
       setIsLoaded(true);
     }).catch(() => {
       applyToDOM(DEFAULT_CONFIG.title, DEFAULT_CONFIG.favicon);
+      applyIcpBeianToDOM("");
       applyEditorFont("");
       setIsLoaded(true);
     });
   }, []);
 
-  const updateSiteConfig = useCallback(async (title: string, favicon: string) => {
+  const updateSiteConfig = useCallback(async (title: string, favicon: string, icpBeian = siteConfig.icpBeian) => {
     const data = await api.updateSiteSettings({
       site_title: title,
       site_favicon: favicon,
-    });
+      site_icp_beian: icpBeian,
+    } as any);
     const config: SiteConfig = {
       title: data.site_title || "nowen-note",
       favicon: data.site_favicon || "",
+      icpBeian: (data as any).site_icp_beian || "",
       editorFontFamily: data.editor_font_family || siteConfig.editorFontFamily,
     };
     setSiteConfig(config);
     applyToDOM(config.title, config.favicon);
-  }, [siteConfig.editorFontFamily]);
+    applyIcpBeianToDOM(config.icpBeian);
+  }, [siteConfig.editorFontFamily, siteConfig.icpBeian]);
+
+  const updateIcpBeian = useCallback(async (icpBeian: string) => {
+    const data = await api.updateSiteSettings({ site_icp_beian: icpBeian } as any);
+    const next = (data as any).site_icp_beian || "";
+    setSiteConfig((prev) => {
+      const config = { ...prev, icpBeian: next };
+      applyIcpBeianToDOM(config.icpBeian);
+      return config;
+    });
+  }, []);
 
   const updateEditorFont = useCallback(async (fontId: string) => {
     const data = await api.updateSiteSettings({ editor_font_family: fontId });
@@ -197,7 +246,7 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
   }, [siteConfig]);
 
   return (
-    <SiteSettingsContext.Provider value={{ siteConfig, updateSiteConfig, updateEditorFont, isLoaded }}>
+    <SiteSettingsContext.Provider value={{ siteConfig, updateSiteConfig, updateIcpBeian, updateEditorFont, isLoaded }}>
       {children}
     </SiteSettingsContext.Provider>
   );

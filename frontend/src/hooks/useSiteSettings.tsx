@@ -97,84 +97,13 @@ function applyToDOM(title: string, faviconUrl: string) {
   document.head.appendChild(apple);
 }
 
-function isNativeClientRuntime(): boolean {
-  try {
-    const w = window as any;
-    return !!w.nowenDesktop?.isDesktop
-      || !!w.Capacitor?.isNativePlatform?.()
-      || (!!w.Capacitor?.platform && w.Capacitor.platform !== "web");
-  } catch {
-    return false;
-  }
-}
-
-function hasAuthToken(): boolean {
-  try {
-    return !!localStorage.getItem("nowen-token");
-  } catch {
-    return false;
-  }
-}
-
-function ensureIcpBeianFooter(): { footer: HTMLElement; link: HTMLAnchorElement } | null {
-  if (typeof document === "undefined") return null;
-
-  let footer = document.getElementById("beian-footer") as HTMLElement | null;
-  if (!footer) {
-    footer = document.createElement("footer");
-    footer.id = "beian-footer";
-    footer.className = "beian-footer";
-    footer.setAttribute("aria-label", "ICP备案信息");
-    document.body.appendChild(footer);
-  }
-
-  let link = document.getElementById("beian-link") as HTMLAnchorElement | null;
-  if (!link || !footer.contains(link)) {
-    link = document.createElement("a");
-    link.id = "beian-link";
-    footer.textContent = "";
-    footer.appendChild(link);
-  }
-
-  link.href = "https://beian.miit.gov.cn/";
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
-
-  // BEIAN-FOOTER-04：备案号只在未登录页展示。
-  // 用户反馈：登录成功后的主工作台不需要常驻底部备案号，且之前主界面展示会压在
-  // 空态区底部。这里仍复用 index.html 的 footer 节点，但显示条件改成：有备案号、
-  // 非原生客户端、且当前没有 nowen-token。登录成功写入 token 后会被下方轮询隐藏；
-  // 登出清 token 后会重新显示在登录页。
-  footer.style.position = "fixed";
-  footer.style.left = "max(12px, env(safe-area-inset-left))";
-  footer.style.right = "max(12px, env(safe-area-inset-right))";
-  footer.style.bottom = "max(8px, env(safe-area-inset-bottom))";
-  footer.style.zIndex = "2147483000";
-  footer.style.justifyContent = "center";
-  footer.style.pointerEvents = "none";
-  footer.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
-  link.style.pointerEvents = "auto";
-
-  return { footer, link };
-}
-
-function applyIcpBeianToDOM(icpBeian: string) {
-  const refs = ensureIcpBeianFooter();
-  if (!refs) return;
-  const { footer, link } = refs;
-
-  const text = String(icpBeian || "").trim();
-  if (!text || isNativeClientRuntime() || hasAuthToken()) {
-    footer.classList.remove("is-visible");
-    footer.style.display = "none";
-    link.textContent = "";
-    return;
-  }
-
-  link.textContent = text;
-  link.href = "https://beian.miit.gov.cn/";
-  footer.classList.add("is-visible");
-  footer.style.display = "flex";
+function hideStaticIcpBeianFooter() {
+  const footer = document.getElementById("beian-footer") as HTMLElement | null;
+  const link = document.getElementById("beian-link") as HTMLAnchorElement | null;
+  if (!footer) return;
+  footer.classList.remove("is-visible");
+  footer.style.display = "none";
+  if (link) link.textContent = "";
 }
 
 function applyEditorFont(fontId: string, customFontName?: string) {
@@ -224,7 +153,8 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
       };
       setSiteConfig(config);
       applyToDOM(config.title, config.favicon);
-      applyIcpBeianToDOM(config.icpBeian);
+      // 备案号由 LoginPage 根据数据库配置渲染；全局静态 footer 始终隐藏，避免登录后主工作台展示。
+      hideStaticIcpBeianFooter();
 
       // 加载自定义字体名
       if (config.editorFontFamily && !BUILTIN_FONTS.find(f => f.id === config.editorFontFamily)) {
@@ -242,7 +172,7 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
       setIsLoaded(true);
     }).catch(() => {
       applyToDOM(DEFAULT_CONFIG.title, DEFAULT_CONFIG.favicon);
-      applyIcpBeianToDOM("");
+      hideStaticIcpBeianFooter();
       applyEditorFont("");
       setIsLoaded(true);
     });
@@ -258,13 +188,6 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
     return () => window.removeEventListener(SERVER_URL_CHANGED_EVENT, handleServerUrlChanged);
   }, [loadSiteSettings]);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      applyIcpBeianToDOM(siteConfig.icpBeian);
-    }, 300);
-    return () => window.clearInterval(timer);
-  }, [siteConfig.icpBeian]);
-
   const updateSiteConfig = useCallback(async (title: string, favicon: string, icpBeian = siteConfig.icpBeian) => {
     const data = await api.updateSiteSettings({
       site_title: title,
@@ -279,18 +202,15 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
     };
     setSiteConfig(config);
     applyToDOM(config.title, config.favicon);
-    applyIcpBeianToDOM(config.icpBeian);
+    hideStaticIcpBeianFooter();
   }, [siteConfig.editorFontFamily, siteConfig.icpBeian]);
 
   const updateIcpBeian = useCallback(async (icpBeian: string) => {
     const submitted = icpBeian.trim();
     const data = await api.updateSiteSettings({ site_icp_beian: submitted } as any);
     const next = (data as any).site_icp_beian ?? submitted;
-    setSiteConfig((prev) => {
-      const config = { ...prev, icpBeian: next };
-      applyIcpBeianToDOM(config.icpBeian);
-      return config;
-    });
+    setSiteConfig((prev) => ({ ...prev, icpBeian: next }));
+    hideStaticIcpBeianFooter();
   }, []);
 
   const updateEditorFont = useCallback(async (fontId: string) => {

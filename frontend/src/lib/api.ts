@@ -19,6 +19,7 @@ import { normalizeServerBaseUrl as _normalizeBase } from "@/lib/serverUrl";
 
 // 服务器地址管理
 const SERVER_URL_KEY = "nowen-server-url";
+export const SERVER_URL_CHANGED_EVENT = "nowen:server-url-changed";
 
 // ========== 当前工作区（Phase 1 协作） ==========
 const WORKSPACE_KEY = "nowen-current-workspace";
@@ -107,6 +108,9 @@ export function setServerUrl(url: string) {
   const normalized = _normalizeBase(url);
   if (!normalized) return;
   try { localStorage.setItem(SERVER_URL_KEY, normalized); } catch { /* ignore */ }
+  try {
+    window.dispatchEvent(new CustomEvent(SERVER_URL_CHANGED_EVENT, { detail: { serverUrl: normalized } }));
+  } catch { /* ignore */ }
 }
 
 /**
@@ -114,6 +118,9 @@ export function setServerUrl(url: string) {
  */
 export function clearServerUrl() {
   try { localStorage.removeItem(SERVER_URL_KEY); } catch { /* ignore */ }
+  try {
+    window.dispatchEvent(new CustomEvent(SERVER_URL_CHANGED_EVENT, { detail: { serverUrl: "" } }));
+  } catch { /* ignore */ }
 }
 
 /**
@@ -760,6 +767,7 @@ export const api = {
   getSiteSettingsPublic: async (): Promise<{
     site_title: string;
     site_favicon: string;
+    site_icp_beian?: string;
     editor_font_family: string;
     // 功能开关（字符串 "true"/"false"，未写过时 DEFAULTS 保证为 "true"）
     feature_personal_export_enabled?: string;
@@ -770,6 +778,7 @@ export const api = {
       return {
         site_title: "nowen-note",
         site_favicon: "",
+        site_icp_beian: "",
         editor_font_family: "",
         feature_personal_export_enabled: "true",
         feature_personal_import_enabled: "true",
@@ -1640,6 +1649,7 @@ export const api = {
     request<{
       site_title: string;
       site_favicon: string;
+      site_icp_beian?: string;
       editor_font_family: string;
       feature_personal_export_enabled?: string;
       feature_personal_import_enabled?: string;
@@ -1650,6 +1660,7 @@ export const api = {
   updateSiteSettings: (data: {
     site_title?: string;
     site_favicon?: string;
+    site_icp_beian?: string;
     editor_font_family?: string;
     // 布尔值或 "true"/"false" 字符串；后端做归一化
     feature_personal_export_enabled?: boolean | string;
@@ -1661,6 +1672,7 @@ export const api = {
     request<{
       site_title: string;
       site_favicon: string;
+      site_icp_beian?: string;
       editor_font_family: string;
       feature_personal_export_enabled?: string;
       feature_personal_import_enabled?: string;

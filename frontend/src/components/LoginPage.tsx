@@ -250,6 +250,8 @@ export default function LoginPage({ onLogin, isClientMode = false, onDisconnect 
     const result = await testServerConnection(url);
     setServerStatus(result.ok ? "ok" : "fail");
     if (result.ok) {
+      setServerUrl(url);
+      localStorage.setItem("nowen-server-url-last", url);
       // 刷新注册开关
       fetchRegisterConfig(url).then((cfg) => setAllowRegistration(cfg.allowRegistration));
     }

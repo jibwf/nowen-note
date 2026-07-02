@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import i18n from "i18next";
-import { api } from "@/lib/api";
+import { api, SERVER_URL_CHANGED_EVENT } from "@/lib/api";
 
 export interface SiteConfig {
   title: string;
@@ -162,7 +162,7 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
   const [siteConfig, setSiteConfig] = useState<SiteConfig>(DEFAULT_CONFIG);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  useEffect(() => {
+  const loadSiteSettings = useCallback(() => {
     api.getSiteSettingsPublic().then(async (data) => {
       const config: SiteConfig = {
         title: data.site_title || "nowen-note",
@@ -195,6 +195,16 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
       setIsLoaded(true);
     });
   }, []);
+
+  useEffect(() => {
+    loadSiteSettings();
+
+    const handleServerUrlChanged = () => {
+      loadSiteSettings();
+    };
+    window.addEventListener(SERVER_URL_CHANGED_EVENT, handleServerUrlChanged);
+    return () => window.removeEventListener(SERVER_URL_CHANGED_EVENT, handleServerUrlChanged);
+  }, [loadSiteSettings]);
 
   const updateSiteConfig = useCallback(async (title: string, favicon: string, icpBeian = siteConfig.icpBeian) => {
     const data = await api.updateSiteSettings({

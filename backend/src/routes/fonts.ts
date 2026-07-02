@@ -44,7 +44,9 @@ fonts.post("/upload", async (c) => {
   // 统一为数组处理
   const fileList = Array.isArray(files) ? files : [files];
   const ALLOWED_EXT = [".otf", ".otc", ".ttc", ".ttf", ".woff", ".woff2"];
-  const MAX_SIZE = 20 * 1024 * 1024; // 单个文件 20MB
+  // 常用中文开源字体（如霞鹜文楷）体积通常超过 20MB，放宽到 50MB。
+  const MAX_SIZE_MB = 50;
+  const MAX_SIZE = MAX_SIZE_MB * 1024 * 1024;
 
   const results: any[] = [];
   const errors: string[] = [];
@@ -62,7 +64,7 @@ fonts.post("/upload", async (c) => {
     }
 
     if (file.size > MAX_SIZE) {
-      errors.push(`${file.name}: 文件过大 (最大 20MB)`);
+      errors.push(`${file.name}: 文件过大 (最大 ${MAX_SIZE_MB}MB)`);
       continue;
     }
 

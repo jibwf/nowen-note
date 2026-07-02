@@ -108,14 +108,57 @@ function isNativeClientRuntime(): boolean {
   }
 }
 
+function ensureIcpBeianFooter(): { footer: HTMLElement; link: HTMLAnchorElement } | null {
+  if (typeof document === "undefined") return null;
+
+  let footer = document.getElementById("beian-footer") as HTMLElement | null;
+  if (!footer) {
+    footer = document.createElement("footer");
+    footer.id = "beian-footer";
+    footer.className = "beian-footer";
+    footer.setAttribute("aria-label", "ICP备案信息");
+    document.body.appendChild(footer);
+  }
+
+  let link = document.getElementById("beian-link") as HTMLAnchorElement | null;
+  if (!link || !footer.contains(link)) {
+    link = document.createElement("a");
+    link.id = "beian-link";
+    footer.textContent = "";
+    footer.appendChild(link);
+  }
+
+  link.href = "https://beian.miit.gov.cn/";
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+
+  // BEIAN-FOOTER-03：备案号必须在登录前后都可见。
+  // 之前只依赖 index.html 的静态 footer，登录后主应用布局可能以更高层级覆盖它，
+  // 表现为“登录页能看到，登录成功后看不到”。这里由 SiteSettingsProvider 在运行时
+  // 统一托管，并给 footer 写入高层级 inline 样式，避免被 AppLayout / Modal / Toaster
+  // 等全屏层压住。为空或原生客户端时再显式隐藏。
+  footer.style.position = "fixed";
+  footer.style.left = "max(12px, env(safe-area-inset-left))";
+  footer.style.right = "max(12px, env(safe-area-inset-right))";
+  footer.style.bottom = "max(8px, env(safe-area-inset-bottom))";
+  footer.style.zIndex = "2147483000";
+  footer.style.justifyContent = "center";
+  footer.style.pointerEvents = "none";
+  footer.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
+  link.style.pointerEvents = "auto";
+
+  return { footer, link };
+}
+
 function applyIcpBeianToDOM(icpBeian: string) {
-  const footer = document.getElementById("beian-footer");
-  const link = document.getElementById("beian-link") as HTMLAnchorElement | null;
-  if (!footer || !link) return;
+  const refs = ensureIcpBeianFooter();
+  if (!refs) return;
+  const { footer, link } = refs;
 
   const text = String(icpBeian || "").trim();
   if (!text || isNativeClientRuntime()) {
     footer.classList.remove("is-visible");
+    footer.style.display = "none";
     link.textContent = "";
     return;
   }
@@ -123,6 +166,7 @@ function applyIcpBeianToDOM(icpBeian: string) {
   link.textContent = text;
   link.href = "https://beian.miit.gov.cn/";
   footer.classList.add("is-visible");
+  footer.style.display = "flex";
 }
 
 function applyEditorFont(fontId: string, customFontName?: string) {

@@ -1,7 +1,7 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SiteSettingsProvider } from "../useSiteSettings";
+import { SiteSettingsProvider, useSiteSettings } from "../useSiteSettings";
 import { setServerUrl } from "@/lib/api";
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -92,5 +92,65 @@ describe("SiteSettingsProvider ICP 备案号", () => {
       expect(document.getElementById("beian-link")?.textContent).toBe("粤ICP备12345678号-1");
     });
     expect(document.getElementById("beian-footer")?.classList.contains("is-visible")).toBe(true);
+  });
+
+  it("保存响应漏掉 site_icp_beian 时仍保留刚提交的备案号", async () => {
+    function SaveIcpButton() {
+      const { siteConfig, updateIcpBeian } = useSiteSettings();
+      return (
+        <button type="button" onClick={() => updateIcpBeian("粤ICP备888888888号-X")}>
+          {siteConfig.icpBeian || "empty"}
+        </button>
+      );
+    }
+
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === "PUT") {
+        return new Response(JSON.stringify({
+          site_title: "nowen-note",
+          site_favicon: "",
+          editor_font_family: "",
+          feature_personal_export_enabled: "true",
+          feature_personal_import_enabled: "true",
+          debug_files_query: "false",
+          web_ui_enabled: "true",
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({
+        site_title: "nowen-note",
+        site_favicon: "",
+        site_icp_beian: "",
+        editor_font_family: "",
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    await act(async () => {
+      root.render(
+        <SiteSettingsProvider>
+          <SaveIcpButton />
+        </SiteSettingsProvider>,
+      );
+    });
+
+    const button = host.querySelector("button")!;
+    await waitFor(() => {
+      expect(button.textContent).toBe("empty");
+    });
+
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitFor(() => {
+      expect(button.textContent).toBe("粤ICP备888888888号-X");
+    });
+    expect(document.getElementById("beian-link")?.textContent).toBe("粤ICP备888888888号-X");
   });
 });

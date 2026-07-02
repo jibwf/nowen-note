@@ -215,7 +215,7 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
     const config: SiteConfig = {
       title: data.site_title || "nowen-note",
       favicon: data.site_favicon || "",
-      icpBeian: (data as any).site_icp_beian || "",
+      icpBeian: (data as any).site_icp_beian ?? icpBeian,
       editorFontFamily: data.editor_font_family || siteConfig.editorFontFamily,
     };
     setSiteConfig(config);
@@ -224,8 +224,9 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
   }, [siteConfig.editorFontFamily, siteConfig.icpBeian]);
 
   const updateIcpBeian = useCallback(async (icpBeian: string) => {
-    const data = await api.updateSiteSettings({ site_icp_beian: icpBeian } as any);
-    const next = (data as any).site_icp_beian || "";
+    const submitted = icpBeian.trim();
+    const data = await api.updateSiteSettings({ site_icp_beian: submitted } as any);
+    const next = (data as any).site_icp_beian ?? submitted;
     setSiteConfig((prev) => {
       const config = { ...prev, icpBeian: next };
       applyIcpBeianToDOM(config.icpBeian);

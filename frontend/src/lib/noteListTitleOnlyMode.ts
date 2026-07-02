@@ -6,7 +6,6 @@ const BUTTON_ATTR = "data-note-list-title-only-toggle";
 const VIRTUAL_ITEM_HEIGHT = 90;
 const TITLE_ONLY_ITEM_HEIGHT = 38;
 let initialized = false;
-let rafId: number | null = null;
 
 function readEnabled(): boolean {
   try { return localStorage.getItem(STORAGE_KEY) === "true"; } catch { return false; }
@@ -24,9 +23,11 @@ function ensureStyle() {
     body.${BODY_CLASS} div:has(> .note-card-title) ~ * { display: none !important; }
     body.${BODY_CLASS} [class*="pl-3.5"][class*="py-2.5"]:has(.note-card-title) { padding-top: 6px !important; padding-bottom: 6px !important; }
     body.${BODY_CLASS} .note-card-title { font-size: 13px !important; line-height: 18px !important; }
-    button[${BUTTON_ATTR}="true"] { height: 26px; padding: 0 8px; border: 1px solid transparent; border-radius: 7px; font-size: 11px; line-height: 1; color: var(--color-text-tertiary, #71717a); background: transparent; cursor: pointer; transition: background-color .15s ease, color .15s ease, border-color .15s ease; }
+    button[${BUTTON_ATTR}="true"] { width: 26px; min-width: 26px; height: 26px; padding: 0; border: 1px solid transparent; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; font-size: 12px; line-height: 1; font-weight: 700; color: var(--color-text-tertiary, #71717a); background: transparent; cursor: pointer; white-space: nowrap; overflow: hidden; transition: background-color .15s ease, color .15s ease, border-color .15s ease; }
     button[${BUTTON_ATTR}="true"]:hover { color: var(--color-text-secondary, #52525b); background: var(--color-hover, rgba(148, 163, 184, .14)); }
     body.${BODY_CLASS} button[${BUTTON_ATTR}="true"] { color: var(--color-accent-primary, #2563eb); background: color-mix(in srgb, var(--color-accent-primary, #2563eb) 12%, transparent); border-color: color-mix(in srgb, var(--color-accent-primary, #2563eb) 24%, transparent); }
+    div:has(> button[${BUTTON_ATTR}="true"]) { flex-shrink: 0; }
+    div:has(> button[${BUTTON_ATTR}="true"]) > button { flex-shrink: 0; }
   `;
   document.head.appendChild(style);
 }
@@ -38,8 +39,9 @@ function applyBodyClass(enabled = readEnabled()) {
 function updateToggleLabels() {
   const enabled = readEnabled();
   document.querySelectorAll<HTMLButtonElement>(`button[${BUTTON_ATTR}="true"]`).forEach((btn) => {
-    btn.textContent = enabled ? "卡片" : "标题";
+    btn.textContent = "T";
     btn.title = enabled ? "切换为卡片列表" : "只显示笔记标题";
+    btn.setAttribute("aria-label", enabled ? "切换为卡片列表" : "只显示笔记标题");
     btn.setAttribute("aria-pressed", String(enabled));
   });
 }
@@ -117,17 +119,12 @@ export function initNoteListTitleOnlyMode() {
     ensureToolbarButtons();
     patchVirtualLists();
   };
-  const scheduleSync = () => {
-    if (rafId !== null) return;
-    rafId = window.requestAnimationFrame(() => {
-      rafId = null;
-      sync();
-    });
-  };
   sync();
-  new MutationObserver(scheduleSync).observe(document.body, {
+  new MutationObserver(sync).observe(document.body, {
     childList: true,
     subtree: true,
+    attributes: true,
+    attributeFilter: ["style", "title", "aria-label", "class"],
   });
   window.addEventListener("storage", (event) => {
     if (event.key !== STORAGE_KEY) return;
@@ -135,6 +132,7 @@ export function initNoteListTitleOnlyMode() {
     updateToggleLabels();
     patchVirtualLists();
   });
-  window.addEventListener("resize", scheduleSync);
-  document.addEventListener("scroll", scheduleSync, true);
+  window.addEventListener("resize", patchVirtualLists);
 }
+
+initNoteListTitleOnlyMode();

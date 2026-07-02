@@ -6,9 +6,15 @@ import { StatusBar, Style } from "@capacitor/status-bar";
 import { Keyboard } from "@capacitor/keyboard";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 
+const ENABLE_NATIVE_HAPTICS = false;
+
 /** 判断是否运行在原生平台（Android / iOS） */
 export function isNativePlatform(): boolean {
   return Capacitor.isNativePlatform();
+}
+
+function shouldUseNativeHaptics(): boolean {
+  return ENABLE_NATIVE_HAPTICS && isNativePlatform();
 }
 /** 检测是否在鸿蒙 ArkWeb WebView 环境中 */
 function isHarmonyWebView(): boolean {
@@ -285,48 +291,48 @@ export function useKeyboardLayout() {
 
 /**
  * P7: 触觉反馈工具函数
- * 在关键交互时提供震动反馈，提升操作手感
+ * 默认禁用原生震动，保留统一 API 形状供调用方复用
  */
 export const haptic = {
   /** 轻触反馈 - 用于普通点击操作（切换收藏、置顶等） */
   light: () => {
-    if (!isNativePlatform()) return;
+    if (!shouldUseNativeHaptics()) return;
     Haptics.impact({ style: ImpactStyle.Light }).catch(() => {});
   },
 
   /** 中等反馈 - 用于重要操作（删除、移动笔记等） */
   medium: () => {
-    if (!isNativePlatform()) return;
+    if (!shouldUseNativeHaptics()) return;
     Haptics.impact({ style: ImpactStyle.Medium }).catch(() => {});
   },
 
   /** 重度反馈 - 用于危险操作确认（永久删除等） */
   heavy: () => {
-    if (!isNativePlatform()) return;
+    if (!shouldUseNativeHaptics()) return;
     Haptics.impact({ style: ImpactStyle.Heavy }).catch(() => {});
   },
 
   /** 成功通知 - 用于操作成功（保存完成、同步成功等） */
   success: () => {
-    if (!isNativePlatform()) return;
+    if (!shouldUseNativeHaptics()) return;
     Haptics.notification({ type: NotificationType.Success }).catch(() => {});
   },
 
   /** 警告通知 - 用于提醒操作（双击返回退出提示等） */
   warning: () => {
-    if (!isNativePlatform()) return;
+    if (!shouldUseNativeHaptics()) return;
     Haptics.notification({ type: NotificationType.Warning }).catch(() => {});
   },
 
   /** 错误通知 - 用于操作失败（保存失败、网络错误等） */
   error: () => {
-    if (!isNativePlatform()) return;
+    if (!shouldUseNativeHaptics()) return;
     Haptics.notification({ type: NotificationType.Error }).catch(() => {});
   },
 
   /** 选择反馈 - 用于列表项选中、切换开关等 */
   selection: () => {
-    if (!isNativePlatform()) return;
+    if (!shouldUseNativeHaptics()) return;
     Haptics.selectionStart().catch(() => {});
     Haptics.selectionEnd().catch(() => {});
   },

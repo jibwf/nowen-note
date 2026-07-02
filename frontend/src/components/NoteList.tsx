@@ -815,7 +815,21 @@ function MiniCalendarFilter({
 }
 
 /* ===== P6: 下拉刷新组件 ===== */
-function PullToRefresh({
+function findPullRefreshScrollViewport(container: HTMLElement | null): HTMLElement | null {
+  if (!container) return null;
+  const explicitViewport =
+    container.querySelector<HTMLElement>("[data-radix-scroll-area-viewport]") ||
+    container.querySelector<HTMLElement>('[data-note-list-scroll-viewport="virtual"]');
+  if (explicitViewport) return explicitViewport;
+
+  const candidates = Array.from(container.querySelectorAll<HTMLElement>("*"));
+  return candidates.find((element) => {
+    const overflowY = window.getComputedStyle(element).overflowY;
+    return overflowY === "auto" || overflowY === "scroll";
+  }) || null;
+}
+
+export function PullToRefresh({
   onRefresh,
   children,
 }: {
@@ -835,7 +849,7 @@ function PullToRefresh({
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (refreshing) return;
-    const scrollContainer = containerRef.current?.querySelector("[data-radix-scroll-area-viewport]");
+    const scrollContainer = findPullRefreshScrollViewport(containerRef.current);
     isAtTop.current = !scrollContainer || scrollContainer.scrollTop <= 0;
     if (isAtTop.current) {
       touchStartY.current = e.touches[0].clientY;
@@ -850,16 +864,11 @@ function PullToRefresh({
       const dampedDistance = Math.min(MAX_PULL, deltaY * 0.45);
       setPullDistance(dampedDistance);
       setPulling(true);
-
-      // 达到阈值时触发触觉反馈
-      if (dampedDistance >= THRESHOLD && pullDistance < THRESHOLD) {
-        haptic.light();
-      }
     } else {
       setPulling(false);
       setPullDistance(0);
     }
-  }, [refreshing, pullDistance]);
+  }, [refreshing]);
 
   const handleTouchEnd = useCallback(async () => {
     if (!pulling) return;
@@ -867,12 +876,10 @@ function PullToRefresh({
     if (pullDistance >= THRESHOLD) {
       setRefreshing(true);
       setPullDistance(THRESHOLD * 0.6); // 刷新时保持一定偏移显示 loading
-      haptic.medium();
       try {
         await onRefresh();
-        haptic.success();
       } catch {
-        haptic.error();
+        // 刷新失败由调用方或后续同步兜底处理，这里只负责结束下拉状态。
       }
       setRefreshing(false);
     }
@@ -1219,6 +1226,7 @@ function VirtualNoteList({
   return (
     <div
       ref={containerRef}
+      data-note-list-scroll-viewport="virtual"
       className="flex-1 min-h-0 overflow-auto"
       onScroll={handleScroll}
     >
@@ -1429,6 +1437,12 @@ export default function NoteList() {
     fetchNotes().catch(console.error);
     // 追加依赖：notesRefreshToken 递增时强制刷新当前视图
   }, [fetchNotes, state.notesRefreshToken]);
+
+  const handlePullRefresh = useCallback(async () => {
+    await fetchNotes();
+    actions.refreshNotebooks();
+    api.getTags().then(actions.setTags).catch(() => {});
+  }, [actions, fetchNotes]);
 
   // ─── 日历徽章数据源 ──────────────────────────────────────────────
   // 单独维护一份**不带 dateFilter** 的笔记列表用于日历每日数量徽章。
@@ -3317,7 +3331,7 @@ export default function NoteList() {
               </p>
             </div>
           </div>
-        )}      <PullToRefresh onRefresh={fetchNotes}>
+        )}      <PullToRefresh onRefresh={handlePullRefresh}>
         {/* 笔记数量较少时使用普通渲染，较多时使用虚拟滚动 */}
         {sortedNotes.length > 100 ? (
           <VirtualNoteList

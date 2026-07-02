@@ -162,6 +162,7 @@ export class NowenApiClient {
     title?: string;
     content?: string;
     contentText?: string;
+    contentFormat?: "markdown" | "tiptap-json" | "html";
   }): Promise<any> {
     return this.request("/api/notes", { method: "POST", body: params });
   }
@@ -171,6 +172,7 @@ export class NowenApiClient {
     title?: string;
     content?: string;
     contentText?: string;
+    contentFormat?: "markdown" | "tiptap-json" | "html";
     notebookId?: string;
     isPinned?: number;
     isFavorite?: number;

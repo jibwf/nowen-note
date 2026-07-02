@@ -14,6 +14,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { NowenApiClient } from "./api-client.js";
+import {
+  CONTENT_FORMAT_VALUES,
+  buildCreateNotePayload,
+  buildReadNoteResult,
+  buildUpdateNotePayloadWithCurrentVersion,
+} from "./note-format.js";
 
 // ===== 从环境变量读取配置 =====
 const config = {
@@ -130,20 +136,7 @@ server.tool(
   async ({ noteId }) => {
     try {
       const note = await api.getNote(noteId);
-      // 提取纯文本内容供 AI 阅读
-      const result = {
-        id: note.id,
-        title: note.title,
-        notebookId: note.notebookId,
-        contentText: note.contentText,
-        isPinned: note.isPinned,
-        isFavorite: note.isFavorite,
-        isLocked: note.isLocked,
-        version: note.version,
-        tags: note.tags?.map((t: any) => ({ id: t.id, name: t.name })),
-        createdAt: note.createdAt,
-        updatedAt: note.updatedAt,
-      };
+      const result = buildReadNoteResult(note);
       return {
         content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
       };
@@ -160,19 +153,11 @@ server.tool(
     notebookId: z.string().describe("目标笔记本 ID"),
     title: z.string().optional().describe("笔记标题(默认为'无标题笔记')"),
     content: z.string().optional().describe("笔记内容（Markdown 纯文本）"),
+    contentFormat: z.enum(CONTENT_FORMAT_VALUES).optional().describe("内容格式，默认 markdown"),
   },
-  async ({ notebookId, title, content }) => {
+  async ({ notebookId, title, content, contentFormat }) => {
     try {
-      const body: any = { notebookId };
-      if (title) body.title = title;
-      if (content) {
-        // 将纯文本包装为 TipTap JSON 格式
-        body.content = JSON.stringify({
-          type: "doc",
-          content: [{ type: "paragraph", content: [{ type: "text", text: content }] }],
-        });
-        body.contentText = content;
-      }
+      const body = buildCreateNotePayload({ notebookId, title, content, contentFormat });
       const note = await api.createNote(body);
       return {
         content: [{ type: "text" as const, text: `笔记创建成功:\n${JSON.stringify({ id: note.id, title: note.title }, null, 2)}` }],
@@ -190,18 +175,11 @@ server.tool(
     noteId: z.string().describe("笔记 ID"),
     title: z.string().optional().describe("新标题"),
     content: z.string().optional().describe("新内容（Markdown 纯文本）"),
+    contentFormat: z.enum(CONTENT_FORMAT_VALUES).optional().describe("内容格式，默认 markdown"),
   },
-  async ({ noteId, title, content }) => {
+  async ({ noteId, title, content, contentFormat }) => {
     try {
-      const body: any = {};
-      if (title) body.title = title;
-      if (content) {
-        body.content = JSON.stringify({
-          type: "doc",
-          content: [{ type: "paragraph", content: [{ type: "text", text: content }] }],
-        });
-        body.contentText = content;
-      }
+      const body = await buildUpdateNotePayloadWithCurrentVersion(api, { noteId, title, content, contentFormat });
       const note = await api.updateNote(noteId, body);
       return {
         content: [{ type: "text" as const, text: `笔记更新成功:\n${JSON.stringify({ id: note.id, title: note.title, version: note.version }, null, 2)}` }],

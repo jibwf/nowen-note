@@ -1,10 +1,8 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { useTranslation } from "react-i18next";
-import { Check, Loader2, Save } from "lucide-react";
+import { Check } from "lucide-react";
 import { useSkin, type Skin } from "@/hooks/useSkin";
-import { useSiteSettings } from "@/hooks/useSiteSettings";
-import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type SkinDescriptor = {
@@ -50,14 +48,6 @@ const SKINS: SkinDescriptor[] = [
   },
 ];
 
-function IcpBeianSetting() {
-  void useSiteSettings;
-  void api;
-  void Loader2;
-  void Save;
-  return null;
-}
-
 export default function SkinSwitcher() {
   const { t } = useTranslation();
   const { skin, setSkin } = useSkin();
@@ -94,23 +84,11 @@ export default function SkinSwitcher() {
                   <span className="w-2 h-2 rounded-full" style={{ background: "#28C840" }} />
                 </div>
                 <div className="absolute left-[38%] right-3 top-3 space-y-1.5">
-                  <div
-                    className="h-1.5 w-2/3 rounded-full opacity-80"
-                    style={{ background: item.swatch.text }}
-                  />
-                  <div
-                    className="h-1.5 w-1/2 rounded-full opacity-40"
-                    style={{ background: item.swatch.text }}
-                  />
-                  <div
-                    className="h-1.5 w-3/4 rounded-full opacity-30"
-                    style={{ background: item.swatch.text }}
-                  />
+                  <div className="h-1.5 w-2/3 rounded-full opacity-80" style={{ background: item.swatch.text }} />
+                  <div className="h-1.5 w-1/2 rounded-full opacity-40" style={{ background: item.swatch.text }} />
+                  <div className="h-1.5 w-3/4 rounded-full opacity-30" style={{ background: item.swatch.text }} />
                 </div>
-                <div
-                  className="absolute right-3 bottom-3 h-3 w-6 rounded-md"
-                  style={{ background: item.swatch.accent }}
-                />
+                <div className="absolute right-3 bottom-3 h-3 w-6 rounded-md" style={{ background: item.swatch.accent }} />
               </div>
 
               <div className="flex items-start justify-between gap-2">
@@ -136,8 +114,6 @@ export default function SkinSwitcher() {
           );
         })}
       </div>
-
-      <IcpBeianSetting />
     </div>
   );
 }

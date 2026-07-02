@@ -1,5 +1,3 @@
-import "./noteListTitleOnlyMode";
-
 if (typeof Promise !== "undefined" && typeof Promise.allSettled !== "function") {
   Promise.allSettled = function allSettled<T>(
     values: Iterable<T | PromiseLike<T>>,

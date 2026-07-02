@@ -21,6 +21,7 @@ import { syncNow } from "@/lib/syncEngine"
 import { deleteNote as deleteLocalNote, getNote as getLocalNote, putNote as putLocalNote } from "@/lib/localStore"
 import { confirm } from "@/components/ui/confirm";
 import { highlightTextNode, sanitizeSearchHtml, stripSearchMarks } from "@/lib/searchHighlight";
+import { initNoteListTitleOnlyMode } from "@/lib/noteListTitleOnlyMode";
 // "导入 Word 文档" 走 dynamic import（见 createNoteInNotebook），减少首屏 bundle 体积。
 
 /* ===== 排序模式 ===== */
@@ -1266,6 +1267,10 @@ function VirtualNoteList({
 }
 
 export default function NoteList() {
+  useEffect(() => {
+    initNoteListTitleOnlyMode();
+  }, []);
+
   const { state } = useApp();
   const actions = useAppActions();
   const { menu, menuRef, openMenu, closeMenu } = useContextMenu();

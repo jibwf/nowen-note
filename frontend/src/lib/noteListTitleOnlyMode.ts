@@ -6,6 +6,7 @@ const BUTTON_ATTR = "data-note-list-title-only-toggle";
 const VIRTUAL_ITEM_HEIGHT = 90;
 const TITLE_ONLY_ITEM_HEIGHT = 38;
 let initialized = false;
+let rafId: number | null = null;
 
 function readEnabled(): boolean {
   try { return localStorage.getItem(STORAGE_KEY) === "true"; } catch { return false; }
@@ -116,12 +117,17 @@ export function initNoteListTitleOnlyMode() {
     ensureToolbarButtons();
     patchVirtualLists();
   };
+  const scheduleSync = () => {
+    if (rafId !== null) return;
+    rafId = window.requestAnimationFrame(() => {
+      rafId = null;
+      sync();
+    });
+  };
   sync();
-  new MutationObserver(sync).observe(document.body, {
+  new MutationObserver(scheduleSync).observe(document.body, {
     childList: true,
     subtree: true,
-    attributes: true,
-    attributeFilter: ["style", "title", "aria-label", "class"],
   });
   window.addEventListener("storage", (event) => {
     if (event.key !== STORAGE_KEY) return;
@@ -129,7 +135,6 @@ export function initNoteListTitleOnlyMode() {
     updateToggleLabels();
     patchVirtualLists();
   });
-  window.addEventListener("resize", patchVirtualLists);
+  window.addEventListener("resize", scheduleSync);
+  document.addEventListener("scroll", scheduleSync, true);
 }
-
-initNoteListTitleOnlyMode();

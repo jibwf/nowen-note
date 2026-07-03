@@ -88,8 +88,8 @@ DO_TAR=0               # --tar，仅在 build-only + arm64 下
 TAR_OUT="$DEFAULT_TAR_OUT"
 DO_PUSH_CUSTOM=0       # --push，仅在 build-only + 自定义 image 下
 
-# ===== 多端发版（PC / Android / Docker / GitHub Releases / 飞牛 .fpk / 绿联 .upk / Lite / Clipper） =====
-# TARGETS 用逗号分隔的集合：docker / pc / android / fpk / upk / lite / clipper / all
+# ===== 多端发版（PC / Linux 安装包 / Android / Docker / GitHub Releases / 飞牛 .fpk / 绿联 .upk / Lite / Clipper） =====
+# TARGETS 用逗号分隔的集合：docker / pc / linux-app / android / fpk / upk / lite / clipper / all
 # 默认 docker（向后兼容旧行为）；all = docker,pc,android,fpk,upk,lite,clipper
 TARGETS="docker"
 TARGETS_EXPLICIT=0     # 用户是否通过 --target 显式指定了
@@ -182,8 +182,9 @@ usage() {
       --no-git-tag         不打 git tag / 不推送到 GitHub
 
 多端发版选项（可组合）:
-      --target TARGETS     逗号分隔：docker / pc / android / fpk / upk / lite / clipper / all
+      --target TARGETS     逗号分隔：docker / pc / linux-app / android / fpk / upk / lite / clipper / all
                            默认 docker；示例：--target pc,android,fpk,upk,lite,clipper
+                           - linux-app: 等价于 --target pc --pc-platform linux，输出 AppImage + deb
                            - lite     : 调 scripts/build-lite.mjs 出 "无后端" 的 PC 安装包
                            - clipper  : 调 packages/nowen-clipper 出浏览器扩展 zip
                            - upk      : 调 scripts/upk/build-upk.mjs 出绿联 NAS .upk 安装包
@@ -245,6 +246,9 @@ usage() {
 
   # 实验性构建 Linux ARM64 桌面端 AppImage/deb（不进入正式 Release 矩阵）
   $0 -v 1.3.0 -y --target pc --pc-platform linux --linux-arch arm64 --no-github-release
+
+  # 只打 Linux 桌面安装包（AppImage + deb）
+  $0 -v 1.3.0 -y --target linux-app --no-github-release
 
   # 只打 Android APK，发到 GitHub Releases
   $0 -v 1.3.0 -y --target android --github-release
@@ -331,8 +335,8 @@ if [ "$TARGETS_EXPLICIT" = "0" ] && [ "$BUILD_ONLY" = "0" ] && [ "$ASSUME_YES" =
     echo "  ${C_CYAN}2${C_RESET})  PC 客户端                 打包 exe / AppImage / deb / dmg"
     echo "  ${C_CYAN}3${C_RESET})  Android APK               打包 Android 安装包"
     echo "  ${C_CYAN}4${C_RESET})  PC + Android              同时打 PC 和 Android"
-    echo "  ${C_BOLD}${C_GREEN}5${C_RESET})  ${C_BOLD}🚀 一键全量发布${C_RESET}          git tag + Docker(amd64+arm64) + exe + APK + .fpk + lite + clipper + GitHub Releases（不含 .upk，单独走选项 10）"
-    echo "  ${C_CYAN}6${C_RESET})  自定义组合                手动输入 docker,pc,android,fpk,upk,lite,clipper 组合"
+    echo "  ${C_BOLD}${C_GREEN}5${C_RESET})  ${C_BOLD}🚀 一键全量发布${C_RESET}          git tag + Docker(amd64+arm64) + PC/Linux 安装包 + APK + .fpk + lite + clipper + GitHub Releases（不含 .upk，单独走选项 10）"
+    echo "  ${C_CYAN}6${C_RESET})  自定义组合                手动输入 docker,pc,linux-app,android,fpk,upk,lite,clipper 组合"
     echo "  ${C_CYAN}7${C_RESET})  飞牛 .fpk                 仅打包飞牛 NAS 安装包（要求镜像已发到 Docker Hub）"
     echo "  ${C_CYAN}8${C_RESET})  Lite 版（无后端）          仅打 PC 端 lite 安装包（builder.lite.config.js）"
     echo "  ${C_CYAN}9${C_RESET})  浏览器扩展 (clipper)        仅打 nowen-clipper 浏览器扩展 zip"
@@ -353,7 +357,7 @@ if [ "$TARGETS_EXPLICIT" = "0" ] && [ "$BUILD_ONLY" = "0" ] && [ "$ASSUME_YES" =
         5)
             # 注意：一键全量"不含"绿联 .upk —— upk 依赖 ugcli check，
             # 经常因为 ugcli/绿联模板自身原因卡住主流程，故独立到选项 10。
-            TARGETS="docker,pc,android,fpk,lite,clipper"
+            TARGETS="docker,pc,linux-app,android,fpk,lite,clipper"
             _ONE_SHOT=1
             # ---- 一键全量：Docker 多架构 ----
             ARCH="multi"
@@ -391,6 +395,7 @@ if [ "$TARGETS_EXPLICIT" = "0" ] && [ "$BUILD_ONLY" = "0" ] && [ "$ASSUME_YES" =
             info "🚀 已进入 ${C_BOLD}${C_GREEN}一键全量发布${C_RESET} 模式："
             info "   - Docker 架构: ${C_GREEN}multi (amd64+arm64)${C_RESET}"
             info "   - PC 平台:     ${C_GREEN}${PC_PLATFORMS}${C_RESET}"
+            info "   - Linux 安装包:${C_GREEN}是${C_RESET}（AppImage + deb）"
             if [ "$ANDROID_USE_DOCKER" = "1" ]; then
                 info "   - Android:     ${C_GREEN}Docker 构建${C_RESET}"
             else
@@ -407,7 +412,7 @@ info "   - 飞牛 .fpk:   ${C_GREEN}是${C_RESET}（在 Docker push 后构建）
             ;;
         6)
             echo
-            echo "  可选值：${C_GREEN}docker${C_RESET}, ${C_GREEN}pc${C_RESET}, ${C_GREEN}android${C_RESET}, ${C_GREEN}fpk${C_RESET}, ${C_GREEN}upk${C_RESET}, ${C_GREEN}lite${C_RESET}, ${C_GREEN}clipper${C_RESET}（逗号分隔）"
+            echo "  可选值：${C_GREEN}docker${C_RESET}, ${C_GREEN}pc${C_RESET}, ${C_GREEN}linux-app${C_RESET}, ${C_GREEN}android${C_RESET}, ${C_GREEN}fpk${C_RESET}, ${C_GREEN}upk${C_RESET}, ${C_GREEN}lite${C_RESET}, ${C_GREEN}clipper${C_RESET}（逗号分隔）"
             read -r -p "  请输入组合: " _custom_targets
             [ -z "$_custom_targets" ] && die "未输入任何目标"
             TARGETS="$_custom_targets"
@@ -429,11 +434,12 @@ info "   - 飞牛 .fpk:   ${C_GREEN}是${C_RESET}（在 Docker push 后构建）
     [ "$_ONE_SHOT" = "0" ] && info "已选择发布目标: ${C_GREEN}${TARGETS}${C_RESET}"
 
     # 提前解析一下 TARGETS，以便后续步骤做条件判断
-    _W_HAS_DOCKER=0; _W_HAS_PC=0; _W_HAS_ANDROID=0; _W_HAS_FPK=0; _W_HAS_UPK=0; _W_HAS_LITE=0; _W_HAS_CLIPPER=0
+    _W_HAS_DOCKER=0; _W_HAS_PC=0; _W_HAS_LINUX_APP=0; _W_HAS_ANDROID=0; _W_HAS_FPK=0; _W_HAS_UPK=0; _W_HAS_LITE=0; _W_HAS_CLIPPER=0
     for _wt in $(echo "$TARGETS" | tr ',' ' '); do
         case "$_wt" in
             docker)  _W_HAS_DOCKER=1 ;;
             pc)      _W_HAS_PC=1 ;;
+            linux-app) _W_HAS_PC=1; _W_HAS_LINUX_APP=1; [ -z "$PC_PLATFORMS" ] && PC_PLATFORMS="linux" ;;
             android) _W_HAS_ANDROID=1 ;;
             fpk)     _W_HAS_FPK=1 ;;
             upk)     _W_HAS_UPK=1 ;;
@@ -625,17 +631,18 @@ TARGETS="$(echo "$TARGETS" | tr ',' '\n' | awk 'NF{print}' | sort -u | tr '\n' '
 if echo ",$TARGETS," | grep -q ',all,'; then
     TARGETS="docker,pc,android,fpk,upk,lite,clipper"
 fi
-HAS_DOCKER=0; HAS_PC=0; HAS_ANDROID=0; HAS_FPK=0; HAS_UPK=0; HAS_LITE=0; HAS_CLIPPER=0
+HAS_DOCKER=0; HAS_PC=0; HAS_LINUX_APP=0; HAS_ANDROID=0; HAS_FPK=0; HAS_UPK=0; HAS_LITE=0; HAS_CLIPPER=0
 for t in $(echo "$TARGETS" | tr ',' ' '); do
     case "$t" in
         docker)  HAS_DOCKER=1 ;;
         pc)      HAS_PC=1 ;;
+        linux-app) HAS_PC=1; HAS_LINUX_APP=1; [ -z "$PC_PLATFORMS" ] && PC_PLATFORMS="linux" ;;
         android) HAS_ANDROID=1 ;;
         fpk)     HAS_FPK=1 ;;
         upk)     HAS_UPK=1 ;;
         lite)    HAS_LITE=1 ;;
         clipper) HAS_CLIPPER=1 ;;
-        *)       die "--target 未知值: $t （合法: docker / pc / android / fpk / upk / lite / clipper / all）" ;;
+        *)       die "--target 未知值: $t （合法: docker / pc / linux-app / android / fpk / upk / lite / clipper / all）" ;;
     esac
 done
 [ "$HAS_DOCKER" = "0" ] && [ "$HAS_PC" = "0" ] && [ "$HAS_ANDROID" = "0" ] && [ "$HAS_FPK" = "0" ] \
@@ -648,7 +655,7 @@ done
 # 若用户显式传了 --no-github-release 则跳过自动推断
 if [ "$DO_GITHUB_RELEASE" = "0" ] && [ "$NO_GITHUB_RELEASE_EXPLICIT" = "0" ] \
    && { [ "$HAS_PC" = "1" ] || [ "$HAS_ANDROID" = "1" ] || [ "$HAS_FPK" = "1" ] || [ "$HAS_UPK" = "1" ] || [ "$HAS_LITE" = "1" ] || [ "$HAS_CLIPPER" = "1" ]; }; then
-    info "检测到 target 包含 pc/android/fpk/upk/lite/clipper，自动启用 --github-release（可用 --no-github-release 关闭）"
+    info "检测到 target 包含 pc/linux-app/android/fpk/upk/lite/clipper，自动启用 --github-release（可用 --no-github-release 关闭）"
     DO_GITHUB_RELEASE=1
 fi
 
@@ -689,7 +696,7 @@ if [ "$BUILD_ONLY" = "1" ]; then
     fi
     # build-only 仅对 docker 构建有意义
     if [ "$HAS_PC" = "1" ] || [ "$HAS_ANDROID" = "1" ] || [ "$HAS_FPK" = "1" ] || [ "$HAS_UPK" = "1" ] || [ "$HAS_LITE" = "1" ] || [ "$HAS_CLIPPER" = "1" ]; then
-        die "--build-only 模式不支持 --target pc/android/fpk/upk/lite/clipper（仅限 docker）"
+        die "--build-only 模式不支持 --target pc/linux-app/android/fpk/upk/lite/clipper（仅限 docker）"
     fi
     if [ "$DO_GITHUB_RELEASE" = "1" ]; then
         die "--build-only 模式不支持 --github-release"
@@ -1418,7 +1425,11 @@ else
         echo "  Docker latest : $([ "$DO_LATEST" = "1" ] && echo yes || echo no)"
     fi
     if [ "$HAS_PC" = "1" ]; then
-        echo "  PC 打包       : electron-builder（平台: ${PC_PLATFORMS}）"
+        if [ "$HAS_LINUX_APP" = "1" ]; then
+            echo "  Linux 安装包  : electron-builder（AppImage + deb，架构: ${LINUX_ARCHES:-x64}）"
+        else
+            echo "  PC 打包       : electron-builder（平台: ${PC_PLATFORMS}）"
+        fi
         if [ "$RESTORE_BACKEND_ABI" = "1" ]; then
             echo "                  (打包后自动恢复 backend better-sqlite3 到 Node ABI)"
         fi

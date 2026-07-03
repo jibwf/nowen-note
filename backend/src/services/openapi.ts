@@ -186,6 +186,54 @@ export function generateOpenAPISpec(): Record<string, any> {
             checkedAt: { type: "string", format: "date-time" },
           },
         },
+        AttachmentUploadResponse: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid" },
+            url: { type: "string", example: "/api/attachments/8b6e..." },
+            mimeType: { type: "string" },
+            size: { type: "integer" },
+            filename: { type: "string" },
+            category: { type: "string", enum: ["image", "file"] },
+            createdAt: { type: "string", format: "date-time" },
+            deduplicated: { type: "boolean", nullable: true },
+          },
+        },
+        FileItem: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid" },
+            filename: { type: "string" },
+            mimeType: { type: "string" },
+            size: { type: "integer" },
+            createdAt: { type: "string", format: "date-time" },
+            category: { type: "string", enum: ["image", "file"] },
+            url: { type: "string" },
+            thumbnailUrl: { type: "string" },
+            hash: { type: "string", nullable: true },
+            folderId: { type: "string", nullable: true },
+            folderName: { type: "string", nullable: true },
+            primaryNote: { type: "object", nullable: true },
+          },
+        },
+        FileListResponse: {
+          type: "object",
+          properties: {
+            items: { type: "array", items: { $ref: "#/components/schemas/FileItem" } },
+            total: { type: "integer" },
+            page: { type: "integer" },
+            pageSize: { type: "integer" },
+          },
+        },
+        FileStats: {
+          type: "object",
+          properties: {
+            total: { type: "integer" },
+            images: { type: "integer" },
+            files: { type: "integer" },
+            bytes: { type: "integer" },
+          },
+        },
         Error: {
           type: "object",
           properties: {
@@ -333,6 +381,164 @@ export function generateOpenAPISpec(): Record<string, any> {
         get: { tags: ["导出"], summary: "导出笔记", parameters: [{ name: "noteId", in: "path", required: true, schema: { type: "string" } }, { name: "format", in: "query", schema: { type: "string", enum: ["markdown", "html", "json", "txt"] } }], responses: { "200": { description: "导出内容" } } },
       },
 
+      // ===== 附件 / 文件 =====
+      "/api/attachments": {
+        post: {
+          tags: ["附件"],
+          summary: "上传并绑定到指定笔记的附件",
+          description: "复用 Web 编辑器上传入口。请求必须是 multipart/form-data，file 和 noteId 均必填；后端会校验当前用户对 noteId 的 write 权限。",
+          requestBody: {
+            required: true,
+            content: {
+              "multipart/form-data": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    file: { type: "string", format: "binary" },
+                    noteId: { type: "string", description: "目标笔记 ID" },
+                  },
+                  required: ["file", "noteId"],
+                },
+              },
+            },
+          },
+          responses: {
+            "201": { description: "上传成功", content: { "application/json": { schema: { $ref: "#/components/schemas/AttachmentUploadResponse" } } } },
+            "200": { description: "去重命中时返回已存在附件的新绑定记录", content: { "application/json": { schema: { $ref: "#/components/schemas/AttachmentUploadResponse" } } } },
+            "400": { description: "multipart body 或 noteId 不合法", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+            "403": { description: "无权向该笔记上传附件" },
+          },
+        },
+      },
+      "/api/attachments/{id}": {
+        get: {
+          tags: ["附件"],
+          summary: "下载或内联预览附件",
+          description: "该下载 handler 挂在 JWT 中间件之前，以支持浏览器原生 <img src>。私有部署可结合签名 URL 或不可枚举 UUID 使用。",
+          security: [],
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string" } },
+            { name: "download", in: "query", schema: { type: "string", enum: ["1"] }, description: "强制下载" },
+            { name: "inline", in: "query", schema: { type: "string", enum: ["1"] }, description: "非图片附件内联预览" },
+            { name: "w", in: "query", schema: { type: "integer" }, description: "图片缩略图宽度" },
+          ],
+          responses: {
+            "200": { description: "附件二进制内容" },
+            "404": { description: "附件不存在或物理文件缺失" },
+          },
+        },
+        delete: {
+          tags: ["附件"],
+          summary: "删除单个附件",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+          responses: {
+            "200": { description: "删除成功" },
+            "403": { description: "无权删除该附件" },
+            "404": { description: "附件不存在" },
+          },
+        },
+      },
+      "/api/files": {
+        get: {
+          tags: ["文件"],
+          summary: "列出文件管理中的附件",
+          parameters: [
+            { name: "category", in: "query", schema: { type: "string", enum: ["all", "image", "file"], default: "all" } },
+            { name: "filter", in: "query", schema: { type: "string", enum: ["unreferenced", "myUploads"] } },
+            { name: "myUploadsRef", in: "query", schema: { type: "string", enum: ["referenced", "unreferenced"] } },
+            { name: "mime", in: "query", schema: { type: "string" } },
+            { name: "notebookId", in: "query", schema: { type: "string" } },
+            { name: "noteId", in: "query", schema: { type: "string" }, description: "只返回被该笔记引用过的附件" },
+            { name: "folderId", in: "query", schema: { type: "string" }, description: "附件文件夹 ID；__unarchived 表示未归档" },
+            { name: "q", in: "query", schema: { type: "string" } },
+            { name: "sort", in: "query", schema: { type: "string", enum: ["name_asc", "name_desc", "size_asc", "size_desc", "created_asc", "created_desc"] } },
+            { name: "page", in: "query", schema: { type: "integer", default: 1, minimum: 1 } },
+            { name: "pageSize", in: "query", schema: { type: "integer", default: 50, minimum: 1, maximum: 200 } },
+            { name: "workspaceId", in: "query", schema: { type: "string" } },
+          ],
+          responses: {
+            "200": { description: "文件列表", content: { "application/json": { schema: { $ref: "#/components/schemas/FileListResponse" } } } },
+          },
+        },
+      },
+      "/api/files/stats": {
+        get: {
+          tags: ["文件"],
+          summary: "获取文件统计",
+          parameters: [{ name: "workspaceId", in: "query", schema: { type: "string" } }],
+          responses: { "200": { description: "文件统计", content: { "application/json": { schema: { $ref: "#/components/schemas/FileStats" } } } } },
+        },
+      },
+      "/api/files/{id}": {
+        get: {
+          tags: ["文件"],
+          summary: "获取文件详情和反向引用",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+          responses: {
+            "200": { description: "文件详情", content: { "application/json": { schema: { $ref: "#/components/schemas/FileItem" } } } },
+            "404": { description: "文件不存在" },
+          },
+        },
+        patch: {
+          tags: ["文件"],
+          summary: "重命名文件",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+          requestBody: { content: { "application/json": { schema: { type: "object", properties: { filename: { type: "string" } }, required: ["filename"] } } } },
+          responses: { "200": { description: "重命名成功" }, "400": { description: "文件名不合法" }, "403": { description: "无权重命名" } },
+        },
+        delete: {
+          tags: ["文件"],
+          summary: "删除文件",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+          responses: { "200": { description: "删除成功" }, "403": { description: "无权删除" }, "404": { description: "文件不存在" } },
+        },
+      },
+      "/api/files/upload": {
+        post: {
+          tags: ["文件"],
+          summary: "上传未绑定笔记的文件",
+          description: "文件管理页上传入口。后端会创建或复用隐藏的“文件管理（自动）/未归档文件”占位笔记来满足附件外键。",
+          parameters: [{ name: "workspaceId", in: "query", schema: { type: "string" } }],
+          requestBody: {
+            required: true,
+            content: {
+              "multipart/form-data": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    file: { type: "string", format: "binary" },
+                    folderId: { type: "string", description: "附件文件夹 ID，可选" },
+                  },
+                  required: ["file"],
+                },
+              },
+            },
+          },
+          responses: {
+            "201": { description: "上传成功", content: { "application/json": { schema: { $ref: "#/components/schemas/AttachmentUploadResponse" } } } },
+            "200": { description: "去重命中", content: { "application/json": { schema: { $ref: "#/components/schemas/AttachmentUploadResponse" } } } },
+          },
+        },
+      },
+      "/api/files/batch-delete": {
+        post: {
+          tags: ["文件"],
+          summary: "批量删除文件",
+          requestBody: {
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: { ids: { type: "array", items: { type: "string" }, maxItems: 200 } },
+                  required: ["ids"],
+                },
+              },
+            },
+          },
+          responses: { "200": { description: "批量删除结果" }, "400": { description: "ids 不合法" } },
+        },
+      },
+
       // ===== Attachment Storage =====
       "/api/attachments/_storage/status": {
         get: {
@@ -428,6 +634,8 @@ export function generateOpenAPISpec(): Record<string, any> {
       { name: "审计日志", description: "操作审计日志" },
       { name: "备份恢复", description: "数据备份与恢复" },
       { name: "导出", description: "笔记导出" },
+      { name: "附件", description: "附件上传、下载与删除" },
+      { name: "文件", description: "文件管理列表、详情、上传、重命名和删除" },
       { name: "Attachment Storage", description: "Local attachment and S3-compatible object storage management" },
       { name: "分享", description: "笔记分享" },
       { name: "系统", description: "系统设置与健康检查" },

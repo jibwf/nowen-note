@@ -110,9 +110,12 @@ Android 可直接从 [Releases](https://github.com/cropflre/nowen-note/releases)
 | --- | --- | --- |
 | `PORT` | `3001` | 服务端口 |
 | `DB_PATH` | `/app/data/nowen-note.db` | 数据库文件路径 |
+| `TZ` | `Asia/Shanghai` | Docker 容器时区；海外用户可改为 `Europe/London`、`America/Los_Angeles` 等 |
 | `OLLAMA_URL` | — | 本地 Ollama 地址（可选） |
 
 数据持久化：容器需将 **`/app/data`** 映射到宿主机（不是 `/data`）。镜像已声明 `VOLUME ["/app/data"]`，主流 NAS 面板会自动预填该路径。
+
+Docker 镜像内置 `tzdata`，`docker-compose.yml` 默认设置 `TZ=Asia/Shanghai`，用于保证待办「今日 / 本周 / 逾期」等后端日期判断按本地时区刷新。海外用户可在项目根目录创建 `.env` 并写入自己的时区，例如 `TZ=Europe/London`。
 
 备份策略：自动备份默认写入 `/app/data/backups`，与数据在同一个卷。建议按 3-2-1 原则把 `/app/backups` 另挂到独立磁盘，并设置 `BACKUP_DIR=/app/backups`，详见 [`docker-compose.yml`](./docker-compose.yml) 内的注释。
 

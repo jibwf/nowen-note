@@ -212,6 +212,108 @@ server.tool(
   }
 );
 
+// ==================== 附件工具 ====================
+
+server.tool(
+  "nowen_upload_attachment",
+  "上传本地文件到 Nowen Note。传 noteId 时绑定指定笔记；不传 noteId 时上传到文件管理。返回的 url 可直接写入 Markdown 图片或链接",
+  {
+    filePath: z.string().describe("本地文件路径"),
+    noteId: z.string().optional().describe("目标笔记 ID（可选；传入后走 /api/attachments）"),
+    filename: z.string().optional().describe("上传时使用的文件名（可选）"),
+    mimeType: z.string().optional().describe("MIME 类型（可选；未传会按扩展名做基础推断）"),
+    workspaceId: z.string().optional().describe("工作区 ID（可选；仅未绑定上传时使用）"),
+    folderId: z.string().optional().describe("附件文件夹 ID（可选；仅未绑定上传时使用）"),
+  },
+  async ({ filePath, noteId, filename, mimeType, workspaceId, folderId }) => {
+    try {
+      const result = await api.uploadAttachment({ filePath, noteId, filename, mimeType, workspaceId, folderId });
+      return {
+        content: [{
+          type: "text" as const,
+          text: `附件上传成功:\n${JSON.stringify({
+            id: result.id,
+            url: result.url,
+            mimeType: result.mimeType,
+            size: result.size,
+            filename: result.filename,
+            category: result.category,
+            markdown: result.category === "image"
+              ? `![${result.filename}](${result.url})`
+              : `[${result.filename}](${result.url}?download=1)`,
+          }, null, 2)}`,
+        }],
+      };
+    } catch (err: any) {
+      return { content: [{ type: "text" as const, text: `错误: ${err.message}` }], isError: true };
+    }
+  }
+);
+
+server.tool(
+  "nowen_list_attachments",
+  "列出 Nowen Note 文件管理中的附件，可按类型、笔记、笔记本、文件夹、关键词和引用状态筛选",
+  {
+    category: z.enum(["all", "image", "file"]).optional().describe("附件类型，默认 all"),
+    filter: z.enum(["unreferenced", "myUploads"]).optional().describe("筛选视图：无引用或我的上传"),
+    myUploadsRef: z.enum(["referenced", "unreferenced"]).optional().describe("我的上传子筛选"),
+    noteId: z.string().optional().describe("只列出被该笔记引用过的附件"),
+    notebookId: z.string().optional().describe("按笔记本筛选"),
+    folderId: z.string().optional().describe("按附件文件夹筛选；__unarchived 表示未归档"),
+    q: z.string().optional().describe("文件名关键词"),
+    page: z.number().int().positive().optional().describe("页码，默认 1"),
+    pageSize: z.number().int().positive().max(200).optional().describe("每页数量，默认 50，最大 200"),
+    workspaceId: z.string().optional().describe("工作区 ID（可选）"),
+  },
+  async (params) => {
+    try {
+      const result = await api.listAttachments(params);
+      const summary = (result.items || []).map((file: any) => ({
+        id: file.id,
+        filename: file.filename,
+        url: file.url,
+        mimeType: file.mimeType,
+        size: file.size,
+        category: file.category,
+        primaryNote: file.primaryNote,
+      }));
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({ items: summary, total: result.total, page: result.page, pageSize: result.pageSize }, null, 2),
+        }],
+      };
+    } catch (err: any) {
+      return { content: [{ type: "text" as const, text: `错误: ${err.message}` }], isError: true };
+    }
+  }
+);
+
+server.tool(
+  "nowen_attach_to_note",
+  "把已上传附件插入指定 Markdown 笔记正文。图片生成 ![alt](url)，其它文件生成下载链接，并携带当前 version 更新笔记",
+  {
+    noteId: z.string().describe("目标笔记 ID"),
+    attachmentId: z.string().describe("附件 ID"),
+    alt: z.string().optional().describe("图片 alt 文本或文件链接标题"),
+    mode: z.enum(["append", "prepend", "replace_marker"]).optional().describe("插入模式，默认 append"),
+    marker: z.string().optional().describe("replace_marker 模式要替换的占位文本"),
+  },
+  async ({ noteId, attachmentId, alt, mode, marker }) => {
+    try {
+      const note = await api.attachToNote({ noteId, attachmentId, alt, mode, marker });
+      return {
+        content: [{
+          type: "text" as const,
+          text: `附件已插入笔记:\n${JSON.stringify({ id: note.id, title: note.title, version: note.version }, null, 2)}`,
+        }],
+      };
+    } catch (err: any) {
+      return { content: [{ type: "text" as const, text: `错误: ${err.message}` }], isError: true };
+    }
+  }
+);
+
 // ==================== 搜索工具 ====================
 
 server.tool(

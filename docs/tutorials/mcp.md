@@ -54,7 +54,7 @@ npm run build
 
 ## 可用工具
 
-MCP Server 提供 20 个工具：
+MCP Server 提供多组工具：
 
 ### 笔记本
 
@@ -78,6 +78,14 @@ MCP Server 提供 20 个工具：
 | 工具 | 说明 |
 |---|---|
 | `nowen_search` | 全文搜索笔记 |
+
+### 附件
+
+| 工具 | 说明 |
+|---|---|
+| `nowen_upload_attachment` | 上传本地文件；可直接绑定笔记，也可先上传到文件管理 |
+| `nowen_list_attachments` | 列出文件管理中的附件，支持按笔记、类型、关键词等筛选 |
+| `nowen_attach_to_note` | 把已上传附件插入指定 Markdown 笔记 |
 
 ### 标签
 
@@ -118,7 +126,19 @@ MCP Server 提供 20 个工具：
 - "帮我列出所有笔记本"
 - "搜索包含 React 的笔记"
 - "创建一篇标题为「学习计划」的笔记"
+- "把 `C:\Users\me\Pictures\screenshot.png` 上传并插入到这篇笔记"
+- "列出这篇笔记引用过的附件"
 - "根据我的笔记库回答：什么是 useEffect？"
+
+### 上传图片并插入笔记
+
+AI 助手会按这个流程调用工具：
+
+1. `nowen_upload_attachment` 上传本地图片，传入 `filePath` 和 `noteId`
+2. 获取返回的 `/api/attachments/<id>` URL
+3. 如需插入已有附件，调用 `nowen_attach_to_note`，生成 Markdown 图片语法
+
+`nowen_attach_to_note` 只处理 Markdown 笔记；如果目标笔记是富文本 JSON，请先在客户端转换或改用编辑器上传。
 
 ---
 

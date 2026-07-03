@@ -76,6 +76,7 @@ docker run -d \
   -p 3001:3001 \
   -v /opt/nowen-note/data:/app/data \
   -e DB_PATH=/app/data/nowen-note.db \
+  -e TZ=Asia/Shanghai \
   nowen-note
 ```
 
@@ -94,7 +95,25 @@ docker run -d \
 | `PORT` | `3001` | 服务监听端口 |
 | `DB_PATH` | `/app/data/nowen-note.db` | 数据库文件路径 |
 | `NODE_ENV` | `production` | 运行环境 |
+| `TZ` | `Asia/Shanghai` | 容器时区，影响待办「今日 / 本周 / 逾期」等后端日期判断 |
 | `OLLAMA_URL` | （未设置） | Ollama 服务地址（如需本地 AI 请自行部署 Ollama） |
+
+### Docker 时区配置
+
+镜像运行层已内置 `tzdata`，`docker-compose.yml` 默认设置：
+
+```env
+TZ=Asia/Shanghai
+```
+
+国内用户通常无需额外配置。海外用户可在项目根目录创建 `.env` 文件覆盖，例如：
+
+```env
+TZ=Europe/London
+# TZ=America/Los_Angeles
+```
+
+如果使用纯 `docker run`，请显式添加 `-e TZ=Asia/Shanghai` 或替换为你的本地时区。高级用户也可以按宿主系统情况挂载 `/etc/localtime` 或 `/usr/share/zoneinfo`，但不同 NAS、Windows 和 Linux 发行版路径差异较大，不建议作为默认方案。
 
 ---
 

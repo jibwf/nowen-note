@@ -80,6 +80,21 @@ Authorization: Bearer <token>
 |---|---|---|
 | GET | `/api/search?q=关键词` | 全文搜索 |
 
+### 附件和文件
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/attachments` | 上传并绑定到指定笔记，`multipart/form-data` 字段为 `file`、`noteId` |
+| GET | `/api/attachments/:id` | 下载或内联预览附件 |
+| DELETE | `/api/attachments/:id` | 删除附件 |
+| GET | `/api/files` | 文件管理列表，支持 `noteId`、`category`、`q`、`page` 等筛选 |
+| GET | `/api/files/stats` | 文件统计 |
+| GET | `/api/files/:id` | 文件详情和引用信息 |
+| POST | `/api/files/upload` | 上传到文件管理，暂不绑定业务笔记 |
+| PATCH | `/api/files/:id` | 重命名文件 |
+| DELETE | `/api/files/:id` | 删除文件 |
+| POST | `/api/files/batch-delete` | 批量删除文件 |
+
 ### AI
 
 | 方法 | 路径 | 说明 |
@@ -132,6 +147,34 @@ curl -X POST http://localhost:3001/api/notes \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"title":"通过 API 创建的笔记","contentText":"这是内容"}'
+```
+
+---
+
+## 示例：上传附件
+
+绑定到指定笔记上传：
+
+```bash
+curl -X POST http://localhost:3001/api/attachments \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "noteId=<note-id>" \
+  -F "file=@./screenshot.png;type=image/png"
+```
+
+先上传到文件管理：
+
+```bash
+curl -X POST http://localhost:3001/api/files/upload \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@./manual.pdf;type=application/pdf"
+```
+
+上传成功会返回 `url`，例如 `/api/attachments/<id>`。Markdown 笔记中可写入：
+
+```markdown
+![截图](/api/attachments/<id>)
+[PDF 附件](/api/attachments/<id>?download=1)
 ```
 
 ---

@@ -60,8 +60,8 @@ RUN apk del .build-deps
 FROM node:20-alpine
 WORKDIR /app
 
-# tini 提供 PID 1 信号转发，15KB，避免容器 kill 时僵尸进程
-RUN apk add --no-cache tini
+# tini 提供 PID 1 信号转发；tzdata 让 TZ=Asia/Shanghai 等时区在 Alpine 运行层生效
+RUN apk add --no-cache tini tzdata
 
 # 运行时依赖（production only）：独立编译一次，确保 .node 是 musl 版
 # 根 package.json 是运行时版本号的真相源；/api/version 优先读取它，避免 NAS / 应用市场

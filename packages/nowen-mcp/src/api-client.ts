@@ -3,10 +3,31 @@
  * 封装对 Nowen Note 后端 REST API 的调用
  */
 
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 export interface NowenApiConfig {
   baseUrl: string;   // 例如 http://localhost:3001
   username: string;
   password: string;
+}
+
+export interface AttachmentUploadResult {
+  id: string;
+  url: string;
+  mimeType: string;
+  size: number;
+  filename: string;
+  category: "image" | "file";
+  createdAt?: string;
+  deduplicated?: boolean;
+}
+
+export interface AttachmentListResult {
+  items: any[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 export class NowenApiClient {
@@ -49,22 +70,12 @@ export class NowenApiClient {
     options: {
       method?: string;
       body?: any;
-      query?: Record<string, string>;
+      query?: Record<string, string | number | boolean | undefined | null>;
     } = {}
   ): Promise<T> {
     await this.ensureAuth();
 
-    let url = `${this.baseUrl}${path}`;
-    if (options.query) {
-      const params = new URLSearchParams();
-      for (const [k, v] of Object.entries(options.query)) {
-        if (v !== undefined && v !== null && v !== "") {
-          params.set(k, v);
-        }
-      }
-      const qs = params.toString();
-      if (qs) url += `?${qs}`;
-    }
+    const url = this.buildUrl(path, options.query);
 
     const headers: Record<string, string> = {
       "Authorization": `Bearer ${this.token}`,
@@ -102,6 +113,96 @@ export class NowenApiClient {
     }
 
     return res.json() as Promise<T>;
+  }
+
+  private buildUrl(pathname: string, query?: Record<string, string | number | boolean | undefined | null>): string {
+    let url = `${this.baseUrl}${pathname}`;
+    if (query) {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(query)) {
+        if (value !== undefined && value !== null && value !== "") {
+          params.set(key, String(value));
+        }
+      }
+      const qs = params.toString();
+      if (qs) url += `?${qs}`;
+    }
+    return url;
+  }
+
+  private async multipartRequest<T = any>(
+    pathname: string,
+    form: FormData,
+    query?: Record<string, string | number | boolean | undefined | null>,
+  ): Promise<T> {
+    await this.ensureAuth();
+    const url = this.buildUrl(pathname, query);
+    const headers: Record<string, string> = {
+      "Authorization": `Bearer ${this.token}`,
+    };
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: form,
+    });
+
+    if (res.status === 401) {
+      this.token = null;
+      await this.login();
+      const retryRes = await fetch(url, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${this.token}` },
+        body: form,
+      });
+      if (!retryRes.ok) {
+        const err = await retryRes.text();
+        throw new Error(`API 上传失败 (${retryRes.status}): ${err}`);
+      }
+      return retryRes.json() as Promise<T>;
+    }
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`API 上传失败 (${res.status}): ${err}`);
+    }
+    return res.json() as Promise<T>;
+  }
+
+  private inferMimeType(filename: string): string {
+    const ext = path.extname(filename).toLowerCase();
+    switch (ext) {
+      case ".png": return "image/png";
+      case ".jpg":
+      case ".jpeg": return "image/jpeg";
+      case ".gif": return "image/gif";
+      case ".webp": return "image/webp";
+      case ".svg": return "image/svg+xml";
+      case ".pdf": return "application/pdf";
+      case ".txt":
+      case ".md": return "text/plain";
+      case ".json": return "application/json";
+      case ".csv": return "text/csv";
+      case ".html":
+      case ".htm": return "text/html";
+      case ".docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      case ".xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      case ".pptx": return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+      case ".zip": return "application/zip";
+      default: return "application/octet-stream";
+    }
+  }
+
+  private buildAttachmentMarkdown(file: any, alt?: string): string {
+    const id = file.id;
+    const filename = file.filename || id;
+    const mimeType = String(file.mimeType || "").toLowerCase();
+    const isImage = file.category === "image" || mimeType.startsWith("image/");
+    const label = alt || filename || id;
+    if (isImage) {
+      return `![${label}](/api/attachments/${id})`;
+    }
+    return `[${label}](/api/attachments/${id}?download=1)`;
   }
 
   // ==================== 笔记本 ====================
@@ -148,7 +249,7 @@ export class NowenApiClient {
     dateFrom?: string;
     dateTo?: string;
   }): Promise<any[]> {
-    return this.request("/api/notes", { query: params as Record<string, string> });
+    return this.request("/api/notes", { query: params });
   }
 
   /** 获取单个笔记（完整内容） */
@@ -215,6 +316,96 @@ export class NowenApiClient {
   /** 全文搜索笔记 */
   async search(q: string): Promise<any[]> {
     return this.request("/api/search", { query: { q } });
+  }
+
+  // ==================== 附件 / 文件 ====================
+
+  /** 上传附件；传 noteId 时绑定笔记，否则上传到文件管理。 */
+  async uploadAttachment(params: {
+    filePath: string;
+    noteId?: string;
+    filename?: string;
+    mimeType?: string;
+    workspaceId?: string;
+    folderId?: string;
+  }): Promise<AttachmentUploadResult> {
+    const filename = params.filename || path.basename(params.filePath);
+    const mimeType = params.mimeType || this.inferMimeType(filename);
+    const bytes = await readFile(params.filePath);
+    const form = new FormData();
+    form.append("file", new Blob([new Uint8Array(bytes)], { type: mimeType }), filename);
+
+    if (params.noteId) {
+      form.append("noteId", params.noteId);
+      return this.multipartRequest<AttachmentUploadResult>("/api/attachments", form);
+    }
+
+    if (params.folderId) {
+      form.append("folderId", params.folderId);
+    }
+    return this.multipartRequest<AttachmentUploadResult>("/api/files/upload", form, {
+      workspaceId: params.workspaceId,
+    });
+  }
+
+  /** 列出文件管理中的附件。 */
+  async listAttachments(params?: {
+    category?: "all" | "image" | "file";
+    filter?: "unreferenced" | "myUploads";
+    myUploadsRef?: "referenced" | "unreferenced";
+    mime?: string;
+    noteId?: string;
+    notebookId?: string;
+    folderId?: string;
+    q?: string;
+    page?: number;
+    pageSize?: number;
+    workspaceId?: string;
+  }): Promise<AttachmentListResult> {
+    return this.request("/api/files", { query: params });
+  }
+
+  /** 获取单个文件详情。 */
+  async getAttachmentFile(id: string): Promise<any> {
+    return this.request(`/api/files/${id}`);
+  }
+
+  /** 把已上传附件以 Markdown 链接插入笔记。 */
+  async attachToNote(params: {
+    noteId: string;
+    attachmentId: string;
+    alt?: string;
+    mode?: "append" | "prepend" | "replace_marker";
+    marker?: string;
+  }): Promise<any> {
+    const file = await this.getAttachmentFile(params.attachmentId);
+    const note = await this.getNote(params.noteId);
+    const contentFormat = note.contentFormat || "markdown";
+    if (contentFormat !== "markdown") {
+      throw new Error(`当前笔记内容格式为 ${contentFormat}，请先转为 markdown 后再插入附件`);
+    }
+
+    const markdown = this.buildAttachmentMarkdown(file, params.alt);
+    const current = typeof note.content === "string" ? note.content : "";
+    const mode = params.mode || "append";
+    let nextContent: string;
+    if (mode === "prepend") {
+      nextContent = current ? `${markdown}\n\n${current}` : markdown;
+    } else if (mode === "replace_marker") {
+      const marker = params.marker || "";
+      if (!marker) throw new Error("replace_marker 模式必须提供 marker");
+      if (!current.includes(marker)) throw new Error(`笔记内容中找不到 marker: ${marker}`);
+      nextContent = current.replace(marker, markdown);
+    } else {
+      nextContent = current ? `${current}\n\n${markdown}` : markdown;
+    }
+
+    return this.updateNote(params.noteId, {
+      content: nextContent,
+      contentText: nextContent,
+      contentFormat: "markdown",
+      version: note.version || 1,
+    });
   }
 
   // ==================== AI ====================

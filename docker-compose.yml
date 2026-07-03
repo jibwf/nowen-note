@@ -49,6 +49,9 @@ services:
       - NODE_ENV=production
       - DB_PATH=/app/data/nowen-note.db
       - PORT=3001
+      # Docker 默认 UTC；国内用户默认使用上海时区，海外用户可在 .env 中覆盖 TZ=Europe/London 等。
+      - TZ=${TZ:-Asia/Shanghai}
+      # 高级用户如需跟随宿主机时区，可按宿主系统情况自行挂载 /etc/localtime 或 /usr/share/zoneinfo。
       # 启用上面的独立备份卷后，**必须**同步设置以下变量，否则备份仍会写到 data 卷：
       # - BACKUP_DIR=/app/backups
       # Ollama 地址，如需使用请自行部署 Ollama 并填写正确地址

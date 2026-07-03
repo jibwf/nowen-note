@@ -9,6 +9,11 @@ import {
   requireWorkspaceFeature,
 } from "../middleware/acl";
 import { taskDependenciesRepository } from "../repositories";
+import {
+  taskOverdueConditionSql,
+  taskTodayConditionSql,
+  taskWeekConditionSql,
+} from "../lib/taskDateSql";
 
 
 /** Collect a task id and all its descendant ids (recursive via parentId). */
@@ -107,11 +112,11 @@ tasks.get("/", requireWorkspaceFeature("tasks"), (c) => {
   }
 
   if (filter === "today") {
-    sql += ` AND COALESCE(dueAt, dueDate) IS NOT NULL AND date(COALESCE(dueAt, dueDate)) = date('now', 'localtime')`;
+    sql += ` AND ${taskTodayConditionSql()}`;
   } else if (filter === "week") {
-    sql += ` AND COALESCE(dueAt, dueDate) IS NOT NULL AND date(COALESCE(dueAt, dueDate)) BETWEEN date('now', 'localtime') AND date('now', 'localtime', '+7 days')`;
+    sql += ` AND ${taskWeekConditionSql()}`;
   } else if (filter === "overdue") {
-    sql += ` AND isCompleted = 0 AND COALESCE(dueAt, dueDate) IS NOT NULL AND COALESCE(dueAt, dueDate || 'T23:59:59') < datetime('now', 'localtime')`;
+    sql += ` AND ${taskOverdueConditionSql()}`;
   } else if (filter === "completed") {
     sql += ` AND isCompleted = 1`;
   }
@@ -141,14 +146,9 @@ tasks.get("/stats/summary", requireWorkspaceFeature("tasks"), (c) => {
     SELECT
       COUNT(*)                                                                          AS total,
       SUM(CASE WHEN isCompleted = 1 THEN 1 ELSE 0 END)                                 AS completed,
-      SUM(CASE WHEN isCompleted = 0 AND COALESCE(dueAt, dueDate) IS NOT NULL
-               AND date(COALESCE(dueAt, dueDate)) = date('now', 'localtime') THEN 1 ELSE 0 END)         AS today,
-      SUM(CASE WHEN isCompleted = 0 AND COALESCE(dueAt, dueDate) IS NOT NULL
-               AND COALESCE(dueAt, dueDate || 'T23:59:59') < datetime('now', 'localtime') THEN 1 ELSE 0 END)         AS overdue,
-      SUM(CASE WHEN isCompleted = 0 AND COALESCE(dueAt, dueDate) IS NOT NULL
-               AND date(COALESCE(dueAt, dueDate)) BETWEEN date('now', 'localtime')
-                                     AND date('now', 'localtime', '+7 days')
-               THEN 1 ELSE 0 END)                                                      AS week
+      SUM(CASE WHEN isCompleted = 0 AND ${taskTodayConditionSql()} THEN 1 ELSE 0 END)   AS today,
+      SUM(CASE WHEN ${taskOverdueConditionSql()} THEN 1 ELSE 0 END)                     AS overdue,
+      SUM(CASE WHEN isCompleted = 0 AND ${taskWeekConditionSql()} THEN 1 ELSE 0 END)    AS week
     FROM tasks
     WHERE ${whereSql}
   `).get(whereArg) as any;

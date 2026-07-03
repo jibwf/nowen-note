@@ -36,6 +36,45 @@
 
 ---
 
+## 通过 MCP / API 上传
+
+AI 助手和脚本不需要模拟 Web UI 拖拽，可以直接使用后端已有接口。
+
+### MCP 工具
+
+| 工具 | 用途 |
+|---|---|
+| `nowen_upload_attachment` | 上传本地文件，传 `noteId` 时直接绑定笔记 |
+| `nowen_list_attachments` | 查询文件管理列表或某篇笔记引用过的附件 |
+| `nowen_attach_to_note` | 把已上传附件插入 Markdown 笔记正文 |
+
+示例需求：
+
+```text
+把 C:\Users\me\Pictures\screenshot.png 上传到 note-123，并插入到笔记末尾
+```
+
+### REST API
+
+绑定笔记上传：
+
+```bash
+curl -X POST http://localhost:3001/api/attachments \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "noteId=<note-id>" \
+  -F "file=@./screenshot.png;type=image/png"
+```
+
+未绑定上传到文件管理：
+
+```bash
+curl -X POST http://localhost:3001/api/files/upload \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@./manual.pdf;type=application/pdf"
+```
+
+---
+
 ## 文件管理器
 
 ### 功能

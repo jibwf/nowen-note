@@ -1,5 +1,10 @@
 # ARM64 设备部署指南
 
+> 范围说明：
+>
+> - Docker / 服务端 ARM64：已支持，本文主体说明的就是这种部署方式。
+> - Linux 桌面端 ARM64：指 AppImage / deb 的 arm64 桌面安装包，目前仅提供实验性手动构建入口，尚未作为正式 Release 产物发布。
+
 本项目可以在 aarch64 设备上以 Docker 方式运行，把板子当作后端服务器，
 前端通过浏览器访问。已验证 / 计划支持的目标设备：
 
@@ -140,3 +145,55 @@ docker build -t nowen-note:arm64 .
 ### Q5. 板子能反过来给 x86 主机用吗？
 `cropflre/nowen-note:arm64` 镜像不能在 x86 上原生跑，但启用了 binfmt/qemu 的主机
 可以通过 `docker run --platform linux/arm64` 模拟执行（慢，仅用于验证）。
+
+---
+
+## 五、实验性 Linux ARM64 桌面端构建
+
+> 这一节只针对桌面端 AppImage / deb，不影响上面的 Docker ARM64 部署。
+
+当前正式 Release 仍默认发布 Linux x64 桌面包。Linux ARM64 桌面包需要额外验证
+Electron、`better-sqlite3`、`sqlite-vec` 等原生模块在 `linux/arm64` 下的打包和运行稳定性，
+因此暂不直接加入正式发布矩阵。
+
+如需在本地或 ARM64 Linux 设备上试打桌面端安装包，可以使用实验性入口：
+
+```bash
+bash scripts/release.sh \
+  -v 1.3.0 \
+  -y \
+  --target pc \
+  --pc-platform linux \
+  --linux-arch arm64 \
+  --no-github-release
+```
+
+也可以一次构建 x64 和 arm64：
+
+```bash
+bash scripts/release.sh \
+  -v 1.3.0 \
+  -y \
+  --target pc \
+  --pc-platform linux \
+  --linux-arch x64,arm64 \
+  --no-github-release
+```
+
+脚本会对每个 Linux 架构分开执行：
+
+```bash
+npm run rebuild:native -- --target-platform=linux --target-arch=<arch>
+npx electron-builder --config electron/builder.config.js --linux --<arch>
+```
+
+产物文件名会带 `${arch}`，避免 x64 和 arm64 包互相覆盖。
+
+在把 Linux ARM64 桌面包标记为正式支持前，需要在真实 ARM64 Linux 桌面环境验证：
+
+1. AppImage 能启动。
+2. deb 能安装并启动。
+3. 后端启动时没有 `ERR_DLOPEN_FAILED`。
+4. `better-sqlite3` 可以正常读写数据库。
+5. `sqlite-vec` 可用时不影响知识库 / 向量相关功能。
+6. 创建笔记、编辑保存、全文搜索、附件上传等核心功能正常。

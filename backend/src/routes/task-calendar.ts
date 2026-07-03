@@ -40,14 +40,53 @@ function icsFold(line: string): string {
   return result.join("\r\n ");
 }
 
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function formatLocalDateTime(date: Date): string {
+  return [
+    date.getFullYear(),
+    pad2(date.getMonth() + 1),
+    pad2(date.getDate()),
+    "T",
+    pad2(date.getHours()),
+    pad2(date.getMinutes()),
+    pad2(date.getSeconds()),
+  ].join("");
+}
+
+function addMinutesToIcsDateTime(value: string, minutes: number): string {
+  const match = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/);
+  if (!match) return value;
+  const [, year, month, day, hour, minute, second] = match;
+  const date = new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute) + minutes,
+    Number(second),
+  );
+  return formatLocalDateTime(date);
+}
+
+function addDaysToIcsDate(value: string, days: number): string {
+  const match = value.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (!match) return value;
+  const [, year, month, day] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day) + days);
+  return [date.getFullYear(), pad2(date.getMonth() + 1), pad2(date.getDate())].join("");
+}
+
 function toIcsDate(dateStr: string): { value: string; isDateTime: boolean } {
-  // dueAt: "2026-06-12T18:00" -> DTSTART;TZID=...:20260612T180000
-  // dueDate: "2026-06-12" -> DTSTART;VALUE=DATE:20260612
-  if (dateStr.includes("T")) {
-    const normalized = dateStr.replace(/[-:]/g, "").replace("T", "");
-    return { value: normalized.length === 13 ? normalized + "00" : normalized, isDateTime: true };
+  const normalized = dateStr.trim().replace(" ", "T").replace(/Z$/, "");
+  const dateTime = normalized.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (dateTime) {
+    const [, year, month, day, hour, minute, second = "00"] = dateTime;
+    return { value: `${year}${month}${day}T${hour}${minute}${second}`, isDateTime: true };
   }
-  return { value: dateStr.replace(/-/g, ""), isDateTime: false };
+  return { value: normalized.replace(/-/g, ""), isDateTime: false };
 }
 
 function buildVEvent(task: any, feed: any, reminders: any[]): string {
@@ -63,10 +102,10 @@ function buildVEvent(task: any, feed: any, reminders: any[]): string {
   const dt = toIcsDate(task.dueAt || task.dueDate);
   if (dt.isDateTime) {
     lines.push(icsFold(`DTSTART:${dt.value}`));
-    lines.push(icsFold(`DUE:${dt.value}`));
+    lines.push(icsFold(`DTEND:${addMinutesToIcsDateTime(dt.value, 1)}`));
   } else {
     lines.push(icsFold(`DTSTART;VALUE=DATE:${dt.value}`));
-    lines.push(icsFold(`DUE;VALUE=DATE:${dt.value}`));
+    lines.push(icsFold(`DTEND;VALUE=DATE:${addDaysToIcsDate(dt.value, 1)}`));
   }
 
   if (task.updatedAt) {

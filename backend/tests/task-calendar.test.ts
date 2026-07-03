@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
+import { after } from "node:test";
 import Database from "better-sqlite3";
 import crypto from "crypto";
 
@@ -7,6 +11,33 @@ import crypto from "crypto";
  * Test the task calendar ICS feed logic.
  * Tests the SQL queries and ICS generation against in-memory SQLite.
  */
+
+const realCalendarTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nowen-task-calendar-"));
+process.env.DB_PATH = path.join(realCalendarTmpDir, "test.db");
+process.env.NODE_ENV = "test";
+
+async function setupRealCalendarDb() {
+  const [{ getDb }, taskCalendarModule] = await Promise.all([
+    import("../src/db/schema"),
+    import("../src/routes/task-calendar"),
+  ]);
+  const db = getDb();
+  db.prepare("DELETE FROM task_reminders").run();
+  db.prepare("DELETE FROM tasks").run();
+  db.prepare("DELETE FROM task_calendar_feeds").run();
+  db.prepare("DELETE FROM users").run();
+  return {
+    db,
+    buildIcsForToken: taskCalendarModule.buildIcsForToken,
+    taskCalendar: taskCalendarModule.default,
+  };
+}
+
+after(async () => {
+  const { closeDb } = await import("../src/db/schema");
+  closeDb();
+  fs.rmSync(realCalendarTmpDir, { recursive: true, force: true });
+});
 
 function createTestDb() {
   const db = new Database(":memory:");
@@ -116,7 +147,7 @@ function icsEscape(text: string): string {
 function toIcsDate(dateStr: string): { value: string; isDateTime: boolean } {
   if (dateStr.includes("T") || dateStr.includes(" ")) {
     const cleaned = dateStr.replace(" ", "T").replace(/[-:]/g, "").replace("Z", "");
-    return { value: cleaned, isDateTime: true };
+    return { value: cleaned.length === 13 ? cleaned + "00" : cleaned, isDateTime: true };
   }
   return { value: dateStr.replace(/-/g, ""), isDateTime: false };
 }
@@ -214,11 +245,11 @@ test("includeCompleted=true 时导出已完成任务", () => {
 
 test("dueAt 转换为 DATE-TIME 格式", () => {
   const r1 = toIcsDate("2026-06-12T18:00");
-  assert.equal(r1.value, "20260612T1800");
+  assert.equal(r1.value, "20260612T180000");
   assert.equal(r1.isDateTime, true);
 
   const r2 = toIcsDate("2026-06-12 18:30");
-  assert.equal(r2.value, "20260612T1830");
+  assert.equal(r2.value, "20260612T183000");
   assert.equal(r2.isDateTime, true);
 });
 
@@ -226,6 +257,42 @@ test("dueDate 转换为全天 DATE 格式", () => {
   const r = toIcsDate("2026-06-12");
   assert.equal(r.value, "20260612");
   assert.equal(r.isDateTime, false);
+});
+
+test("真实 ICS 输出使用兼容的 DATE-TIME、DTEND，并且公开订阅与镜像导出一致", async () => {
+  const { db, buildIcsForToken, taskCalendar } = await setupRealCalendarDb();
+
+  db.prepare("INSERT INTO users (id, username, passwordHash) VALUES (?, ?, ?)").run("u-real", "u-real", "hash");
+  db.prepare(`
+    INSERT INTO task_calendar_feeds (id, userId, token, enabled, includeCompleted, includeDescription, defaultAlarmMinutes)
+    VALUES (?, ?, ?, 1, 0, 1, 30)
+  `).run("feed-real", "u-real", "real-token");
+
+  const insertRealTask = db.prepare(`
+    INSERT INTO tasks (id, userId, title, description, dueDate, dueAt, updatedAt, isCompleted)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+  `);
+  insertRealTask.run("t-minute", "u-real", "分钟时间", "", null, "2026-07-02T13:29", "2026-07-02 13:29:00");
+  insertRealTask.run("t-seconds", "u-real", "秒级时间", "", null, "2026-07-02T13:29:00", "2026-07-02 13:29:00");
+  insertRealTask.run("t-space", "u-real", "空格时间", "", null, "2026-07-02 13:29", "2026-07-02 13:29:00");
+  insertRealTask.run("t-date", "u-real", "全天任务", "", "2026-11-02", null, "2026-11-02 00:00:00");
+
+  const result = buildIcsForToken("real-token");
+  assert.ok(result);
+  assert.equal(result.feedId, "feed-real");
+
+  const body = result.body;
+  assert.ok(body.includes("DTSTART:20260702T132900"));
+  assert.ok(body.includes("DTEND:20260702T133000"));
+  assert.ok(!body.includes("DTSTART:202607021329"));
+  assert.ok(!body.includes("DUE:"));
+
+  assert.ok(body.includes("DTSTART;VALUE=DATE:20261102"));
+  assert.ok(body.includes("DTEND;VALUE=DATE:20261103"));
+
+  const publicResponse = await taskCalendar.request("/feed/real-token.ics");
+  assert.equal(publicResponse.status, 200);
+  assert.equal(await publicResponse.text(), body);
 });
 
 test("icsEscape 处理特殊字符", () => {

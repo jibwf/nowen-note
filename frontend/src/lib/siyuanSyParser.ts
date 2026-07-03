@@ -86,6 +86,15 @@ function escapePipe(value: string): string {
   return value.replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
 }
 
+function escapeAttr(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+function looksLikeAssetOrUrl(value: string): boolean {
+  return /^(https?:|data:|blob:|file:|\/|\.\/|\.\.\/|assets\/)/i.test(value.trim()) ||
+    /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif|mp4|webm|ogg|ogv|m4v|mov|mp3|wav|m4a|flac|aac)([?#].*)?$/i.test(value);
+}
+
 function getTitle(node: SiyuanNode): string {
   return (
     getString(node, ["title", "name", "Title", "Name"]) ||
@@ -330,11 +339,13 @@ function renderTable(node: SiyuanNode, ctx: RenderContext): string {
 }
 
 function renderImage(node: SiyuanNode, ctx: RenderContext): string {
-  const src =
-    getString(node, ["src", "href", "url", "Data"]) ||
-    getString((node.Children || []).find((child) => child.Type === "NodeLinkDest"), ["Data"]);
+  const childDest = getString((node.Children || []).find((child) => child.Type === "NodeLinkDest"), ["Data"]);
+  const explicitSrc = getString(node, ["src", "href", "url"]);
+  const data = getString(node, ["Data"]);
+  const src = childDest || explicitSrc || (looksLikeAssetOrUrl(data) ? data : "");
   const alt =
     getString(node, ["alt", "title"]) ||
+    getString((node.Children || []).find((child) => child.Type === "NodeLinkText"), ["Data"]) ||
     textFromChildren(
       (node.Children || []).find((child) => child.Type === "NodeLinkText") || { Type: "NodeLinkText", Children: [] },
       ctx,
@@ -364,10 +375,15 @@ function renderMedia(node: SiyuanNode, ctx: RenderContext): string {
   addUnsupported(ctx, node.Type);
   if (src) ctx.attachments.add(src);
   if (node.Type === "NodeIFrame") {
-    return src ? `<iframe src="${src}"></iframe>` : "";
+    return src ? `<iframe src="${escapeAttr(src)}"></iframe>` : "";
   }
-  const label = node.Type === "NodeAudio" ? "音频" : "视频";
-  return src ? `[${label}](${src})` : `[${label}]`;
+  if (node.Type === "NodeVideo") {
+    return src ? `<video controls playsinline preload="metadata" src="${escapeAttr(src)}"></video>` : "<video controls></video>";
+  }
+  if (node.Type === "NodeAudio") {
+    return src ? `<audio controls src="${escapeAttr(src)}"></audio>` : "<audio controls></audio>";
+  }
+  return src;
 }
 
 function renderBlock(node: SiyuanNode, ctx: RenderContext): string {

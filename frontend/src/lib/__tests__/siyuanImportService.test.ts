@@ -217,14 +217,20 @@ describe("siyuanImportService", () => {
         },
         {
           Type: "NodeImage",
+          Data: "span",
           Children: [
             { Type: "NodeLinkText", Children: [{ Type: "NodeText", Data: "diagram" }] },
             { Type: "NodeLinkDest", Data: "assets/a.png" },
           ],
         },
+        {
+          Type: "NodeVideo",
+          Data: "<video controls=\"controls\" src=\"assets/demo.mp4\" data-src=\"assets/demo.mp4\"></video>",
+        },
         { Type: "NodeAttributeView" },
       ]),
       [`${root}/assets/a.png`]: new Uint8Array([1, 2, 3]),
+      [`${root}/assets/demo.mp4`]: new Uint8Array([4, 5, 6]),
     }, "workspace-20260703162641.zip");
 
     const result = await readSiyuanSyZip(file);
@@ -235,11 +241,14 @@ describe("siyuanImportService", () => {
     expect(grand?.notebookPath).toEqual(["SiYuan User Guide", "Please Start Here", "Content Block"]);
     expect(grand?.content).toContain("#concept#");
     expect(grand?.content).toContain("![diagram](assets/a.png)");
+    expect(grand?.content).not.toContain("![diagram](span)");
+    expect(grand?.content).toContain("<video controls playsinline preload=\"metadata\" src=\"assets/demo.mp4\"></video>");
     expect(grand?.imageMap?.["assets/a.png"]).toMatch(/^data:image\/png;base64,/);
+    expect(grand?.imageMap?.["assets/demo.mp4"]).toMatch(/^data:video\/mp4;base64,/);
     expect(grand?.updatedAt).toBe("2023-04-19T15:36:42");
     expect(result.report.totalSyFiles).toBe(3);
     expect(result.report.importedDocuments).toBe(3);
-    expect(result.report.totalAssets).toBe(1);
+    expect(result.report.totalAssets).toBe(2);
     expect(result.report.detectedTags).toEqual(["concept"]);
     expect(result.report.unsupportedNodes.NodeAttributeView).toBe(1);
     expect(result.report.unresolvedAssets).toEqual([]);

@@ -65,6 +65,10 @@ const SIYUAN_CONF_RE = /(^|\/)\.siyuan\/conf\.json$/i;
 const SIYUAN_SORT_RE = /(^|\/)\.siyuan\/sort\.json$/i;
 const ASSETS_SEGMENT_RE = /(^|\/)assets\//i;
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif)$/i;
+const VIDEO_EXT_RE = /\.(mp4|webm|ogg|ogv|m4v|mov)$/i;
+const AUDIO_EXT_RE = /\.(mp3|wav|ogg|m4a|flac|aac)$/i;
+const EMBEDDABLE_ASSET_RE = /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif|mp4|webm|ogg|ogv|m4v|mov|mp3|wav|m4a|flac|aac)$/i;
+const MAX_INLINE_MEDIA_SIZE = 30 * 1024 * 1024;
 const SIYUAN_MARKER_RE =
   /(^|\n)\s*\{:\s+[^}]*\}\s*(?=\n|$)|\(\([^)]+?\)\)|\[\[[^\]]+?\]\]|!\[[^\]]*]\((?:\.{0,2}\/)?assets\//i;
 
@@ -338,6 +342,11 @@ function isImageAssetRef(ref: string): boolean {
   return IMAGE_EXT_RE.test(clean);
 }
 
+function isEmbeddableAssetRef(ref: string): boolean {
+  const clean = stripQueryHash(trimAssetRef(ref));
+  return EMBEDDABLE_ASSET_RE.test(clean);
+}
+
 function getAssetMime(path: string): string {
   const lower = path.toLowerCase();
   if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
@@ -348,7 +357,27 @@ function getAssetMime(path: string): string {
   if (lower.endsWith(".bmp")) return "image/bmp";
   if (lower.endsWith(".ico")) return "image/x-icon";
   if (lower.endsWith(".avif")) return "image/avif";
+  if (lower.endsWith(".mp4")) return "video/mp4";
+  if (lower.endsWith(".webm")) return "video/webm";
+  if (lower.endsWith(".ogg") || lower.endsWith(".ogv")) return "video/ogg";
+  if (lower.endsWith(".mov")) return "video/quicktime";
+  if (lower.endsWith(".m4v")) return "video/x-m4v";
+  if (lower.endsWith(".mp3")) return "audio/mpeg";
+  if (lower.endsWith(".wav")) return "audio/wav";
+  if (lower.endsWith(".m4a")) return "audio/mp4";
+  if (lower.endsWith(".flac")) return "audio/flac";
+  if (lower.endsWith(".aac")) return "audio/aac";
   return "application/octet-stream";
+}
+
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
 }
 
 function getDocIdFromPath(path: string): string {
@@ -443,9 +472,21 @@ export async function readSiyuanSyZip(file: File): Promise<SiyuanSyImportResult>
 
     if (ASSETS_SEGMENT_RE.test(path)) {
       totalAssets++;
-      if (IMAGE_EXT_RE.test(path)) {
+      if (EMBEDDABLE_ASSET_RE.test(path)) {
         try {
-          const dataUri = `data:${getAssetMime(path)};base64,${await zipEntry.async("base64")}`;
+          const isMedia = VIDEO_EXT_RE.test(path) || AUDIO_EXT_RE.test(path);
+          let base64: string;
+          if (isMedia) {
+            const bytes = await zipEntry.async("uint8array");
+            if (bytes.byteLength > MAX_INLINE_MEDIA_SIZE) {
+              warnings.push(`Siyuan media asset is too large and was kept as a link: ${path}`);
+              continue;
+            }
+            base64 = uint8ArrayToBase64(bytes);
+          } else {
+            base64 = await zipEntry.async("base64");
+          }
+          const dataUri = `data:${getAssetMime(path)};base64,${base64}`;
           imageMap[path] = dataUri;
           const fileName = path.split("/").pop();
           if (fileName && !imageMap[fileName]) imageMap[fileName] = dataUri;
@@ -495,6 +536,9 @@ export async function readSiyuanSyZip(file: File): Promise<SiyuanSyImportResult>
 
     for (const ref of converted.stats.images) {
       if (!imageMapHasAsset(enhancedImageMap, ref)) unresolvedAssets.add(ref);
+    }
+    for (const ref of converted.stats.attachments) {
+      if (isEmbeddableAssetRef(ref) && !imageMapHasAsset(enhancedImageMap, ref)) unresolvedAssets.add(ref);
     }
 
     const notebookPath = buildSiyuanNotebookPath(doc.path, docById, boxNames);

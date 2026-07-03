@@ -915,7 +915,7 @@ export function markdownToSimpleHtml(md: string, imageMap?: Record<string, strin
 
   // 图片：替换 imageMap 中的本地路径为 data URI
   renderer.image = ({ href, title, text }: { href: string; title?: string | null; text: string }) => {
-    const resolvedSrc = resolveImageSrc(href, imageMap);
+    const resolvedSrc = resolveLocalAssetSrc(href, imageMap);
     const titleAttr = title ? ` title="${title}"` : "";
     return `<img src="${resolvedSrc}" alt="${text}"${titleAttr} />`;
   };
@@ -932,13 +932,40 @@ export function markdownToSimpleHtml(md: string, imageMap?: Record<string, strin
 
   marked.use({ renderer, gfm: true, breaks: false });
 
-  const html = marked.parse(content) as string;
+  const html = replaceLocalAssetSources(marked.parse(content) as string, imageMap);
   // 规范化 marked 输出的 GFM 表格 HTML，使其符合 Tiptap table schema
   // （否则带表格的 md 在下游 generateJSON 时会产出非法 content，触发
   //  ProseMirror 的 "Called contentMatchAt on a node with invalid content"）
   // 同时把 GFM 任务列表（- [x] / - [ ]）改写成 Tiptap TaskList 格式，
   // 否则会被 schema 当成普通 <ul>，checkbox 直接丢失退化成无序列表。
   return normalizeTaskListHtml(normalizeTableHtml(html));
+}
+
+function replaceLocalAssetSources(html: string, assetMap?: Record<string, string>): string {
+  if (!assetMap || !html || !/\s(?:src)=["']/i.test(html)) return html;
+
+  if (typeof DOMParser !== "undefined") {
+    try {
+      const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
+      const root = doc.body.firstElementChild;
+      if (!root) return html;
+      const elements = root.querySelectorAll("img[src], video[src], video source[src], audio[src], audio source[src]");
+      elements.forEach((el) => {
+        const src = el.getAttribute("src");
+        if (!src) return;
+        el.setAttribute("src", resolveLocalAssetSrc(src, assetMap));
+      });
+      return root.innerHTML;
+    } catch (e) {
+      console.warn("[importService] replaceLocalAssetSources DOM rewrite failed:", e);
+    }
+  }
+
+  return html.replace(
+    /(<(?:img|video|audio|source)\b[^>]*\ssrc=)(["'])([^"']+)(\2)/gi,
+    (_match, prefix: string, quote: string, src: string, suffix: string) =>
+      `${prefix}${quote}${resolveLocalAssetSrc(src, assetMap)}${suffix}`,
+  );
 }
 
 // 把 marked 输出的 GFM 任务列表 HTML 改写成 Tiptap TaskList/TaskItem 期望的形态。
@@ -1109,8 +1136,8 @@ function repairHtmlViaHeadlessEditor(html: string): unknown | null {
   }
 }
 
-// 在 imageMap 中查找图片路径对应的 data URI
-function resolveImageSrc(src: string, imageMap?: Record<string, string>): string {
+// 在 imageMap 中查找本地资源路径对应的 data URI
+function resolveLocalAssetSrc(src: string, imageMap?: Record<string, string>): string {
   if (!imageMap) return src;
   // 外链 / 绝对 URL / 已是 data URI，不处理
   if (/^(https?:|data:|\/\/)/i.test(src)) return src;
@@ -1143,7 +1170,7 @@ function inlineMarkdown(text: string, imageMap?: Record<string, string>): string
     text
       // 图片（必须在链接之前处理）
       .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt: string, src: string) => {
-        const resolved = resolveImageSrc(src.trim(), imageMap);
+        const resolved = resolveLocalAssetSrc(src.trim(), imageMap);
         const escapedAlt = alt.replace(/"/g, "&quot;");
         return `<img src="${resolved}" alt="${escapedAlt}" />`;
       })

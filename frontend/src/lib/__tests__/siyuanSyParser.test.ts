@@ -99,6 +99,7 @@ describe("siyuanSyParser", () => {
         },
         {
           Type: "NodeImage",
+          Data: "span",
           Children: [
             { Type: "NodeLinkText", Children: [text("pic")] },
             { Type: "NodeLinkDest", Data: "assets/a.png" },
@@ -114,6 +115,7 @@ describe("siyuanSyParser", () => {
     expect(result.markdown).toContain("```ts");
     expect(result.markdown).toContain("| A | B |");
     expect(result.markdown).toContain("![pic](assets/a.png)");
+    expect(result.markdown).not.toContain("![pic](span)");
     expect(result.stats.images).toEqual(["assets/a.png"]);
     expect(result.markdown).toContain("$$");
     expect(result.markdown).toContain("inside");
@@ -134,12 +136,38 @@ describe("siyuanSyParser", () => {
 
     expect(result.markdown).toContain("属性视图暂不支持");
     expect(result.markdown).toContain("{{SELECT *}}");
-    expect(result.markdown).toContain("[视频](assets/demo.mp4)");
-    expect(result.markdown).toContain("[音频](assets/demo.wav)");
+    expect(result.markdown).toContain("<video controls playsinline preload=\"metadata\" src=\"assets/demo.mp4\"></video>");
+    expect(result.markdown).toContain("<audio controls src=\"assets/demo.wav\"></audio>");
     expect(result.markdown).toContain("<iframe src=\"https://example.com\"></iframe>");
     expect(result.markdown).toContain("fallback");
     expect(result.stats.unsupportedNodes.NodeAttributeView).toBe(1);
     expect(result.stats.unsupportedNodes.NodeBlockQueryEmbed).toBe(1);
     expect(result.stats.unsupportedNodes.NodeUnknownThing).toBe(1);
+  });
+
+  it("prefers NodeLinkDest over placeholder image Data and renders HTML video", () => {
+    const result = siyuanSyToMarkdown({
+      Type: "NodeDocument",
+      Children: [
+        {
+          Type: "NodeImage",
+          Data: "span",
+          Children: [
+            { Type: "NodeLinkText", Data: "image" },
+            { Type: "NodeLinkDest", Data: "assets/image-20260703215356-2a0c0jd.png" },
+          ],
+        },
+        {
+          Type: "NodeVideo",
+          Data: "<video controls=\"controls\" src=\"assets/video.mp4\" data-src=\"assets/video.mp4\"></video>",
+        },
+      ],
+    });
+
+    expect(result.markdown).toContain("![image](assets/image-20260703215356-2a0c0jd.png)");
+    expect(result.markdown).not.toContain("![image](span)");
+    expect(result.markdown).toContain("<video controls playsinline preload=\"metadata\" src=\"assets/video.mp4\"></video>");
+    expect(result.stats.images).toEqual(["assets/image-20260703215356-2a0c0jd.png"]);
+    expect(result.stats.attachments).toEqual(["assets/video.mp4"]);
   });
 });

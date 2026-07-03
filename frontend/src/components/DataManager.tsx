@@ -17,7 +17,7 @@ import {
   ImportFileInfo, ImportProgress,
   PDF_NO_TEXT_LAYER_FLAG, PDF_TOO_LARGE_FLAG, MAX_PDF_SIZE,
 } from "@/lib/importService";
-import { inspectSiyuanZip, readSiyuanMarkdownZip } from "@/lib/siyuanImportService";
+import { inspectSiyuanZip, readSiyuanMarkdownZip, type SiyuanImportReport } from "@/lib/siyuanImportService";
 import { useApp, useAppActions } from "@/store/AppContext";
 import { api, withSudo, getCurrentWorkspace, setCurrentWorkspace, getBaseUrl } from "@/lib/api";
 import { toast } from "@/lib/toast";
@@ -211,7 +211,7 @@ function DesktopDataSafetyCard() {
 }
 
 export default function DataManager() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { state } = useApp();
   const actions = useAppActions();
 
@@ -409,6 +409,40 @@ export default function DataManager() {
     }
   };
 
+  const formatSiyuanImportReport = (report: SiyuanImportReport): string[] => {
+    const messages = [
+      t("dataManager.siyuanDetected"),
+      t("dataManager.siyuanReportMarkdownFiles", { count: report.totalMarkdownFiles }),
+    ];
+    if (report.cleanedBlockAttrs > 0) {
+      messages.push(t("dataManager.siyuanReportCleanedBlockAttrs", { count: report.cleanedBlockAttrs }));
+    }
+    if (report.convertedWikiLinks > 0 || report.convertedBlockRefs > 0) {
+      messages.push(t("dataManager.siyuanReportConvertedLinks", {
+        wiki: report.convertedWikiLinks,
+        block: report.convertedBlockRefs,
+      }));
+    }
+    if (report.detectedTags.length > 0) {
+      const tagSeparator = i18n.language?.startsWith("zh") ? "、" : ", ";
+      const shownTags = report.detectedTags.slice(0, 8).join(tagSeparator);
+      const more = Math.max(0, report.detectedTags.length - 8);
+      messages.push(more > 0
+        ? t("dataManager.siyuanReportDetectedTagsMore", { tags: shownTags, more })
+        : t("dataManager.siyuanReportDetectedTags", { tags: shownTags }));
+    }
+    if (report.unresolvedAssets.length > 0) {
+      messages.push(t("dataManager.siyuanReportUnresolvedAssets", { count: report.unresolvedAssets.length }));
+    }
+    if (report.unsupportedFiles.length > 0) {
+      messages.push(t("dataManager.siyuanReportUnsupportedFiles", { count: report.unsupportedFiles.length }));
+    }
+    if (report.totalSyFiles > 0) {
+      messages.push(t("dataManager.siyuanSyNotSupported"));
+    }
+    return messages;
+  };
+
   const processFiles = async (files: FileList) => {
     setNotesImportError("");
     setNotesImportNotice(null);
@@ -435,14 +469,7 @@ export default function DataManager() {
           r = { files: result, meta: null };
           setNotesImportNotice({
             kind: "siyuan",
-            messages: [
-              t("dataManager.siyuanDetected"),
-              ...siyuanResult.warnings.map((warning) =>
-                warning === "siyuanSyNotSupported"
-                  ? t("dataManager.siyuanSyNotSupported")
-                  : warning,
-              ),
-            ],
+            messages: formatSiyuanImportReport(siyuanResult.report),
           });
         } else {
           r = await readMarkdownFromZipWithMeta(zipFile);

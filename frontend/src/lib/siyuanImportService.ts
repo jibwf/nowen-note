@@ -10,12 +10,34 @@ export interface SiyuanZipInspection {
 
 export interface SiyuanImportResult {
   files: ImportFileInfo[];
+  report: SiyuanImportReport;
   warnings: string[];
+}
+
+export interface SiyuanImportReport {
+  totalMarkdownFiles: number;
+  totalSyFiles: number;
+  cleanedBlockAttrs: number;
+  convertedWikiLinks: number;
+  convertedBlockRefs: number;
+  detectedTags: string[];
+  unresolvedAssets: string[];
+  unsupportedFiles: string[];
+  warnings: string[];
+}
+
+export interface SiyuanMarkdownCleanResult {
+  markdown: string;
+  cleanedBlockAttrs: number;
+  convertedWikiLinks: number;
+  convertedBlockRefs: number;
+  detectedTags: string[];
 }
 
 const MARKDOWN_EXT_RE = /\.(md|markdown)$/i;
 const SIYUAN_SY_EXT_RE = /\.sy$/i;
 const ASSETS_SEGMENT_RE = /(^|\/)assets\//i;
+const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif)$/i;
 const SIYUAN_MARKER_RE =
   /(^|\n)\s*\{:\s+[^}]*\}\s*(?=\n|$)|\(\([^)]+?\)\)|\[\[[^\]]+?\]\]|!\[[^\]]*]\((?:\.{0,2}\/)?assets\//i;
 
@@ -55,6 +77,71 @@ export function isSiyuanSyZip(entries: string[]): boolean {
   return visibleEntries.some(isSyEntry);
 }
 
+function uniqueSorted(values: Iterable<string>): string[] {
+  return Array.from(new Set(Array.from(values).map((value) => value.trim()).filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b),
+  );
+}
+
+function stripQueryHash(ref: string): string {
+  return ref.split(/[?#]/)[0];
+}
+
+function safeDecodeUri(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    try {
+      return decodeURI(value);
+    } catch {
+      return value;
+    }
+  }
+}
+
+function trimAssetRef(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^<|>$/g, "")
+    .replace(/^['"]|['"]$/g, "")
+    .replace(/\\/g, "/");
+}
+
+export function normalizeAssetRef(ref: string): string[] {
+  const raw = trimAssetRef(ref);
+  if (!raw || /^(https?:|data:|\/\/)/i.test(raw)) return [];
+
+  const candidates = new Set<string>();
+  const add = (value: string) => {
+    let normalized = stripQueryHash(trimAssetRef(value))
+      .replace(/^\.\//, "")
+      .replace(/^\/+/, "");
+    while (normalized.startsWith("../")) normalized = normalized.slice(3);
+    if (!normalized) return;
+    candidates.add(normalized);
+    const decoded = safeDecodeUri(normalized);
+    candidates.add(decoded);
+    const fileName = decoded.split("/").pop();
+    if (fileName) candidates.add(fileName);
+    const assetsIndex = decoded.toLowerCase().lastIndexOf("/assets/");
+    const assetsTail = assetsIndex >= 0
+      ? decoded.slice(assetsIndex + 1)
+      : decoded.toLowerCase().startsWith("assets/")
+      ? decoded
+      : "";
+    if (assetsTail) {
+      candidates.add(assetsTail);
+      candidates.add(`./${assetsTail}`);
+      candidates.add(`../${assetsTail}`);
+    }
+  };
+
+  add(raw);
+  add(safeDecodeUri(raw));
+
+  return uniqueSorted(candidates);
+}
+
 export async function inspectSiyuanZip(file: File): Promise<SiyuanZipInspection> {
   const JSZip = (await import("jszip")).default;
   const zip = await JSZip.loadAsync(file);
@@ -89,23 +176,50 @@ export async function inspectSiyuanZip(file: File): Promise<SiyuanZipInspection>
   };
 }
 
-export function cleanSiyuanMarkdown(markdown: string): string {
-  return markdown
-    // Drop standalone block attributes: {: id="..." updated="..." }
-    .replace(/^[ \t]*\{:\s+[^}\r\n]*\}[ \t]*(?:\r?\n|$)/gm, "")
-    // Drop trailing inline block attributes after headings/paragraphs.
-    .replace(/[ \t]+\{:\s+[^}\r\n]*\}(?=\r?\n|$)/g, "")
-    // Degrade block refs to readable text. Prefer the exported display text when present.
-    .replace(/\(\(([^)\s]+)(?:\s+"([^"]*)")?\)\)/g, (_match, id: string, label?: string) =>
-      label?.trim() ? label.trim() : `[块引用:${id}]`,
-    )
-    // Degrade document links to normal Markdown links so they remain clickable/editable text.
+export function cleanSiyuanMarkdownWithReport(markdown: string): SiyuanMarkdownCleanResult {
+  let cleanedBlockAttrs = 0;
+  let convertedWikiLinks = 0;
+  let convertedBlockRefs = 0;
+  const detectedTags = new Set<string>();
+
+  const tagRe = /(^|[^\p{L}\p{N}_/#])#([\p{L}\p{N}_\-\u4e00-\u9fff][^#\r\n]{0,48}?)#/gu;
+  for (const match of markdown.matchAll(tagRe)) {
+    const tag = (match[2] || "").trim();
+    if (tag && !/\s{2,}/.test(tag)) detectedTags.add(tag);
+  }
+
+  const cleaned = markdown
+    .replace(/^[ \t]*\{:\s+[^}\r\n]*\}[ \t]*(?:\r?\n|$)/gm, () => {
+      cleanedBlockAttrs++;
+      return "";
+    })
+    .replace(/[ \t]+\{:\s+[^}\r\n]*\}(?=\r?\n|$)/g, () => {
+      cleanedBlockAttrs++;
+      return "";
+    })
+    .replace(/\(\(([^)\s]+)(?:\s+"([^"]*)")?\)\)/g, (_match, id: string, label?: string) => {
+      convertedBlockRefs++;
+      return label?.trim() ? label.trim() : `[块引用:${id}]`;
+    })
     .replace(/\[\[([^\]\r\n]+)\]\]/g, (_match, target: string) => {
+      convertedWikiLinks++;
       const label = target.trim();
       return label ? `[${label}](${encodeURI(label)})` : "";
     })
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+
+  return {
+    markdown: cleaned,
+    cleanedBlockAttrs,
+    convertedWikiLinks,
+    convertedBlockRefs,
+    detectedTags: uniqueSorted(detectedTags),
+  };
+}
+
+export function cleanSiyuanMarkdown(markdown: string): string {
+  return cleanSiyuanMarkdownWithReport(markdown).markdown;
 }
 
 export function enhanceSiyuanImageMap(
@@ -119,9 +233,9 @@ export function enhanceSiyuanImageMap(
   const noteDir = normalizedNotePath.split("/").slice(0, -1).join("/");
 
   const addAlias = (alias: string, dataUri: string) => {
-    const normalized = normalizeZipPath(alias).replace(/^\.\//, "").replace(/^\/+/, "");
-    if (!normalized || enhanced[normalized]) return;
-    enhanced[normalized] = dataUri;
+    for (const normalized of normalizeAssetRef(alias)) {
+      if (!enhanced[normalized]) enhanced[normalized] = dataUri;
+    }
   };
 
   for (const [rawPath, dataUri] of Object.entries(imageMap)) {
@@ -130,6 +244,7 @@ export function enhanceSiyuanImageMap(
     if (!fileName) continue;
 
     addAlias(fileName, dataUri);
+    addAlias(path, dataUri);
     const assetsIndex = path.toLowerCase().lastIndexOf("/assets/");
     const assetsTail = assetsIndex >= 0
       ? path.slice(assetsIndex + 1)
@@ -152,6 +267,40 @@ export function enhanceSiyuanImageMap(
   return enhanced;
 }
 
+export function collectMarkdownAssetRefs(markdown: string): string[] {
+  const refs = new Set<string>();
+  const addIfAsset = (raw: string | undefined) => {
+    if (!raw) return;
+    const normalizedRefs = normalizeAssetRef(raw);
+    if (normalizedRefs.some((ref) => /(^|\/)assets\//i.test(ref))) {
+      refs.add(stripQueryHash(trimAssetRef(raw)));
+    }
+  };
+
+  const mdLinkRe = /!?\[[^\]]*]\(([^)]+)\)/g;
+  for (const match of markdown.matchAll(mdLinkRe)) {
+    const raw = (match[1] || "").replace(/\s+["'][^"']*["']\s*$/, "");
+    addIfAsset(raw);
+  }
+
+  const htmlAttrRe = /<(?:img|a)\b[^>]*\s(?:src|href)=["']([^"']+)["'][^>]*>/gi;
+  for (const match of markdown.matchAll(htmlAttrRe)) {
+    addIfAsset(match[1]);
+  }
+
+  return uniqueSorted(refs);
+}
+
+function imageMapHasAsset(imageMap: Record<string, string> | undefined, ref: string): boolean {
+  if (!imageMap) return false;
+  return normalizeAssetRef(ref).some((candidate) => Boolean(imageMap[candidate]));
+}
+
+function isImageAssetRef(ref: string): boolean {
+  const clean = stripQueryHash(trimAssetRef(ref));
+  return IMAGE_EXT_RE.test(clean);
+}
+
 export async function readSiyuanMarkdownZip(file: File): Promise<SiyuanImportResult> {
   const inspection = await inspectSiyuanZip(file);
   const warnings: string[] = [];
@@ -160,14 +309,51 @@ export async function readSiyuanMarkdownZip(file: File): Promise<SiyuanImportRes
   }
 
   const { files } = await readMarkdownFromZipWithMeta(file);
-  const cleanedFiles = files
-    .filter((info) => info.source === "md" || info.name.match(MARKDOWN_EXT_RE))
-    .map((info) => ({
+  const markdownFiles = files.filter((info) => info.source === "md" || info.name.match(MARKDOWN_EXT_RE));
+  const detectedTags = new Set<string>();
+  const unresolvedAssets = new Set<string>();
+  const unsupportedFiles = new Set<string>();
+  let cleanedBlockAttrs = 0;
+  let convertedWikiLinks = 0;
+  let convertedBlockRefs = 0;
+
+  const cleanedFiles = markdownFiles.map((info) => {
+    const clean = cleanSiyuanMarkdownWithReport(info.content);
+    cleanedBlockAttrs += clean.cleanedBlockAttrs;
+    convertedWikiLinks += clean.convertedWikiLinks;
+    convertedBlockRefs += clean.convertedBlockRefs;
+    clean.detectedTags.forEach((tag) => detectedTags.add(tag));
+
+    const imageMap = enhanceSiyuanImageMap(info.imageMap, info.name);
+    for (const ref of collectMarkdownAssetRefs(clean.markdown)) {
+      if (!isImageAssetRef(ref)) {
+        unsupportedFiles.add(ref);
+        continue;
+      }
+      if (!imageMapHasAsset(imageMap, ref)) {
+        unresolvedAssets.add(ref);
+      }
+    }
+
+    return {
       ...info,
       source: "siyuan",
-      content: cleanSiyuanMarkdown(info.content),
-      imageMap: enhanceSiyuanImageMap(info.imageMap, info.name),
-    }));
+      content: clean.markdown,
+      imageMap,
+    };
+  });
 
-  return { files: cleanedFiles, warnings };
+  const report: SiyuanImportReport = {
+    totalMarkdownFiles: markdownFiles.length,
+    totalSyFiles: inspection.entries.filter((entry) => isSyEntry(entry) && !isHiddenZipEntry(entry)).length,
+    cleanedBlockAttrs,
+    convertedWikiLinks,
+    convertedBlockRefs,
+    detectedTags: uniqueSorted(detectedTags),
+    unresolvedAssets: uniqueSorted(unresolvedAssets),
+    unsupportedFiles: uniqueSorted(unsupportedFiles),
+    warnings,
+  };
+
+  return { files: cleanedFiles, report, warnings };
 }

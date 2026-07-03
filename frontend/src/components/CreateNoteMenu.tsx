@@ -5,7 +5,7 @@ import { FileText, FileCode, FileType2 } from "lucide-react";
 export type NoteType = "normal" | "markdown" | "word";
 
 export interface CreateNoteMenuProps {
-  onPick: (type: NoteType) => void;
+  onPick: (type: NoteType) => void | Promise<void>;
   onClose: () => void;
   anchorRef: React.RefObject<HTMLElement | null>;
 }
@@ -92,8 +92,10 @@ export default function CreateNoteMenu({ onPick, onClose, anchorRef }: CreateNot
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              onPick(it.id);
               onClose();
+              void Promise.resolve(onPick(it.id)).catch((err) => {
+                console.error("Failed to handle create note menu pick:", err);
+              });
             }}
             className="w-full flex items-start gap-2 px-3 py-2 text-left text-tx-secondary hover:bg-app-hover hover:text-tx-primary transition-colors"
           >

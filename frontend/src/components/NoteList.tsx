@@ -3502,9 +3502,7 @@ export default function NoteList() {
                 ? createMenuAnchorMobileRef
                 : createMenuAnchorFabRef
           }
-          onPick={(type) => {
-            void handleCreateNote(type);
-          }}
+          onPick={(type) => handleCreateNote(type)}
           onClose={() => {
             setCreateNoteMenuOpen(false);
             setCreateNoteMenuSource(null);

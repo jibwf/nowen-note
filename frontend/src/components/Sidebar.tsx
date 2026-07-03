@@ -24,6 +24,11 @@ import { useUserPreferences } from "@/hooks/useUserPreferences";
 import { useRailMode, nextRailMode } from "@/hooks/useRailMode";
 import { api, broadcastLogout, getCurrentWorkspace } from "@/lib/api";
 import { exportNotebook, exportNoteAsImage } from "@/lib/exportService";
+import {
+  getNotebookCreateHandlersForChild,
+  runNotebookCreateAction,
+  type NotebookCreateHandler,
+} from "@/lib/notebookCreateNote";
 import { Note, Notebook, NoteListItem, ViewMode, WorkspaceFeatures } from "@/types";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
@@ -544,9 +549,9 @@ function NotebookItem({
   onNoteDragOver?: (e: React.DragEvent, notebookId: string) => void;
   onNoteDragEnd?: () => void;
   onNoteDrop?: (e: React.DragEvent, notebookId: string) => void;
-  onCreateNote?: (notebookId: string) => void;
-  onCreateMarkdownNote?: (notebookId: string) => void;
-  onCreateWordNote?: (notebookId: string) => void;
+  onCreateNote?: NotebookCreateHandler;
+  onCreateMarkdownNote?: NotebookCreateHandler;
+  onCreateWordNote?: NotebookCreateHandler;
   constrainWidth?: boolean;
   showNoteTime?: boolean;
 }) {
@@ -570,13 +575,19 @@ function NotebookItem({
   const createMenuBtnRef = useRef<HTMLButtonElement>(null);
 
   // 处理创建笔记类型选择
-  const handleCreateNoteType = useCallback((type: NoteType) => {
-    if (type === "normal" && onCreateNote) {
-      onCreateNote(notebook.id);
-    } else if (type === "markdown" && onCreateMarkdownNote) {
-      onCreateMarkdownNote(notebook.id);
-    } else if (type === "word" && onCreateWordNote) {
-      onCreateWordNote(notebook.id);
+  const handleCreateNoteType = useCallback(async (type: NoteType) => {
+    try {
+      const handled = await runNotebookCreateAction(type, notebook.id, {
+        onCreateNote,
+        onCreateMarkdownNote,
+        onCreateWordNote,
+      });
+      if (!handled) {
+        toast.error("未找到对应的新建处理函数");
+      }
+    } catch (err: any) {
+      console.error("Failed to create note from notebook tree:", err);
+      toast.error(err?.message || "新建笔记失败");
     }
   }, [notebook.id, onCreateNote, onCreateMarkdownNote, onCreateWordNote]);
 
@@ -821,7 +832,11 @@ function NotebookItem({
                 onNoteDragOver={onNoteDragOver}
                 onNoteDragEnd={onNoteDragEnd}
                 onNoteDrop={onNoteDrop}
-                onCreateNote={onCreateNote}
+                {...getNotebookCreateHandlersForChild({
+                  onCreateNote,
+                  onCreateMarkdownNote,
+                  onCreateWordNote,
+                })}
                 constrainWidth={constrainWidth}
                 showNoteTime={showNoteTime}
               />
@@ -1597,8 +1612,10 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
       if (!isDesktop) {
         actions.setMobileSidebar(false);
       }
+      const item = noteToListItem(note);
+      actions.addNoteToList(item);
       setNotesByNotebookId((prev) => {
-        return addNoteToNotebookCache(prev, notebookId, noteToListItem(note));
+        return addNoteToNotebookCache(prev, notebookId, item);
       });
       actions.refreshNotebooks();
       actions.refreshNotes();
@@ -1606,7 +1623,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
       console.error("Failed to create note:", err);
       toast.error(err?.message || t("noteList.createFailed") || "新建笔记失败");
     }
-  }, [actions, t]);
+  }, [actions, isDesktop, t]);
 
   const handleCreateSidebarMarkdownNote = useCallback(async (notebookId: string) => {
     try {
@@ -1625,8 +1642,10 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
       if (!isDesktop) {
         actions.setMobileSidebar(false);
       }
+      const item = noteToListItem(note);
+      actions.addNoteToList(item);
       setNotesByNotebookId((prev) => {
-        return addNoteToNotebookCache(prev, notebookId, noteToListItem(note));
+        return addNoteToNotebookCache(prev, notebookId, item);
       });
       actions.refreshNotebooks();
       actions.refreshNotes();
@@ -1634,7 +1653,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
       console.error("Failed to create markdown note:", err);
       toast.error(err?.message || "新建 Markdown 笔记失败");
     }
-  }, [actions]);
+  }, [actions, isDesktop]);
 
   const handleCreateSidebarWordNote = useCallback(async (notebookId: string) => {
     try {
@@ -1651,8 +1670,10 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
       if (!isDesktop) {
         actions.setMobileSidebar(false);
       }
+      const item = noteToListItem(note as any);
+      actions.addNoteToList(item);
       setNotesByNotebookId((prev) => {
-        return addNoteToNotebookCache(prev, notebookId, noteToListItem(note as any));
+        return addNoteToNotebookCache(prev, notebookId, item);
       });
       actions.refreshNotebooks();
       actions.refreshNotes();

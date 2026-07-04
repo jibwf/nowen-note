@@ -7,6 +7,7 @@ import NavRail from "@/components/NavRail";
 import { useRailMode } from "@/hooks/useRailMode";
 import NoteList from "@/components/NoteList";
 import EditorPane from "@/components/EditorPane";
+import EditorSplitView from "@/components/EditorSplitView";
 import TaskCenter from "@/components/TaskCenter";
 import MindMapCenter from "@/components/MindMapEditor";
 import AIChatPanel from "@/components/AIChatPanel";
@@ -756,7 +757,7 @@ function AppLayout() {
             absolute inset-0 z-20 md:static md:z-auto md:flex-1 flex flex-col min-w-0
             ${state.mobileView === "editor" ? "flex" : "hidden md:flex"}
           `}>
-            <EditorPane />
+            {state.editorSplit ? <EditorSplitView /> : <EditorPane />}
           </div>
         </div>
       )}

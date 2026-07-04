@@ -2806,7 +2806,7 @@ const moveToTrash = useCallback(async () => {
         </div>
       </div>
 
-      {userPrefs.enableNoteTabs && <NoteTabsBar />}
+      {userPrefs.enableNoteTabs && !state.editorSplit && <NoteTabsBar />}
 
       {/* Editor (HTML Ԥ�� / MD / Tiptap ��ģʽ����) + Outline */}
       <div className="flex-1 flex overflow-hidden">

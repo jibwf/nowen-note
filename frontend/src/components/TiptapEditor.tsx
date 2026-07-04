@@ -89,6 +89,37 @@ import { useTranslation } from "react-i18next";
 
 const lowlight = createLowlight(common);
 
+const NOTE_WIKI_LINK_RE = /\[\[note:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:#blk:([a-zA-Z0-9_-]+))?(?:\|((?:\\\]|[^\]])*))?\]\]/g;
+
+function parsePastedWikiNoteLinks(text: string, fallbackTitle: string): HTMLDivElement | null {
+  NOTE_WIKI_LINK_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let lastIndex = 0;
+  let found = false;
+  const wrapper = document.createElement("div");
+
+  while ((match = NOTE_WIKI_LINK_RE.exec(text)) !== null) {
+    found = true;
+    if (match.index > lastIndex) {
+      wrapper.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+    }
+
+    const [, noteId, blockId, rawTitle] = match;
+    const title = (rawTitle || fallbackTitle).replace(/\\]/g, "]");
+    const anchor = document.createElement("a");
+    anchor.setAttribute("href", blockId ? `note:${noteId}#blk:${blockId}` : `note:${noteId}`);
+    anchor.textContent = title || fallbackTitle;
+    wrapper.appendChild(anchor);
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (!found) return null;
+  if (lastIndex < text.length) {
+    wrapper.appendChild(document.createTextNode(text.slice(lastIndex)));
+  }
+  return wrapper;
+}
+
 // ---------------------------------------------------------------------------
 // ProseMirror 防御性补丁：避免 "Position X out of range" RangeError 导致崩溃
 // ---------------------------------------------------------------------------
@@ -2026,6 +2057,19 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
             if (!text) return true;
             const tr = stCode.tr.insertText(text);
             view.dispatch(tr);
+            return true;
+          }
+
+          const wikiNoteLinks = text
+            ? parsePastedWikiNoteLinks(text, t("editorTabs.noTitle", { defaultValue: "无标题笔记" }))
+            : null;
+          if (wikiNoteLinks) {
+            console.log("[paste-diag] PATH=wiki-note-links");
+            const { state, dispatch } = view;
+            const parser = ProseMirrorDOMParser.fromSchema(state.schema);
+            const slice = parser.parseSlice(wikiNoteLinks);
+            dispatch(state.tr.replaceSelection(slice).scrollIntoView());
+            setNoteLinkMenu(prev => (prev.open ? { ...prev, open: false } : prev));
             return true;
           }
 

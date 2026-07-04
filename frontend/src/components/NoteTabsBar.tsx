@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { FileCode, FileText, Lock, Pin, X } from "lucide-react";
+import { FileCode, FileText, Lock, Pin, Plus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useApp, useAppActions, type OpenNoteTab } from "@/store/AppContext";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import type { Notebook, NoteListItem } from "@/types";
 
 type TabContextMenuState = {
   tabId: string;
@@ -13,10 +14,53 @@ type TabContextMenuState = {
   y: number;
 } | null;
 
+type CreateMenuState = {
+  x: number;
+  y: number;
+} | null;
+
+type CreateNoteFormat = "tiptap-json" | "markdown";
+
+type DragInsertTarget = {
+  tabId: string;
+  edge: "before" | "after";
+} | null;
+
 function getNextTabAfterClose(tabs: OpenNoteTab[], closingId: string): OpenNoteTab | null {
   const index = tabs.findIndex((tab) => tab.id === closingId);
   if (index === -1) return null;
   return tabs[index + 1] || tabs[index - 1] || null;
+}
+
+function escapeMarkdownLinkText(text: string): string {
+  return text.replace(/\r?\n/g, " ").replace(/]/g, "\\]");
+}
+
+function escapeNoteLinkTitle(title: string): string {
+  return title
+    .replace(/\r?\n/g, " ")
+    .replace(/\|/g, "｜")
+    .replace(/\]/g, "\\]");
+}
+
+function buildWikiNoteLink(tab: OpenNoteTab, fallbackTitle: string): string {
+  const title = escapeNoteLinkTitle(tab.title || fallbackTitle);
+  return `[[note:${tab.id}|${title}]]`;
+}
+
+function getNotebookPath(notebooks: Notebook[], notebookId: string): string[] {
+  const byId = new Map(notebooks.map((notebook) => [notebook.id, notebook]));
+  const path: string[] = [];
+  let cursor: string | null | undefined = notebookId;
+  const visited = new Set<string>();
+  while (cursor && !visited.has(cursor)) {
+    visited.add(cursor);
+    const notebook = byId.get(cursor);
+    if (!notebook) break;
+    path.unshift(notebook.name);
+    cursor = notebook.parentId ?? null;
+  }
+  return path;
 }
 
 async function copyText(text: string): Promise<boolean> {
@@ -58,7 +102,13 @@ export default function NoteTabsBar() {
   const { t } = useTranslation();
   const { openNoteTabs, activeNote, noteLoading } = state;
   const [contextMenu, setContextMenu] = useState<TabContextMenuState>(null);
+  const [createMenu, setCreateMenu] = useState<CreateMenuState>(null);
+  const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
+  const [dragInsertTarget, setDragInsertTarget] = useState<DragInsertTarget>(null);
+  const [creating, setCreating] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const createMenuRef = useRef<HTMLDivElement | null>(null);
+  const suppressClickRef = useRef(false);
 
   const targetTab = useMemo(() => {
     if (!contextMenu) return null;
@@ -131,11 +181,116 @@ export default function NoteTabsBar() {
     actions.setActiveNote(null);
   }, [actions]);
 
-  const copyTabTitle = useCallback(async (tab: OpenNoteTab) => {
+  const reorderTabs = useCallback((sourceId: string, target: NonNullable<DragInsertTarget>) => {
+    if (sourceId === target.tabId) return;
+    const source = openNoteTabs.find((tab) => tab.id === sourceId);
+    if (!source) return;
+    const withoutSource = openNoteTabs.filter((tab) => tab.id !== sourceId);
+    const targetIndex = withoutSource.findIndex((tab) => tab.id === target.tabId);
+    if (targetIndex === -1) return;
+    const insertIndex = target.edge === "before" ? targetIndex : targetIndex + 1;
+    const nextTabs = [...withoutSource];
+    nextTabs.splice(insertIndex, 0, source);
+    actions.setNoteTabs(nextTabs);
+  }, [actions, openNoteTabs]);
+
+  const updateDragInsertTarget = useCallback((event: React.DragEvent<HTMLElement>, tabId: string) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const edge = event.clientX < rect.left + rect.width / 2 ? "before" : "after";
+    setDragInsertTarget((target) =>
+      target?.tabId === tabId && target.edge === edge ? target : { tabId, edge }
+    );
+  }, []);
+
+  const splitTab = useCallback((tab: OpenNoteTab, direction: "right" | "down") => {
+    actions.splitEditor({ noteId: tab.id, direction });
+  }, [actions]);
+
+  const createNote = useCallback(async (contentFormat: CreateNoteFormat) => {
+    if (creating) return;
+    const notebookId = activeNote?.notebookId
+      || state.selectedNotebookId
+      || openNoteTabs.find((tab) => tab.notebookId)?.notebookId
+      || state.notebooks[0]?.id;
+    if (!notebookId) {
+      toast.warning(t("common.needNotebookFirst"));
+      return;
+    }
+
+    setCreating(true);
+    setCreateMenu(null);
+    try {
+      const note = await api.createNote({
+        notebookId,
+        title: t("common.untitledNote"),
+        contentFormat,
+        ...(contentFormat === "markdown" ? { content: "", contentText: "" } : {}),
+      });
+      actions.setActiveNote(note);
+      actions.setMobileView("editor");
+      actions.openNoteTab({
+        id: note.id,
+        title: note.title,
+        notebookId: note.notebookId,
+        workspaceId: note.workspaceId,
+        contentFormat: note.contentFormat,
+        isLocked: note.isLocked,
+        isTrashed: note.isTrashed,
+        updatedAt: note.updatedAt,
+      });
+      actions.addNoteToList({
+        id: note.id,
+        userId: note.userId,
+        title: note.title,
+        contentText: note.contentText || "",
+        notebookId: note.notebookId,
+        workspaceId: note.workspaceId ?? null,
+        isPinned: note.isPinned || 0,
+        isFavorite: note.isFavorite || 0,
+        isLocked: note.isLocked || 0,
+        isArchived: note.isArchived || 0,
+        isTrashed: note.isTrashed || 0,
+        version: note.version || 1,
+        sortOrder: note.sortOrder || 0,
+        updatedAt: note.updatedAt,
+        createdAt: note.createdAt,
+        contentFormat: note.contentFormat,
+      } as NoteListItem);
+      actions.refreshNotebooks();
+      actions.refreshNotes();
+    } catch (err: any) {
+      toast.error(err?.message || t("noteList.createFailed"));
+    } finally {
+      setCreating(false);
+    }
+  }, [
+    actions,
+    activeNote?.notebookId,
+    creating,
+    openNoteTabs,
+    state.notebooks,
+    state.selectedNotebookId,
+    t,
+  ]);
+
+  const copyFromTab = useCallback(async (
+    tab: OpenNoteTab,
+    type: "wiki" | "markdown" | "title" | "id" | "path",
+  ) => {
     const title = tab.title || t("editorTabs.noTitle");
-    const ok = await copyText(title);
+    const notebookPath = getNotebookPath(state.notebooks, tab.notebookId);
+    const value = type === "wiki"
+      ? buildWikiNoteLink(tab, t("editorTabs.noTitle"))
+      : type === "markdown"
+        ? `[${escapeMarkdownLinkText(title)}](note:${tab.id})`
+        : type === "title"
+          ? title
+          : type === "id"
+            ? tab.id
+            : [...notebookPath, title].join(" / ") || title;
+    const ok = await copyText(value);
     ok ? toast.success(t("editorTabs.copySuccess")) : toast.error(t("editorTabs.copyFailed"));
-  }, [t]);
+  }, [state.notebooks, t]);
 
   const togglePinned = useCallback((tab: OpenNoteTab) => {
     actions.updateNoteTab({ id: tab.id, pinned: !tab.pinned });
@@ -152,13 +307,18 @@ export default function NoteTabsBar() {
   }, []);
 
   useEffect(() => {
-    if (!contextMenu) return;
+    if (!contextMenu && !createMenu) return;
     const onPointerDown = (event: MouseEvent) => {
       if (menuRef.current?.contains(event.target as Node)) return;
+      if (createMenuRef.current?.contains(event.target as Node)) return;
       setContextMenu(null);
+      setCreateMenu(null);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setContextMenu(null);
+      if (event.key === "Escape") {
+        setContextMenu(null);
+        setCreateMenu(null);
+      }
     };
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -166,7 +326,7 @@ export default function NoteTabsBar() {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [contextMenu]);
+  }, [contextMenu, createMenu]);
 
   useEffect(() => {
     if (contextMenu && !targetTab) setContextMenu(null);
@@ -186,8 +346,10 @@ export default function NoteTabsBar() {
 
   if (openNoteTabs.length === 0) return null;
 
-  const menuX = contextMenu ? Math.min(contextMenu.x, window.innerWidth - 236) : 0;
-  const menuY = contextMenu ? Math.min(contextMenu.y, window.innerHeight - 360) : 0;
+  const menuX = contextMenu ? Math.max(8, Math.min(contextMenu.x, window.innerWidth - 236)) : 0;
+  const menuY = contextMenu ? Math.max(8, Math.min(contextMenu.y, window.innerHeight - 500)) : 0;
+  const createMenuX = createMenu ? Math.max(8, Math.min(createMenu.x, window.innerWidth - 252)) : 0;
+  const createMenuY = createMenu ? Math.max(8, Math.min(createMenu.y, window.innerHeight - 180)) : 0;
 
   return (
     <div
@@ -202,7 +364,14 @@ export default function NoteTabsBar() {
             <button
               key={tab.id}
               type="button"
-              onClick={() => void openNote(tab.id)}
+              draggable
+              onClick={(e) => {
+                if (suppressClickRef.current) {
+                  e.preventDefault();
+                  return;
+                }
+                void openNote(tab.id);
+              }}
               onContextMenu={(e) => {
                 e.preventDefault();
                 setContextMenu({ tabId: tab.id, x: e.clientX, y: e.clientY });
@@ -213,14 +382,57 @@ export default function NoteTabsBar() {
                   closeTab(tab.id);
                 }
               }}
+              onDragStart={(e) => {
+                setContextMenu(null);
+                setCreateMenu(null);
+                setDraggingTabId(tab.id);
+                setDragInsertTarget(null);
+                suppressClickRef.current = true;
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", tab.id);
+              }}
+              onDragOver={(e) => {
+                if (!draggingTabId || draggingTabId === tab.id) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                updateDragInsertTarget(e, tab.id);
+              }}
+              onDragEnter={(e) => {
+                if (!draggingTabId || draggingTabId === tab.id) return;
+                updateDragInsertTarget(e, tab.id);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                const sourceId = draggingTabId || e.dataTransfer.getData("text/plain");
+                if (sourceId && dragInsertTarget) reorderTabs(sourceId, dragInsertTarget);
+                setDraggingTabId(null);
+                setDragInsertTarget(null);
+                window.setTimeout(() => {
+                  suppressClickRef.current = false;
+                }, 0);
+              }}
+              onDragEnd={() => {
+                setDraggingTabId(null);
+                setDragInsertTarget(null);
+                window.setTimeout(() => {
+                  suppressClickRef.current = false;
+                }, 0);
+              }}
               className={cn(
                 "group relative my-1 mr-1 flex max-w-[180px] min-w-[108px] items-center gap-1.5 rounded-t-md px-2.5 text-xs transition-colors",
                 active
                   ? "bg-app-bg text-tx-primary shadow-sm"
-                  : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary"
+                  : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary",
+                draggingTabId === tab.id && "opacity-45"
               )}
               title={title}
             >
+              {dragInsertTarget?.tabId === tab.id && dragInsertTarget.edge === "before" && (
+                <span className="pointer-events-none absolute -left-0.5 top-1 bottom-1 z-10 w-0.5 rounded-full bg-accent-primary" />
+              )}
+              {dragInsertTarget?.tabId === tab.id && dragInsertTarget.edge === "after" && (
+                <span className="pointer-events-none absolute -right-0.5 top-1 bottom-1 z-10 w-0.5 rounded-full bg-accent-primary" />
+              )}
               {tab.pinned && <Pin size={11} className="shrink-0 text-accent-primary fill-accent-primary/20" />}
               {tab.isLocked ? (
                 <Lock size={12} className="shrink-0 text-orange-500" />
@@ -254,8 +466,45 @@ export default function NoteTabsBar() {
             </button>
           );
         })}
+        <button
+          type="button"
+          className="my-1 mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-tx-tertiary transition-colors hover:bg-app-hover hover:text-tx-primary disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            setContextMenu(null);
+            setCreateMenu((menu) => menu ? null : { x: rect.left, y: rect.bottom + 6 });
+          }}
+          disabled={creating}
+          title={t("editorTabs.newDocument")}
+          aria-label={t("editorTabs.newDocument")}
+        >
+          <Plus size={16} className={creating ? "animate-pulse" : undefined} />
+        </button>
       </div>
       <div className="pointer-events-none w-8 bg-gradient-to-r from-transparent to-app-surface/80" />
+
+      {createMenu && createPortal(
+        <div
+          ref={createMenuRef}
+          className="fixed z-[80] w-60 rounded-xl border border-app-border bg-white py-1.5 shadow-xl dark:bg-zinc-950"
+          style={{ left: createMenuX, top: createMenuY }}
+          role="menu"
+        >
+          <CreateMenuItem
+            icon={<FileText size={15} />}
+            label={t("editorTabs.newRichTextNote")}
+            description={t("editorTabs.richTextEditor")}
+            onClick={() => void createNote("tiptap-json")}
+          />
+          <CreateMenuItem
+            icon={<FileCode size={15} />}
+            label={t("editorTabs.newMarkdownNote")}
+            description={t("editorTabs.markdownEditor")}
+            onClick={() => void createNote("markdown")}
+          />
+        </div>,
+        document.body
+      )}
 
       {contextMenu && targetTab && createPortal(
             <div
@@ -270,7 +519,16 @@ export default function NoteTabsBar() {
           <TabMenuItem label={t("editorTabs.closeTabsToLeft")} onClick={() => runMenuAction(() => closeTabsToSide(targetTab, "left"))} />
           <TabMenuItem label={t("editorTabs.closeAllTabs")} onClick={() => runMenuAction(closeAllTabs)} />
           <MenuSeparator />
-          <TabMenuItem label={t("editorTabs.copyTitle")} onClick={() => runCopyAction(() => copyTabTitle(targetTab))} />
+          <TabMenuItem label={t("editorTabs.splitRight")} onClick={() => runMenuAction(() => splitTab(targetTab, "right"))} />
+          <TabMenuItem label={t("editorTabs.splitDown")} onClick={() => runMenuAction(() => splitTab(targetTab, "down"))} />
+          <TabMenuItem label={t("editorTabs.closeSplit")} onClick={() => runMenuAction(actions.closeEditorSplit)} />
+          <TabMenuItem label={t("editorTabs.closeAllSplits")} onClick={() => runMenuAction(actions.clearEditorSplits)} />
+          <MenuSeparator />
+          <TabMenuItem label={t("editorTabs.copyWikiLink")} onClick={() => runCopyAction(() => copyFromTab(targetTab, "wiki"))} />
+          <TabMenuItem label={t("editorTabs.copyMarkdownLink")} onClick={() => runCopyAction(() => copyFromTab(targetTab, "markdown"))} />
+          <TabMenuItem label={t("editorTabs.copyTitle")} onClick={() => runCopyAction(() => copyFromTab(targetTab, "title"))} />
+          <TabMenuItem label={t("editorTabs.copyNoteId")} onClick={() => runCopyAction(() => copyFromTab(targetTab, "id"))} />
+          <TabMenuItem label={t("editorTabs.copyReadablePath")} onClick={() => runCopyAction(() => copyFromTab(targetTab, "path"))} />
           <MenuSeparator />
           <TabMenuItem
             label={targetTab.pinned ? t("editorTabs.unpinTab") : t("editorTabs.pinTab")}
@@ -285,6 +543,33 @@ export default function NoteTabsBar() {
 
 function MenuSeparator() {
   return <div className="mx-2 my-1 h-px bg-app-border" />;
+}
+
+function CreateMenuItem({
+  icon,
+  label,
+  description,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="flex w-full items-start gap-3 px-3 py-2 text-left transition-colors hover:bg-app-hover"
+      onClick={onClick}
+      role="menuitem"
+    >
+      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center text-tx-tertiary">{icon}</span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm text-tx-primary">{label}</span>
+        <span className="block truncate text-xs text-tx-tertiary">{description}</span>
+      </span>
+    </button>
+  );
 }
 
 function TabMenuItem({

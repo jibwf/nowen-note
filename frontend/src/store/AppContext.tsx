@@ -17,6 +17,13 @@ export interface OpenNoteTab {
   pinned?: boolean;
 }
 
+export type EditorSplitDirection = "right" | "down";
+
+export interface EditorSplitState {
+  noteId: string;
+  direction: EditorSplitDirection;
+}
+
 interface AppState {
   notebooks: Notebook[];
   notes: NoteListItem[];
@@ -46,6 +53,8 @@ interface AppState {
   notesRefreshToken: number;
   /** 顶部笔记标签页 V1：只保存元信息，不保存正文/编辑器状态。 */
   openNoteTabs: OpenNoteTab[];
+  /** 桌面端编辑区分屏：V1 支持一个副分屏，主分屏仍跟随 activeNote。 */
+  editorSplit: EditorSplitState | null;
 }
 
 type Action =
@@ -81,7 +90,10 @@ type Action =
   | { type: "UPDATE_NOTE_TAB"; payload: Partial<OpenNoteTab> & { id: string } }
   | { type: "REMOVE_NOTE_TAB"; payload: string }
   | { type: "CLEAR_NOTE_TABS" }
-  | { type: "SET_NOTE_TABS"; payload: OpenNoteTab[] };
+  | { type: "SET_NOTE_TABS"; payload: OpenNoteTab[] }
+  | { type: "SPLIT_EDITOR"; payload: EditorSplitState }
+  | { type: "CLOSE_EDITOR_SPLIT" }
+  | { type: "CLEAR_EDITOR_SPLITS" };
 
 const DEFAULT_SIDEBAR_WIDTH = 260;
 const MIN_SIDEBAR_WIDTH = 200;
@@ -161,6 +173,7 @@ const initialState: AppState = {
   mobileSidebarOpen: false,
   notesRefreshToken: 0,
   openNoteTabs: [],
+  editorSplit: null,
 };
 
 export { MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH, MIN_NOTELIST_WIDTH, MAX_NOTELIST_WIDTH, DEFAULT_NOTELIST_WIDTH };
@@ -288,6 +301,7 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         openNoteTabs: state.openNoteTabs.filter((tab) => tab.id !== action.payload),
+        editorSplit: state.editorSplit?.noteId === action.payload ? null : state.editorSplit,
       };
     case "UPDATE_NOTE_TAB":
       return {
@@ -297,9 +311,20 @@ function reducer(state: AppState, action: Action): AppState {
         )),
       };
     case "CLEAR_NOTE_TABS":
-      return { ...state, openNoteTabs: [] };
+      return { ...state, openNoteTabs: [], editorSplit: null };
     case "SET_NOTE_TABS":
-      return { ...state, openNoteTabs: trimOpenNoteTabs(sortOpenNoteTabs(action.payload), state.activeNote?.id) };
+      return {
+        ...state,
+        openNoteTabs: trimOpenNoteTabs(sortOpenNoteTabs(action.payload), state.activeNote?.id),
+        editorSplit: state.editorSplit && action.payload.some((tab) => tab.id === state.editorSplit?.noteId)
+          ? state.editorSplit
+          : null,
+      };
+    case "SPLIT_EDITOR":
+      return { ...state, editorSplit: action.payload };
+    case "CLOSE_EDITOR_SPLIT":
+    case "CLEAR_EDITOR_SPLITS":
+      return { ...state, editorSplit: null };
     default:
       return state;
   }
@@ -364,6 +389,9 @@ export function useAppActions() {
     removeNoteTab: (id: string) => dispatch({ type: "REMOVE_NOTE_TAB", payload: id }),
     clearNoteTabs: () => dispatch({ type: "CLEAR_NOTE_TABS" }),
     setNoteTabs: (v: OpenNoteTab[]) => dispatch({ type: "SET_NOTE_TABS", payload: v }),
+    splitEditor: (v: EditorSplitState) => dispatch({ type: "SPLIT_EDITOR", payload: v }),
+    closeEditorSplit: () => dispatch({ type: "CLOSE_EDITOR_SPLIT" }),
+    clearEditorSplits: () => dispatch({ type: "CLEAR_EDITOR_SPLITS" }),
     refreshNotebooks: () => {
       api.getNotebooks().then((v) => dispatch({ type: "SET_NOTEBOOKS", payload: v })).catch(console.error);
     },

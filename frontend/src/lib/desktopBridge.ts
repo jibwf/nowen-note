@@ -401,6 +401,12 @@ export async function resetDesktopLocalAuth(): Promise<{ ok: boolean; token?: st
   return bridge.resetLocalAuth();
 }
 
+export async function clearDesktopLocalAuth(): Promise<{ ok: boolean; reason?: string }> {
+  const bridge = getBridge();
+  if (!bridge?.clearLocalAuth) return { ok: false, reason: "not-supported" };
+  return bridge.clearLocalAuth();
+}
+
 /**
  * 上报当前编辑器的格式状态，供主进程同步系统菜单栏 checked 标记。
  *

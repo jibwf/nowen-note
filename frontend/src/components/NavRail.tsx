@@ -28,11 +28,12 @@
  *   不为了功能对齐而把 ~80 行复杂逻辑复制到这里。
  */
 import React, { useEffect, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   BookOpen, Star, Trash2, ListTodo, BrainCircuit,
   Sparkles, NotebookPen, FolderOpen,
   Settings, LogOut, PanelLeftClose, PanelLeft, X,
-  Columns2, Columns3, Cloud, CloudOff,
+  Columns2, Columns3, Cloud, CloudOff, User, RotateCcw, Server,
 } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
@@ -43,7 +44,16 @@ import { cn } from "@/lib/utils";
 import SettingsModal from "@/components/SettingsModal";
 import MigrationModal from "@/components/MigrationModal";
 import { useRailMode, nextRailMode, RailMode } from "@/hooks/useRailMode";
-import { getAppInfo, getDiagnosticsInfo, isDesktop as isDesktopApp, switchDesktopToFull, type AppInfo } from "@/lib/desktopBridge";
+import {
+  changeDesktopServer,
+  clearDesktopLocalAuth,
+  getAppInfo,
+  getDiagnosticsInfo,
+  isDesktop as isDesktopApp,
+  resetDesktopLocalAuth,
+  switchDesktopToFull,
+  type AppInfo,
+} from "@/lib/desktopBridge";
 import { clearLocalIdMap, clearQueue, getQueueLength } from "@/lib/offlineQueue";
 import { clearRememberedCredentials } from "@/lib/rememberLogin";
 
@@ -126,6 +136,7 @@ export default function NavRail({ variant = "desktop" }: { variant?: "desktop" |
   const [showSettings, setShowSettings] = useState(false);
   // D-2：迁移向导弹窗。点"切换到云端"会先弹出，让用户选择是否把本地数据迁过去。
   const [showMigration, setShowMigration] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [desktopInfo, setDesktopInfo] = useState<AppInfo | null>(null);
 
   useEffect(() => {
@@ -146,6 +157,15 @@ export default function NavRail({ variant = "desktop" }: { variant?: "desktop" |
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAccountMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [accountMenuOpen]);
 
   const normalizeUrl = (url: string) => url.replace(/\/+$/, "").toLowerCase();
   const isLoopbackUrl = (url: string) => {
@@ -186,6 +206,7 @@ export default function NavRail({ variant = "desktop" }: { variant?: "desktop" |
   }, [actions, isMobile]);
 
   const handleDesktopCloudButton = useCallback(async () => {
+    setAccountMenuOpen(false);
     if (!canSwitchBackToLocal) {
       setShowMigration(true);
       return;
@@ -218,6 +239,46 @@ export default function NavRail({ variant = "desktop" }: { variant?: "desktop" |
     } catch { /* ignore */ }
     window.location.reload();
   }, [canSwitchBackToLocal, t]);
+
+  const handleDesktopLogoutSession = useCallback(async () => {
+    setAccountMenuOpen(false);
+    await clearRememberedCredentials();
+    await clearDesktopLocalAuth().catch(() => ({ ok: false }));
+    try {
+      localStorage.setItem("nowen-prefer-cloud", "1");
+    } catch { /* ignore */ }
+    broadcastLogout("desktop_logout_session");
+    window.location.reload();
+  }, []);
+
+  const handleDesktopCloudLogout = useCallback(async () => {
+    setAccountMenuOpen(false);
+    await clearRememberedCredentials();
+    broadcastLogout("user_logout");
+    window.location.reload();
+  }, []);
+
+  const handleDesktopChangeServer = useCallback(async () => {
+    setAccountMenuOpen(false);
+    await clearRememberedCredentials();
+    await changeDesktopServer();
+  }, []);
+
+  const handleDesktopResetLocalAuth = useCallback(async () => {
+    setAccountMenuOpen(false);
+    const result = await resetDesktopLocalAuth();
+    if (result?.ok && result.token) {
+      try {
+        localStorage.setItem("nowen-token", result.token);
+        localStorage.removeItem("nowen-prefer-cloud");
+      } catch { /* ignore */ }
+      window.location.reload();
+      return;
+    }
+    if (result?.error) {
+      window.alert(result.error);
+    }
+  }, []);
 
   // ===== 尺寸常量 =====
   // icon 模式：48px 宽栏 / 40px 方按钮
@@ -272,6 +333,93 @@ export default function NavRail({ variant = "desktop" }: { variant?: "desktop" |
   // 这样用户能在抽屉里调整图标紧凑度，但不会把自己折叠成无导航死局。
   const mobileNextMode: RailMode = effectiveMode === "label" ? "icon" : "label";
   const MobileSwitchIcon = effectiveMode === "label" ? Columns2 : Columns3;
+  const accountMenuLeft = showLabel ? 72 : 56;
+  const accountMenu = accountMenuOpen && isDesktopApp()
+    ? createPortal(
+        <div
+          className="fixed inset-0 z-[190]"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setAccountMenuOpen(false);
+          }}
+        >
+          <div
+            className="fixed bottom-3 w-56 rounded-lg border border-app-border bg-app-elevated py-1.5 shadow-xl"
+            style={{ left: accountMenuLeft }}
+            role="menu"
+            aria-label={t("sidebar.accountMenu")}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="px-3 py-2 text-xs text-tx-tertiary border-b border-app-border/70">
+              {canSwitchBackToLocal
+                ? t("sidebar.currentCloudAccount")
+                : t("sidebar.currentLocalAccount")}
+            </div>
+            {canSwitchBackToLocal ? (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleDesktopCloudLogout}
+                  className="w-full px-3 py-2 text-left text-sm text-tx-secondary hover:bg-app-hover hover:text-tx-primary flex items-center gap-2"
+                >
+                  <LogOut size={15} />
+                  <span>{t("sidebar.logoutDesktop")}</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleDesktopChangeServer}
+                  className="w-full px-3 py-2 text-left text-sm text-tx-secondary hover:bg-app-hover hover:text-tx-primary flex items-center gap-2"
+                >
+                  <Server size={15} />
+                  <span>{t("sidebar.changeServer")}</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleDesktopCloudButton}
+                  className="w-full px-3 py-2 text-left text-sm text-tx-secondary hover:bg-app-hover hover:text-tx-primary flex items-center gap-2"
+                >
+                  <CloudOff size={15} />
+                  <span>{t("sidebar.switchToLocal")}</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleDesktopLogoutSession}
+                  className="w-full px-3 py-2 text-left text-sm text-tx-secondary hover:bg-app-hover hover:text-tx-primary flex items-center gap-2"
+                >
+                  <LogOut size={15} />
+                  <span>{t("sidebar.logoutSession")}</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleDesktopCloudButton}
+                  className="w-full px-3 py-2 text-left text-sm text-tx-secondary hover:bg-app-hover hover:text-tx-primary flex items-center gap-2"
+                >
+                  <Cloud size={15} />
+                  <span>{t("sidebar.switchToCloud")}</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleDesktopResetLocalAuth}
+                  className="w-full px-3 py-2 text-left text-sm text-tx-secondary hover:bg-app-hover hover:text-tx-primary flex items-center gap-2"
+                >
+                  <RotateCcw size={15} />
+                  <span>{t("sidebar.resetLocalAutoLogin")}</span>
+                </button>
+              </>
+            )}
+          </div>
+        </div>,
+        document.body,
+      )
+    : null;
 
   return (
     <div
@@ -365,6 +513,27 @@ export default function NavRail({ variant = "desktop" }: { variant?: "desktop" |
           </span>
         )}
       </button>
+      {isDesktopApp() && (
+        <button
+          onClick={() => setAccountMenuOpen((open) => !open)}
+          title={showLabel ? undefined : t('sidebar.accountMenu')}
+          aria-label={t('sidebar.accountMenu')}
+          aria-expanded={accountMenuOpen}
+          className={cn(
+            itemBaseClass,
+            accountMenuOpen
+              ? "bg-accent-primary/12 text-accent-primary"
+              : "text-tx-tertiary hover:bg-app-hover hover:text-tx-primary",
+          )}
+        >
+          <User size={16} />
+          {showLabel && (
+            <span className="text-[10px] leading-none mt-0.5 max-w-full truncate px-1">
+              {t('sidebar.accountMenu')}
+            </span>
+          )}
+        </button>
+      )}
       {/*
         桌面端底部账号模式入口：
           - 本地态：显示 Cloud，打开 MigrationModal；登录后可选择「直接进入云端」
@@ -441,6 +610,7 @@ export default function NavRail({ variant = "desktop" }: { variant?: "desktop" |
           />
         )}
       </AnimatePresence>
+      {accountMenu}
     </div>
   );
 }

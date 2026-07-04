@@ -350,7 +350,7 @@ export default function LoginPage({ onLogin, isClientMode = false, onDisconnect 
               {isRegister && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="space-y-4 overflow-hidden">
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("auth.email")}</label>
+                    <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("auth.emailOptional")}</label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 dark:text-zinc-500" />
                       <input
@@ -364,7 +364,7 @@ export default function LoginPage({ onLogin, isClientMode = false, onDisconnect 
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("auth.displayName")}</label>
+                    <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("auth.displayNameOptional")}</label>
                     <input
                       type="text"
                       value={displayName}

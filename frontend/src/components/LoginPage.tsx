@@ -62,6 +62,7 @@ export default function LoginPage({ onLogin, isClientMode = false, onDisconnect 
   const [displayName, setDisplayName] = useState("");
   const [twoFactorTicket, setTwoFactorTicket] = useState("");
   const [twoFactorUsername, setTwoFactorUsername] = useState("");
+  const [twoFactorBaseUrl, setTwoFactorBaseUrl] = useState("");
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -224,9 +225,11 @@ export default function LoginPage({ onLogin, isClientMode = false, onDisconnect 
         return;
       }
 
-      if (data.requires2FA && data.ticket) {
+      const requiresTwoFactor = data.requires2FA || data.requiresTwoFactor || data.twoFactorRequired;
+      if (requiresTwoFactor && data.ticket) {
         setTwoFactorTicket(data.ticket);
         setTwoFactorUsername(data.username || username.trim());
+        setTwoFactorBaseUrl(baseUrl || "");
         setTwoFactorCode("");
         setLoginStep("twoFactor");
         setError("");
@@ -265,7 +268,7 @@ export default function LoginPage({ onLogin, isClientMode = false, onDisconnect 
     setError("");
 
     try {
-      const baseUrl = isClientMode ? buildServerUrl(serverParts) : "";
+      const baseUrl = twoFactorBaseUrl || (isClientMode ? buildServerUrl(serverParts) : "");
       const verifyUrl = baseUrl
         ? `${baseUrl}/api/auth/2fa/verify`
         : "/api/auth/2fa/verify";
@@ -285,6 +288,7 @@ export default function LoginPage({ onLogin, isClientMode = false, onDisconnect 
         if (data.code === "TFA_TICKET_EXPIRED") {
           setLoginStep("password");
           setTwoFactorTicket("");
+          setTwoFactorBaseUrl("");
           setTwoFactorCode("");
           setError(t("auth.twoFactor.ticketExpired"));
           return;
@@ -314,6 +318,7 @@ export default function LoginPage({ onLogin, isClientMode = false, onDisconnect 
   const backToPasswordLogin = () => {
     setLoginStep("password");
     setTwoFactorTicket("");
+    setTwoFactorBaseUrl("");
     setTwoFactorCode("");
     setError("");
   };
@@ -331,6 +336,7 @@ export default function LoginPage({ onLogin, isClientMode = false, onDisconnect 
     setLoginStep("password");
     setTwoFactorTicket("");
     setTwoFactorUsername("");
+    setTwoFactorBaseUrl("");
     setTwoFactorCode("");
     setError("");
     onDisconnect?.();
@@ -345,6 +351,7 @@ export default function LoginPage({ onLogin, isClientMode = false, onDisconnect 
     setLoginStep("password");
     setTwoFactorTicket("");
     setTwoFactorUsername("");
+    setTwoFactorBaseUrl("");
     setTwoFactorCode("");
   };
 

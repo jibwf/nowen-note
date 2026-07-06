@@ -1,6 +1,11 @@
 {
-  "generatedAt": "2026-07-03T07:28:37.932Z",
+  "generatedAt": "2026-07-06T01:18:27.006Z",
   "entries": [
+    {
+      "version": "1.2.6",
+      "date": "2026-07-06",
+      "body": "### ✨ 新增\n\n- add EditorSplitView component (e574cbd)\n- add NoteTabsBar and tab navigation system (b4dbfe9)\n- add SiYuan SY parser and enhance import service (7d5d4c9)\n- add SiYuan note import service (28cd137)\n\n### 🐛 修复\n\n- support manual note sorting (510bed7)\n- 修复安全设置、任务中心及分享笔记等问题 (8f2565d)\n- 优化登录页组件 (4c8be41)\n- 优化登录页组件与国际化 (797be4c)\n- 优化桌面端登录与导航组件 (539faf9)\n- 优化Electron构建、日记中心及笔记列表 (865dc02)\n- 优化笔记列表与标签页组件 (adec6f1)\n- improve NoteTabsBar and AppContext integration (6a589a8)\n- update Sidebar component (8b0ece9)\n- update DataManager and i18n (aea3ac0)\n- handle deleted notebooks in export/import flow (bf74ff9)\n- enhance SiYuan import media asset handling (dd1d64a)\n- improve SiYuan import service and i18n (ad29c60)"
+    },
     {
       "version": "1.2.5",
       "date": "2026-07-03",
@@ -45,11 +50,6 @@
       "version": "1.1.17",
       "date": "2026-06-08",
       "body": "### ♻️ 重构\n\n- 大规模代码精简和架构优化 (60f051b)"
-    },
-    {
-      "version": "1.1.16",
-      "date": "2026-06-05",
-      "body": "### ✨ 新增\n\n- 全面增强搜索功能和用户体验 (524cf8c)\n- 增强搜索体验和侧边栏布局管理 (14b61c2)\n- 增强附件对象存储功能和搜索高亮显示 (7ce7d53)\n\n### 🐛 修复\n\n- 修复 TypeScript 编译错误 - Buffer 类型兼容性 (ff2f4b5)\n- 全面优化版本恢复功能和编辑器状态管理 (85783d1)\n- 优化侧边栏布局计算和滚动性能 (5e49465)\n\n### 📌 杂项\n\n- 实现对象存储支持和同步中心功能 (d576ec1)"
     }
   ]
 }

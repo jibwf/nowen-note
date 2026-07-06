@@ -12,6 +12,32 @@
 
 <!-- ADD_NEW_HERE -->
 
+## v1.2.6 - 2026-07-06
+
+### ✨ 新增
+
+- add EditorSplitView component (e574cbd)
+- add NoteTabsBar and tab navigation system (b4dbfe9)
+- add SiYuan SY parser and enhance import service (7d5d4c9)
+- add SiYuan note import service (28cd137)
+
+### 🐛 修复
+
+- support manual note sorting (510bed7)
+- 修复安全设置、任务中心及分享笔记等问题 (8f2565d)
+- 优化登录页组件 (4c8be41)
+- 优化登录页组件与国际化 (797be4c)
+- 优化桌面端登录与导航组件 (539faf9)
+- 优化Electron构建、日记中心及笔记列表 (865dc02)
+- 优化笔记列表与标签页组件 (adec6f1)
+- improve NoteTabsBar and AppContext integration (6a589a8)
+- update Sidebar component (8b0ece9)
+- update DataManager and i18n (aea3ac0)
+- handle deleted notebooks in export/import flow (bf74ff9)
+- enhance SiYuan import media asset handling (dd1d64a)
+- improve SiYuan import service and i18n (ad29c60)
+
+
 ## v1.2.5 - 2026-07-03
 
 ### ✨ 新增

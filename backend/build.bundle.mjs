@@ -38,6 +38,8 @@ const external = [
   "sqlite-vec-linux-x64",
   "bonjour-service",
   "unpdf",
+  // unzipper 的 S3_v3 辅助函数里有可选 AWS SDK require；思源导入只用本地文件。
+  "@aws-sdk/client-s3",
 ];
 
 const start = Date.now();

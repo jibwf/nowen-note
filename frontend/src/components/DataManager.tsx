@@ -17,14 +17,6 @@ import {
   ImportFileInfo, ImportProgress,
   PDF_NO_TEXT_LAYER_FLAG, PDF_TOO_LARGE_FLAG, MAX_PDF_SIZE,
 } from "@/lib/importService";
-import {
-  assertSiyuanZipCanBeReadInBrowser,
-  inspectSiyuanZip,
-  readSiyuanMarkdownZip,
-  readSiyuanSyZip,
-  type SiyuanImportReport,
-  type SiyuanSyImportReport,
-} from "@/lib/siyuanImportService";
 import { useApp, useAppActions } from "@/store/AppContext";
 import { api, withSudo, getCurrentWorkspace, setCurrentWorkspace, getBaseUrl } from "@/lib/api";
 import { toast } from "@/lib/toast";
@@ -288,7 +280,7 @@ function DesktopDataSafetyCard() {
 }
 
 export default function DataManager() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { state } = useApp();
   const actions = useAppActions();
 
@@ -389,6 +381,7 @@ export default function DataManager() {
   const [importFiles, setImportFiles] = useState<ImportFileInfo[]>([]);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [serverSiyuanFile, setServerSiyuanFile] = useState<File | null>(null);
   const [activeImportMethod, setActiveImportMethod] = useState<ImportMethod>("siyuan");
   const [activeMobileMemoMethod, setActiveMobileMemoMethod] = useState<MobileMemoMethod>("xiaomi");
   // 记录"上一次导入实际落到的 workspaceId"和导入数量。
@@ -488,73 +481,6 @@ export default function DataManager() {
     }
   };
 
-  const formatSiyuanImportReport = (report: SiyuanImportReport): string[] => {
-    const messages = [
-      t("dataManager.siyuanDetected"),
-      t("dataManager.siyuanReportMarkdownFiles", { count: report.totalMarkdownFiles }),
-    ];
-    if (report.cleanedBlockAttrs > 0) {
-      messages.push(t("dataManager.siyuanReportCleanedBlockAttrs", { count: report.cleanedBlockAttrs }));
-    }
-    if (report.convertedWikiLinks > 0 || report.convertedBlockRefs > 0) {
-      messages.push(t("dataManager.siyuanReportConvertedLinks", {
-        wiki: report.convertedWikiLinks,
-        block: report.convertedBlockRefs,
-      }));
-    }
-    if (report.detectedTags.length > 0) {
-      const tagSeparator = i18n.language?.startsWith("zh") ? "、" : ", ";
-      const shownTags = report.detectedTags.slice(0, 8).join(tagSeparator);
-      const more = Math.max(0, report.detectedTags.length - 8);
-      messages.push(more > 0
-        ? t("dataManager.siyuanReportDetectedTagsMore", { tags: shownTags, more })
-        : t("dataManager.siyuanReportDetectedTags", { tags: shownTags }));
-    }
-    if (report.unresolvedAssets.length > 0) {
-      messages.push(t("dataManager.siyuanReportUnresolvedAssets", { count: report.unresolvedAssets.length }));
-    }
-    if (report.unsupportedFiles.length > 0) {
-      messages.push(t("dataManager.siyuanReportUnsupportedFiles", { count: report.unsupportedFiles.length }));
-    }
-    if (report.totalSyFiles > 0) {
-      messages.push(t("dataManager.siyuanSyNotSupported"));
-    }
-    return messages;
-  };
-
-  const formatSiyuanSyImportReport = (report: SiyuanSyImportReport): string[] => {
-    const messages = [
-      t("dataManager.siyuanSyDetected"),
-      t("dataManager.siyuanSyReportDocuments", {
-        total: report.totalSyFiles,
-        imported: report.importedDocuments,
-      }),
-      t("dataManager.siyuanSyReportAssets", { count: report.totalAssets }),
-    ];
-    if (report.detectedTags.length > 0) {
-      const tagSeparator = i18n.language?.startsWith("zh") ? "、" : ", ";
-      const shownTags = report.detectedTags.slice(0, 8).join(tagSeparator);
-      const more = Math.max(0, report.detectedTags.length - 8);
-      messages.push(more > 0
-        ? t("dataManager.siyuanReportDetectedTagsMore", { tags: shownTags, more })
-        : t("dataManager.siyuanReportDetectedTags", { tags: shownTags }));
-    }
-    const unsupportedEntries = Object.entries(report.unsupportedNodes)
-      .filter(([, count]) => count > 0)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 6);
-    if (unsupportedEntries.length > 0) {
-      messages.push(t("dataManager.siyuanSyReportUnsupportedNodes", {
-        nodes: unsupportedEntries.map(([type, count]) => `${type} x${count}`).join(", "),
-      }));
-    }
-    if (report.unresolvedAssets.length > 0) {
-      messages.push(t("dataManager.siyuanSyReportUnresolvedAssets", { count: report.unresolvedAssets.length }));
-    }
-    messages.push(t("dataManager.siyuanSyExperimentalHint"));
-    return messages;
-  };
-
   const getImportSourceLabel = (source?: string): string => {
     switch (source?.toLowerCase()) {
       case "siyuan-sy":
@@ -603,6 +529,7 @@ export default function DataManager() {
   const processFiles = async (files: FileList) => {
     setNotesImportError("");
     setNotesImportNotice(null);
+    setServerSiyuanFile(null);
     let result: ImportFileInfo[] = [];
     const fileArray = Array.from(files);
     const zipFile = fileArray.find((f) => f.name.endsWith(".zip"));
@@ -610,39 +537,31 @@ export default function DataManager() {
     try {
       if (zipFile) {
         if (activeImportMethod === "siyuan") {
-          assertSiyuanZipCanBeReadInBrowser(zipFile.size);
+          setServerSiyuanFile(zipFile);
+          result = [{
+            name: zipFile.name,
+            title: zipFile.name.replace(/\.zip$/i, ""),
+            content: "",
+            size: zipFile.size,
+            selected: true,
+            source: "siyuan-sy",
+          }];
+          setHasZip(true);
+          setPerFileNotebook(false);
+          setZipMetaHint(null);
+          setNotesImportNotice({
+            kind: "siyuan",
+            messages: [
+              t("dataManager.siyuanServerImportReady", { size: Math.round(zipFile.size / 1024 / 1024) }),
+              t("dataManager.siyuanServerImportHint"),
+            ],
+          });
+          setImportFiles(result);
+          return;
         }
-        const siyuanInspection = await inspectSiyuanZip(zipFile);
         let r: Awaited<ReturnType<typeof readMarkdownFromZipWithMeta>>;
-        if (siyuanInspection.hasSyFiles && !siyuanInspection.hasMarkdownFiles) {
-          const siyuanResult = await readSiyuanSyZip(zipFile);
-          if (siyuanResult.files.length === 0) {
-            throw new Error(t("dataManager.siyuanSyReadFailed"));
-          }
-          result = siyuanResult.files;
-          r = { files: result, meta: null };
-          setNotesImportNotice({
-            kind: "siyuan",
-            messages: formatSiyuanSyImportReport(siyuanResult.report),
-          });
-        } else if (siyuanInspection.isSiyuanMarkdownZip) {
-          const siyuanResult = await readSiyuanMarkdownZip(zipFile);
-          result = siyuanResult.files;
-          r = { files: result, meta: null };
-          setNotesImportNotice({
-            kind: "siyuan",
-            messages: formatSiyuanImportReport(siyuanResult.report),
-          });
-        } else {
-          r = await readMarkdownFromZipWithMeta(zipFile);
-          result = r.files;
-          if (siyuanInspection.hasSyFiles) {
-            setNotesImportNotice({
-              kind: "warning",
-              messages: [t("dataManager.siyuanSyNotSupported")],
-            });
-          }
-        }
+        r = await readMarkdownFromZipWithMeta(zipFile);
+        result = r.files;
         setHasZip(true);
         // zip 由其内部目录/zip 文件名派生笔记本，关闭 per-file
         setPerFileNotebook(false);
@@ -724,16 +643,50 @@ export default function DataManager() {
     const safeNotebookId = scopeMatchesGlobal ? selectedNotebookId : "";
     // perFileNotebook 与 selectedNotebookId 互斥：只要选了具体笔记本，就不启用 per-file
     const usePerFile = !safeNotebookId && perFileNotebook;
-    const result = await importNotes(
-      importFiles,
-      safeNotebookId || undefined,
-      (p) => setImportProgress(p),
-      {
-        perFileNotebook: usePerFile,
-        duplicateStrategy,
-        workspaceId: effectiveWorkspaceId,
-      }
-    );
+    let result: { success: boolean; count: number };
+    try {
+      result = serverSiyuanFile
+        ? await (async () => {
+            setImportProgress({
+              phase: "uploading",
+              current: 0,
+              total: 1,
+              message: t("dataManager.uploadingProgress"),
+            });
+            const imported = await api.importSiyuanPackage(serverSiyuanFile, {
+              targetNotebookId: safeNotebookId || undefined,
+              workspaceId: effectiveWorkspaceId,
+            });
+            setImportProgress({
+              phase: "done",
+              current: imported.count,
+              total: imported.count,
+              message: t("dataManager.importSuccessCount", { count: imported.count }),
+            });
+            if (imported.warnings?.length) {
+              setNotesImportNotice({ kind: "siyuan", messages: imported.warnings.slice(0, 6) });
+            }
+            return { success: true, count: imported.count };
+          })()
+        : await importNotes(
+            importFiles,
+            safeNotebookId || undefined,
+            (p) => setImportProgress(p),
+            {
+              perFileNotebook: usePerFile,
+              duplicateStrategy,
+              workspaceId: effectiveWorkspaceId,
+            }
+          );
+    } catch (err: any) {
+      result = { success: false, count: 0 };
+      setImportProgress({
+        phase: "error",
+        current: 0,
+        total: 1,
+        message: t("dataManager.importFailed", { error: err?.message || String(err) }),
+      });
+    }
     setIsImporting(false);
 
     if (result.success) {
@@ -766,6 +719,7 @@ export default function DataManager() {
         setImportFiles([]);
         setImportProgress(null);
         setHasZip(false);
+        setServerSiyuanFile(null);
         setNotesImportNotice(null);
         // 注意：lastImportTarget 不在这里清空——它要持续展示，直到用户主动
         // 关闭横幅或点击"切到该工作区查看"。
@@ -792,6 +746,7 @@ export default function DataManager() {
     setImportFiles([]);
     setImportProgress(null);
     setHasZip(false);
+    setServerSiyuanFile(null);
     setNotesImportError("");
     setNotesImportNotice(null);
   };

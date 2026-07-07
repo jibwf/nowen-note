@@ -48,6 +48,7 @@ import {
 import {
   getNextNotebookExpansionState,
   getNotebookExpansionChanges,
+  hasExpandedNotebook,
   type NotebookExpandedState,
 } from "@/lib/notebookExpansion";
 import { SIDEBAR_TREE_INDENT, sidebarTreeContentMinWidth, sidebarTreeRowMinWidth } from "@/lib/sidebarLayout";
@@ -1132,6 +1133,10 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
   );
   const nextNotebookExpansionState = useMemo(
     () => getNextNotebookExpansionState(state.notebooks),
+    [state.notebooks]
+  );
+  const hasExpandedNotebooks = useMemo(
+    () => hasExpandedNotebook(state.notebooks),
     [state.notebooks]
   );
   const collapseAllNotebooksLabel = t("sidebar.collapseAllNotebooks");
@@ -2384,7 +2389,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
             title={toggleAllNotebooksLabel}
             aria-label={toggleAllNotebooksLabel}
           >
-            {nextNotebookExpansionState === 0 ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+            {hasExpandedNotebooks ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </Button>
           <Button
             variant="ghost"

@@ -3,6 +3,7 @@ import type { Notebook } from "@/types";
 import {
   getNotebookExpansionChanges,
   getNextNotebookExpansionState,
+  hasExpandedNotebook,
 } from "@/lib/notebookExpansion";
 
 const notebook = (id: string, isExpanded: number): Notebook => ({
@@ -49,5 +50,12 @@ describe("getNextNotebookExpansionState", () => {
 
   it("expands all when every notebook is collapsed", () => {
     expect(getNextNotebookExpansionState([notebook("closed-1", 0), notebook("closed-2", 0)])).toBe(1);
+  });
+});
+
+describe("hasExpandedNotebook", () => {
+  it("matches the current visual expansion state for the toolbar icon", () => {
+    expect(hasExpandedNotebook([notebook("open", 1), notebook("closed", 0)])).toBe(true);
+    expect(hasExpandedNotebook([notebook("closed", 0)])).toBe(false);
   });
 });

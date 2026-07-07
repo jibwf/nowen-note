@@ -12,5 +12,9 @@ export function getNotebookExpansionChanges(notebooks: Notebook[], expanded: Not
 }
 
 export function getNextNotebookExpansionState(notebooks: Notebook[]): NotebookExpandedState {
-  return notebooks.some((notebook) => notebook.isExpanded === 1) ? 0 : 1;
+  return hasExpandedNotebook(notebooks) ? 0 : 1;
+}
+
+export function hasExpandedNotebook(notebooks: Notebook[]): boolean {
+  return notebooks.some((notebook) => notebook.isExpanded === 1);
 }

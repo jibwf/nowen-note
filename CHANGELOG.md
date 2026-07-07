@@ -12,6 +12,23 @@
 
 <!-- ADD_NEW_HERE -->
 
+## v1.2.8 - 2026-07-07
+
+### ✨ 新增
+
+- combine notebook tree expand toggle (5a283c6)
+- add notebook tree expand collapse actions (#162) (add6eba)
+- 标题输入框增加 IME 输入法状态感知，避免拼音串被误保存为标题 (9051ece)
+- add browser-side size check and asset reference filtering for Siyuan import (fd6879a)
+
+### 🐛 修复
+
+- align notebook tree toggle icon state (3d37362)
+- restore cross-device editor sync (da772b4)
+- scroll markdown preview outline headings (#163) (b385fb9)
+- support markdown default preview and siyuan callouts (#164) (4e94e0a)
+
+
 ## v1.2.7 - 2026-07-06
 
 ### ✨ 新增

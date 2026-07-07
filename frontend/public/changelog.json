@@ -1,6 +1,11 @@
 {
-  "generatedAt": "2026-07-06T07:48:57.891Z",
+  "generatedAt": "2026-07-07T04:42:30.232Z",
   "entries": [
+    {
+      "version": "1.2.8",
+      "date": "2026-07-07",
+      "body": "### ✨ 新增\n\n- combine notebook tree expand toggle (5a283c6)\n- add notebook tree expand collapse actions (#162) (add6eba)\n- 标题输入框增加 IME 输入法状态感知，避免拼音串被误保存为标题 (9051ece)\n- add browser-side size check and asset reference filtering for Siyuan import (fd6879a)\n\n### 🐛 修复\n\n- align notebook tree toggle icon state (3d37362)\n- restore cross-device editor sync (da772b4)\n- scroll markdown preview outline headings (#163) (b385fb9)\n- support markdown default preview and siyuan callouts (#164) (4e94e0a)"
+    },
     {
       "version": "1.2.7",
       "date": "2026-07-06",
@@ -45,11 +50,6 @@
       "version": "1.1.19",
       "date": "2026-06-11",
       "body": "### ✨ 新增\n\n- **前端**: 思维导图标记和主题名称支持多语言 i18n (8f46744)\n- add notebook-first collaboration with hidden workspace UX (e6875a1)\n- **mindmap**: 侧边栏搜索框旁增加收藏筛选按钮 (df89085)\n- **mindmap**: 新建文件夹按钮移到列表顶部 (ccc6425)\n- **mindmap**: 文件夹右键菜单 - 重命名/删除 (37313a7)\n- **backend**: 新增导图移动到文件夹的 PATCH /:id/move 路由 (770b062)\n- **mindmap**: 支持拖拽导图到文件夹 (4213873)\n- **mindmap**: 导图模板功能 - 新建导图时可选择预设模板 (09f7f17)\n- **mindmap**: 文件夹树前端 UI (1adf85a)\n- **mindmap**: 文件夹树后端 + 数据模型 (124562f)\n- **mindmap**: 节点聚焦模式 (9c0ed1a)\n- **mindmap**: 拖拽节点调整结构 (044cb67)\n- **mindmap**: 收藏导图功能 (f1868bd)\n- **mindmap**: 节点复制/剪切/粘贴 (a272d4f)\n- **mindmap**: Ctrl+滚轮鼠标位置缩放 + 节点搜索 + 列表搜索 (7ffe9eb)\n- **mindmap**: 支持 Ctrl+Click 多选节点 (0f0f462)\n- **mindmap**: 思维导图模块 5 阶段增强 (e8f3c66)\n- **mindmap**: 新增全屏编辑模式 (db3ae8b)\n- **mindmap**: 新增添加同级节点 + 快捷键 + 选中节点置顶渲染 (5348b85)\n- **mindmap**: 新增 mindmapTransform.ts 独立解析器 (8255b65)\n- **editor**: MermaidView 工具栏增强 + MindMapEditor 事件监听 + 编辑器 appendMarkdown (03e7782)\n- **ai**: AIChatPanel 支持笔记本级 RAG 作用域 (9a3a4a3)\n- **ai**: EditorPane 新增 AI 总结、AI Mermaid、保存为思维导图 (8effbf2)\n- **ai**: 前端 API 扩展 + i18n + NoteEditorHandle 类型增强 (54a7b26)\n- **ai**: 后端 AI 路由改造 + 笔记本级 AI 端点 (f81d0b8)\n- **ai**: 新增 AI Client 适配层，统一 stream/non-stream 调用 (c1e182d)\n\n### 🐛 修复\n\n- **前端**: NoteList 补回 confirm 导入，修复 tsc -b 构建错误 (182c698)\n- **前端**: 修复6个TypeScript编译错误 — import缺失、path字段缺失、函数未导出 (76721f1)\n- **前端**: 补回缺失的 diagnoseConnection 导出函数，修复 vite build 失败 (bb765a6)\n- **Electron**: setupWindow 和 waitForRemoteReady 支持反代路径前缀 (142c990)\n- **前端+后端**: 服务器地址支持反代路径、修复Windows频闪、新增连接诊断 (4442716)\n- **前端**: 浮动操作条按钮添加细微边框增强轮廓感 (7cb9e70)\n- **前端**: 思维导图标记菜单改用带颜色SVG图标，与节点显示一致 (1014ca0)\n- **前端**: 浮动操作条按钮增强可见性 — 加深背景色、加粗文字、加大点击区域 (98fbff7)\n- **backend**: 修复 mindmaps 相关路由 TypeScript 编译错误 (174f668)\n- **mobile**: 修复移动端回收站一键清空按钮无响应 (1f2fb74)\n- **mindmap**: 文件夹数量跟随收藏/搜索筛选动态更新 (380d594)\n- **i18n**: 修复文件夹右键菜单中文翻译乱码 (e38650f)\n- **i18n**: 修复导图模板中文翻译乱码 (42b1d73)\n- **backend**: requireWorkspaceFeature 中间件正确放行 personal 空间请求 (a0c4947)\n- **backend**: 修复 personal workspaceId 传入时文件夹和导图 API 返回 403 的问题 (164b8d8)\n- **mindmap**: Ctrl+滚轮缩放改为原生事件，阻止浏览器页面缩放 (fe67b0f)\n- **mindmap**: 修复 FloatingToolbar 定位偏移 (9f4ccc3)\n- **mindmap**: 修复数据风险 + UI 扁平化 + 代码拆分 (a789add)\n- **mindmap**: 适应视图图标改为 Scan，与全屏 Maximize2 区分 (d988ec1)\n- **i18n**: 补全思维导图多语言文案 (ffc33cd)\n- **ai**: 标题生成字数限制从10改为20，避免AI输出被截断 (8dfcb05)\n- **mindmap**: 保存为思维导图后可靠跳转 + 使用独立解析器 (caff2d6)\n- **ai**: 修复 RAG 向量召回未传 notebookIds + /ask 复用 ai-client (9061916)\n- **build**: 修复 vite 构建循环 chunk 错误 (9d81de3)\n\n### ♻️ 重构\n\n- **前端**: 思维导图样式收尾 — indigo→blue统一、transition补齐、菜单背景token化、模板弹窗圆角与阴影优化 (e0db228)\n- **前端**: 思维导图悬浮状态与创建按钮样式统一收敛 (ef81bea)\n- **前端**: 思维导图菜单与激活态样式继续收敛 (dec1717)\n- **前端**: 思维导图模块 macOS 风格样式重构 (87a48b3)\n\n### 📝 文档\n\n- 添加完整官网教程体系（47篇教程 + 索引 + 规划） (210f537)"
-    },
-    {
-      "version": "1.1.18",
-      "date": "2026-06-09",
-      "body": "### ✨ 新增\n\n- 更新Android组件和Tiptap编辑器功能 (c489050)\n- 增强Tiptap编辑器功能并优化用户体验 (ce05f9e)\n- 添加鸿蒙ArkWeb原生应用项目 (f63e84f)\n- 添加鸿蒙ArkWeb WebView原生适配支持 (f6d4923)\n\n### 🐛 修复\n\n- 移动端Sidebar约束宽度防溢出，移除选择时自动关闭侧边栏的逻辑 (03bb588)\n- 移除NavRail点击导航项后自动关闭移动端侧边栏的逻辑 (a429f1a)\n- 移动端侧边栏遮罩区分点击/滑动，禁用手势关闭侧边栏，添加overflow-hidden防溢出 (948e447)\n- 优化Android WebView选择菜单处理，使用委托模式替代直接返回null (fa20e06)"
     }
   ]
 }

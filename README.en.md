@@ -160,6 +160,22 @@ If this project helps you, feel free to scan the QR code and buy the author a co
 
 > 最近 5 个版本的更新内容，完整历史见 [CHANGELOG.md](./CHANGELOG.md)。
 
+### v1.2.8 - 2026-07-07
+
+### ✨ 新增
+
+- combine notebook tree expand toggle (5a283c6)
+- add notebook tree expand collapse actions (#162) (add6eba)
+- 标题输入框增加 IME 输入法状态感知，避免拼音串被误保存为标题 (9051ece)
+- add browser-side size check and asset reference filtering for Siyuan import (fd6879a)
+
+### 🐛 修复
+
+- align notebook tree toggle icon state (3d37362)
+- restore cross-device editor sync (da772b4)
+- scroll markdown preview outline headings (#163) (b385fb9)
+- support markdown default preview and siyuan callouts (#164) (4e94e0a)
+
 ### v1.2.7 - 2026-07-06
 
 ### ✨ 新增
@@ -547,23 +563,5 @@ If this project helps you, feel free to scan the QR code and buy the author a co
 
 - @ fix(security): SEC-XSS-01-C 分享页渲染清洗 + CSP 头 (9d07b6c)
 - @ fix(security): SEC-XSS-01-B HTML 安全清洗最小实施 (19cb69b)
-
-### v1.2.3 - 2026-06-26
-
-### 🐛 修复
-
-- ensure uploaded images render after local fallback (BUG-IMAGE-UPLOAD-PREVIEW-01) (b94deff)
-
-### ♻️ 重构
-
-- unify local attachment upload paths (ATTACHMENT-DIRECTORY-ORGANIZE-01-B) (bdf1431)
-
-### 🔧 其他
-
-- remove accidental noop file (f8b27a2)
-
-### 📌 杂项
-
-- noop (309d536)
 
 <!-- CHANGELOG:END -->

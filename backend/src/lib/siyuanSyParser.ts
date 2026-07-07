@@ -210,6 +210,7 @@ function renderTextMark(node: SiyuanNode, ctx: RenderContext): string {
         case "sub":
             return text ? `<sub>${text}</sub>` : "";
         case "inline-memo":
+            addUnsupported(ctx, "inline-memo", "Siyuan inline memo was imported as plain text.");
             ctx.warnings.push("Siyuan inline memo was imported as plain text.");
             return text;
         case "file-annotation-ref":
@@ -494,14 +495,14 @@ function renderBlock(node: SiyuanNode, ctx: RenderContext): string {
             const data = getString(node, ["Data"]);
             const children = renderChildrenBlock(node, ctx);
             if (children) {
-                addUnsupported(ctx, node.Type);
+                addUnsupported(ctx, "unknown");
                 return children;
             }
             if (data) {
-                addUnsupported(ctx, node.Type);
+                addUnsupported(ctx, "unknown");
                 return data;
             }
-            addUnsupported(ctx, node.Type, `Unsupported Siyuan node was skipped: ${node.Type}`);
+            addUnsupported(ctx, "unknown", `Unsupported Siyuan node was skipped: ${node.Type}`);
             return "";
         }
     }

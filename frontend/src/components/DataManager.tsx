@@ -750,7 +750,6 @@ export default function DataManager() {
         setImportProgress(null);
         setHasZip(false);
         setServerSiyuanFile(null);
-        setNotesImportNotice(null);
         // 注意：lastImportTarget 不在这里清空——它要持续展示，直到用户主动
         // 关闭横幅或点击"切到该工作区查看"。
       }, 3000);

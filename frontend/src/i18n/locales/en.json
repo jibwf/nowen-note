@@ -916,8 +916,10 @@
       "NodeIFrame": "IFrame Embed",
       "NodeVideo": "Video Block (downgraded preview syntax)",
       "NodeAudio": "Audio Block (downgraded attachment link)",
+      "inline-memo": "Inline Memo",
       "NodeInlineMemo": "Inline Memo",
-      "NodeFileAnnotationRef": "File Annotation Reference"
+      "NodeFileAnnotationRef": "File Annotation Reference",
+      "unknown": "Unknown Block"
     },
     "importNoticeTitle": "Import notice",
     "importSourceSiyuan": "Siyuan Notes",

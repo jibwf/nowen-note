@@ -933,8 +933,10 @@
       "NodeIFrame": "IFrame 嵌入",
       "NodeVideo": "视频块（降级为可预览语法）",
       "NodeAudio": "音频块（降级为附件链接）",
+      "inline-memo": "行内备注",
       "NodeInlineMemo": "行内备注",
-      "NodeFileAnnotationRef": "文件标注引用"
+      "NodeFileAnnotationRef": "文件标注引用",
+      "unknown": "未识别块"
     },
     "importNoticeTitle": "导入提示",
     "importSourceSiyuan": "思源笔记",

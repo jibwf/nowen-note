@@ -385,23 +385,7 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
 
   // MARKDOWN-PREVIEW-MODE-01: 源码/预览/分屏模式
   const defaultViewMode = userPrefs.markdownDefaultViewMode;
-
-  const resolvePreferredViewMode = useCallback((content: string): MarkdownViewMode => {
-    if (defaultViewMode !== "source") return defaultViewMode;
-    const hasAttachmentMedia =
-      /!\[[^\]]*\]\(\/api\/attachments\/[0-9a-fA-F-]{36}/.test(content) ||
-      /@\[video\]\(\/api\/attachments\/[0-9a-fA-F-]{36}/.test(content);
-    const hasMarkdownStructure =
-      /(^|\n)\s{0,3}#{1,6}\s+/.test(content) ||
-      /(^|\n)\s{0,3}>\s+/.test(content) ||
-      /(^|\n)\s{0,3}[-*+]\s+/.test(content) ||
-      /(^|\n)\s{0,3}\d+\.\s+/.test(content);
-    return hasAttachmentMedia || hasMarkdownStructure ? "split" : defaultViewMode;
-  }, [defaultViewMode]);
-
-  const [viewMode, setViewMode] = useState<MarkdownViewMode>(() =>
-    resolvePreferredViewMode(normalizeToMarkdown(note.content, note.contentText))
-  );
+  const [viewMode, setViewMode] = useState<MarkdownViewMode>(defaultViewMode);
   const [previewMarkdown, setPreviewMarkdown] = useState(() =>
     normalizeToMarkdown(note.content, note.contentText)
   );
@@ -1131,12 +1115,11 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
     // Phase 3: CRDT ģʽ���ĵ��� yCollab �йܣ���Ҫ�ֶ� dispatch setContent��
     // ������������ update ����Զ��״̬��ֻ����ͳ��/���ˢ�¡�
     const isSwitchingNote = lastSyncedNoteIdRef.current !== note.id;
-    const preferredViewMode = resolvePreferredViewMode(normalizeToMarkdown(note.content, note.contentText));
 
     if (collabEnabledRef.current) {
       if (isSwitchingNote) {
         lastSyncedNoteIdRef.current = note.id;
-        setViewMode(preferredViewMode);
+        setViewMode(defaultViewMode);
       }
       const currentDoc = view.state.doc.toString();
       setPreviewMarkdown(currentDoc);
@@ -1156,7 +1139,7 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
     if (isSwitchingNote) {
       lastEmittedContentRef.current = null;
       lastSyncedNoteIdRef.current = note.id;
-      setViewMode(preferredViewMode);
+      setViewMode(defaultViewMode);
     }
 
     // ��д�Զ����������� EditorPane ����ɹ���� content ��� activeNote��
@@ -1212,7 +1195,7 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
     // ���� content ������ version���� TiptapEditor ����һ�µ����塣
     // ���� EditorPane ����� content������ effect ���Ƶ��������
     // ����� lastEmittedContentRef �����������"�Լ�д���ֱ� setContent ����"��
-  }, [note.id, note.content, note.contentText, defaultViewMode, resolvePreferredViewMode]);
+  }, [note.id, note.content, note.contentText, defaultViewMode]);
 
   // ---------- ���ⵥ��ͬ�� ----------
   //

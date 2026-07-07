@@ -13,6 +13,35 @@ import { Readable } from "stream";
 const Busboy = require("busboy");
 
 const app = new Hono();
+const SIYUAN_IMPORT_TMP_PREFIX = "nowen-siyuan-import-";
+const SIYUAN_IMPORT_TMP_CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
+const SIYUAN_IMPORT_TMP_STALE_AGE_MS = 24 * 60 * 60 * 1000;
+let lastSiyuanImportTmpCleanupAt = 0;
+
+async function cleanupStaleSiyuanImportTmpDirs(): Promise<void> {
+  const now = Date.now();
+  if (now - lastSiyuanImportTmpCleanupAt < SIYUAN_IMPORT_TMP_CLEANUP_INTERVAL_MS) return;
+  lastSiyuanImportTmpCleanupAt = now;
+
+  try {
+    const tmpRoot = os.tmpdir();
+    const entries = await fs.promises.readdir(tmpRoot, { withFileTypes: true });
+    await Promise.all(entries
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith(SIYUAN_IMPORT_TMP_PREFIX))
+      .map(async (entry) => {
+        const abs = path.join(tmpRoot, entry.name);
+        try {
+          const stat = await fs.promises.stat(abs);
+          if (now - stat.mtimeMs < SIYUAN_IMPORT_TMP_STALE_AGE_MS) return;
+          await fs.promises.rm(abs, { recursive: true, force: true });
+        } catch {
+          /* ignore stale cleanup failure */
+        }
+      }));
+  } catch {
+    /* ignore stale cleanup failure */
+  }
+}
 
 /**
  * 个人空间导出/导入开关闸门（方案 B：per-user）。
@@ -100,7 +129,10 @@ async function receiveMultipartFileToTemp(c: Context): Promise<{ tmpDir: string;
   const body = c.req.raw.body;
   if (!body) throw new Error("请求体为空");
 
-  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "nowen-siyuan-import-"));
+  // 进程异常中断时可能残留旧目录；每隔一段时间做一次清理兜底。
+  await cleanupStaleSiyuanImportTmpDirs();
+
+  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), SIYUAN_IMPORT_TMP_PREFIX));
   const tmpPath = path.join(tmpDir, "upload.zip");
 
   try {

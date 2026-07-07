@@ -12,7 +12,7 @@ import { useApp, useAppActions, SyncStatus } from "@/store/AppContext";
 import { api } from "@/lib/api";
 import { parseMermaidMindmap, normalizeMindMapData } from "@/lib/mindmapTransform";
 import { cn } from "@/lib/utils";
-import { Tag, Notebook, MindMapData, MindMapNode } from "@/types";
+import { Tag, Notebook, MindMapData, MindMapNode, type Note } from "@/types";
 import { useTranslation } from "react-i18next";
 import { haptic } from "@/hooks/useCapacitor";
 import { toast } from "@/lib/toast";
@@ -34,6 +34,7 @@ import { EditorErrorBoundary } from "@/components/EditorErrorBoundary";
 import NoteTabsBar from "@/components/NoteTabsBar";
 import { useRealtimeNote } from "@/hooks/useRealtimeNote";
 import { useYDoc } from "@/hooks/useYDoc";
+import { realtime } from "@/lib/realtime";
 import { normalizeToMarkdown, detectFormat, markdownToPlainText } from "@/lib/contentFormat";
 import {
   resolveEditorMode,
@@ -57,6 +58,10 @@ import {
   type NoteDraft,
 } from "@/lib/draftStorage";
 import { useUserPreferences } from "@/hooks/useUserPreferences";
+import {
+  isRemoteVersionNewer,
+  shouldSkipUnchangedTitleOnlyUpdate,
+} from "@/lib/editorSyncGuards";
 
 // ---------------------------------------------------------------------------
 // 编辑器模式切换（MD vs Tiptap）
@@ -740,6 +745,67 @@ export default function EditorPane() {
     return snap.content !== cur.content || snap.contentText !== cur.contentText;
   }
 
+  function getCollabMarkdownSnapshot(): string | null {
+    const yDoc = collabYDocRef.current;
+    if (!yDoc) return null;
+    try {
+      return yDoc.getText("content").toString();
+    } catch {
+      return null;
+    }
+  }
+
+  function writeMarkdownToCollabYDoc(markdown: string) {
+    const yDoc = collabYDocRef.current;
+    if (!yDoc) return;
+    const yText = yDoc.getText("content");
+    yDoc.transact(() => {
+      yText.delete(0, yText.length);
+      if (markdown) yText.insert(0, markdown);
+    });
+  }
+
+  function logSkippedRemoteApply(reason: string, noteId: string, remoteVersion: number) {
+    const local = activeNoteRef.current;
+    const yText = getCollabMarkdownSnapshot();
+    console.warn("[EditorPane] skip active note remote refresh", {
+      reason,
+      noteId,
+      localVersion: local?.version,
+      remoteVersion,
+      collabSynced: collabSyncedRef.current,
+      yTextLength: yText?.length ?? null,
+      providerStatus: collabProviderRef.current?.getStatus?.() ?? null,
+    });
+  }
+
+  function applyFetchedRemoteNote(fresh: Note) {
+    actions.setActiveNote(fresh);
+    actions.updateNoteInList({
+      id: fresh.id,
+      title: fresh.title,
+      contentText: fresh.contentText,
+      updatedAt: fresh.updatedAt,
+      version: fresh.version,
+      isPinned: fresh.isPinned,
+      isFavorite: fresh.isFavorite,
+      isLocked: fresh.isLocked,
+      isTrashed: fresh.isTrashed,
+      notebookId: fresh.notebookId,
+      workspaceId: fresh.workspaceId,
+    } as any);
+    actions.updateNoteTab({
+      id: fresh.id,
+      title: fresh.title,
+      updatedAt: fresh.updatedAt,
+      contentFormat: fresh.contentFormat,
+      isLocked: fresh.isLocked,
+      isTrashed: fresh.isTrashed,
+      notebookId: fresh.notebookId,
+    });
+    actions.setLastSynced(new Date().toISOString());
+  }
+
   async function applyRemoteNoteUpdate(msg: {
     noteId: string;
     version: number;
@@ -749,10 +815,7 @@ export default function EditorPane() {
     actorUserId?: string;
   }) {
     const cur = activeNoteRef.current;
-    if (!cur || cur.id !== msg.noteId) return;
-    if (cur.version >= msg.version) return;
-    // Markdown/Y.js ģʽ�� CRDT update �ϲ������� REST �Զ����ǡ�
-    if (collabYDocRef.current) return;
+    if (!isRemoteVersionNewer(cur, msg)) return;
 
     actions.updateNoteInList({
       id: msg.noteId,
@@ -762,31 +825,35 @@ export default function EditorPane() {
       version: msg.version,
     } as any);
 
-    if (hasLocalUnsavedChanges()) {
-      return;
-    }
-
     const applyKey = `${msg.noteId}:${msg.version}`;
     if (lastAutoAppliedRemoteRef.current === applyKey) return;
-    lastAutoAppliedRemoteRef.current = applyKey;
 
     try {
+      const collabDoc = collabYDocRef.current;
+      const beforeYText = getCollabMarkdownSnapshot();
+      if (collabDoc && (!collabSyncedRef.current || beforeYText === "")) {
+        try { collabProviderRef.current?.requestResync?.(); } catch { /* ignore */ }
+      }
+
       const fresh = await api.getNote(msg.noteId);
       const latest = activeNoteRef.current;
       if (!latest || latest.id !== msg.noteId) return;
       if (latest.version >= fresh.version) return;
-      if (hasLocalUnsavedChanges()) {
+
+      const freshMarkdown = normalizeToMarkdown(fresh.content, fresh.contentText);
+      const currentYText = getCollabMarkdownSnapshot();
+      const yTextAlreadyFresh = currentYText !== null && currentYText === freshMarkdown;
+      if (!yTextAlreadyFresh && hasLocalUnsavedChanges()) {
+        logSkippedRemoteApply("local-unsaved", msg.noteId, fresh.version);
         return;
       }
-      actions.setActiveNote(fresh);
-      actions.updateNoteInList({
-        id: fresh.id,
-        title: fresh.title,
-        contentText: fresh.contentText,
-        updatedAt: fresh.updatedAt,
-        version: fresh.version,
-      } as any);
-      actions.setLastSynced(new Date().toISOString());
+
+      if (collabDoc && !yTextAlreadyFresh) {
+        writeMarkdownToCollabYDoc(freshMarkdown);
+      }
+
+      lastAutoAppliedRemoteRef.current = applyKey;
+      applyFetchedRemoteNote(fresh);
     } catch (e) {
       console.warn("[EditorPane] auto apply remote note failed:", e);
     }
@@ -794,7 +861,7 @@ export default function EditorPane() {
 
   async function checkActiveNoteRemoteVersion(reason: string) {
     const cur = activeNoteRef.current;
-    if (!cur || collabYDocRef.current) return;
+    if (!cur) return;
     try {
       const slim = await api.getNoteSlim(cur.id);
       const latest = activeNoteRef.current;
@@ -828,6 +895,52 @@ export default function EditorPane() {
       setRemoteDelete({ actorUserId: msg.actorUserId, trashed: msg.trashed });
     },
   });
+
+  useEffect(() => {
+    realtime.connect();
+    const offListUpdated = realtime.on("note:list-updated", (msg: any) => {
+      const note = msg?.note;
+      if (!note?.id) return;
+      actions.updateNoteInList({
+        id: note.id,
+        title: note.title,
+        contentText: note.contentText,
+        updatedAt: note.updatedAt,
+        version: note.version,
+        isPinned: note.isPinned,
+        isFavorite: note.isFavorite,
+        isLocked: note.isLocked,
+        isTrashed: note.isTrashed,
+        notebookId: note.notebookId,
+        workspaceId: note.workspaceId,
+      } as any);
+      actions.updateNoteTab({
+        id: note.id,
+        title: note.title,
+        updatedAt: note.updatedAt,
+        contentFormat: note.contentFormat,
+        isLocked: note.isLocked,
+        isTrashed: note.isTrashed,
+        notebookId: note.notebookId,
+      });
+
+      const cur = activeNoteRef.current;
+      if (!isRemoteVersionNewer(cur, { noteId: note.id, version: note.version })) return;
+      void applyRemoteNoteUpdate({
+        noteId: note.id,
+        version: note.version,
+        updatedAt: note.updatedAt,
+        title: note.title,
+        contentText: note.contentText,
+        actorUserId: msg?.actorUserId,
+      });
+    });
+    return () => {
+      offListUpdated();
+    };
+    // applyRemoteNoteUpdate 内部读取 ref；这里保持一次订阅，避免保存过程反复重订阅。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actions]);
 
   // �ƶ��˺�̨�ָ� / ����ָ� / WebSocket ����ʱ���ܴ���ʵʱ��Ϣ������һ�ε�ǰ�ʼǰ汾��
   useEffect(() => {
@@ -882,6 +995,8 @@ export default function EditorPane() {
    */
   const collabYDocRef = useRef<typeof collabYDoc>(null);
   collabYDocRef.current = collabYDoc;
+  const collabProviderRef = useRef<typeof collabProvider>(null);
+  collabProviderRef.current = collabProvider;
 
   /**
    * CRDT synced ״̬�� ref ����
@@ -1073,6 +1188,10 @@ export default function EditorPane() {
     // P0: 如果调度时的 noteId 与当前 activeNote 不一致，说明已切换笔记，跳过保存
     if (data._noteId && data._noteId !== currentNote.id) {
       console.warn("[handleUpdate] noteId mismatch, skipping save", { scheduled: data._noteId, current: currentNote.id });
+      return;
+    }
+
+    if (shouldSkipUnchangedTitleOnlyUpdate(currentNote.title, data)) {
       return;
     }
 

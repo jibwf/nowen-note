@@ -12,6 +12,11 @@ const sharedNoteViewSource = readFileSync(
   "utf8",
 );
 
+const markdownEditorSource = readFileSync(
+  path.resolve(__dirname, "../MarkdownEditor.tsx"),
+  "utf8",
+);
+
 const apiSource = readFileSync(
   path.resolve(__dirname, "../../lib/api.ts"),
   "utf8",
@@ -89,6 +94,65 @@ describe("EditorPane save safety", () => {
     expect(aiTitle).not.toContain("getNoteSlim");
     expect(aiTitle).not.toContain("doUpdate(latest.version)");
     expect(aiTitle).toContain("is409Error");
+  });
+
+  it("does not REST-save Markdown document changes while CRDT is enabled", () => {
+    const updateListener = sourceBetween(
+      markdownEditorSource,
+      "const updateListener = EditorView.updateListener.of((update) => {",
+      "// MARKDOWN-PREVIEW-MODE-01",
+    );
+    const emitSave = sourceBetween(
+      markdownEditorSource,
+      "const emitSave = useCallback(() => {",
+      "const scheduleSave = useCallback",
+    );
+
+    expect(updateListener).toContain("if (!collabEnabledRef.current)");
+    expect(updateListener).toContain("scheduleSave();");
+    expect(emitSave).toContain("title !== noteRef.current.title");
+  });
+
+  it("skips unchanged title-only editor updates before entering saving state", () => {
+    const handleUpdatePrefix = sourceBetween(
+      editorPaneSource,
+      "const handleUpdate = useCallback(async",
+      "actions.setSyncStatus(\"saving\");",
+    );
+
+    expect(handleUpdatePrefix).toContain("shouldSkipUnchangedTitleOnlyUpdate");
+    expect(handleUpdatePrefix).toContain("return;");
+  });
+
+  it("keeps remote active-note refresh enabled in CRDT mode", () => {
+    const applyRemote = sourceBetween(
+      editorPaneSource,
+      "async function applyRemoteNoteUpdate",
+      "async function checkActiveNoteRemoteVersion",
+    );
+    const checkRemote = sourceBetween(
+      editorPaneSource,
+      "async function checkActiveNoteRemoteVersion",
+      "const { presenceUsers",
+    );
+
+    expect(applyRemote).not.toContain("if (collabYDocRef.current) return;");
+    expect(checkRemote).not.toContain("if (!cur || collabYDocRef.current) return;");
+    expect(applyRemote).toContain("api.getNote(msg.noteId)");
+    expect(applyRemote).toContain("collabSynced");
+  });
+
+  it("uses note:list-updated to refresh a stale active note", () => {
+    const listUpdated = sourceBetween(
+      editorPaneSource,
+      "const offListUpdated = realtime.on(\"note:list-updated\"",
+      "offListUpdated();",
+    );
+
+    expect(listUpdated).toContain("actions.updateNoteInList");
+    expect(listUpdated).toContain("actions.updateNoteTab");
+    expect(listUpdated).toContain("isRemoteVersionNewer");
+    expect(listUpdated).toContain("applyRemoteNoteUpdate");
   });
 });
 

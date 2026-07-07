@@ -145,6 +145,12 @@ export class NowenYjsProvider {
     return this.hasEverSynced;
   }
 
+  /** 主动请求一次重新同步，用于前端发现远端版本已推进但本地 CRDT 仍卡住时兜底。 */
+  requestResync() {
+    this.sendJoinAndSync();
+    this.sendSyncStep1();
+  }
+
   on(type: "status" | "synced", listener: Listener): () => void {
     let set = this.listeners.get(type);
     if (!set) {

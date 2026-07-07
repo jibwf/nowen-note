@@ -110,6 +110,7 @@ import { findTextAction, type TextAction } from "@/lib/textActions";
 import { cn } from "@/lib/utils";
 import { normalizeToMarkdown, markdownToPlainText } from "@/lib/contentFormat";
 import { shouldEmitTitleUpdate, shouldSkipTitleChange, shouldSyncTitleValue } from "@/lib/titleIme";
+import { findMarkdownPreviewHeadingTarget } from "@/lib/markdownPreviewOutline";
 import { api } from "@/lib/api";
 import { uploadAndInsertImage } from "@/lib/imageUploadService";
 import { isVideoFile, uploadMediaAttachment, type MediaUploadResult } from "@/lib/mediaUploadService";
@@ -359,6 +360,7 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
   const { t: tr } = useTranslation();
   const { prefs: userPrefs } = useUserPreferences();
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const previewRootRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const isTitleComposingRef = useRef(false);
@@ -388,6 +390,11 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
     normalizeToMarkdown(note.content, note.contentText)
   );
   const previewDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const viewModeRef = useRef<MarkdownViewMode>(viewMode);
+
+  useEffect(() => {
+    viewModeRef.current = viewMode;
+  }, [viewMode]);
 
   /**
    * ���༭�����һ���ɷ��� onUpdate �� markdown �ַ�����
@@ -703,7 +710,9 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
     // �������ٷ� content ���� yjs �� debounce ��д����"���߸���ǰ��"�ľ�̬��
     // ������ meta��title��������˫д��ͻ��
     if (collabEnabledRef.current) {
-      onUpdateRef.current({ title, _noteId: noteRef.current.id });
+      if (title !== noteRef.current.title) {
+        onUpdateRef.current({ title, _noteId: noteRef.current.id });
+      }
     } else {
       onUpdateRef.current({ content: md, contentText: plain, title, _noteId: noteRef.current.id });
     }
@@ -855,7 +864,9 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
       const text = update.state.doc.toString();
       setWordStats(computeStats(text));
       onHeadingsChangeRef.current?.(extractHeadings(update.view));
-      scheduleSave();
+      if (!collabEnabledRef.current) {
+        scheduleSave();
+      }
 
       // MARKDOWN-PREVIEW-MODE-01: 分屏模式下实时更新预览（debounce 200ms）
       if (previewDebounceRef.current) clearTimeout(previewDebounceRef.current);
@@ -1251,21 +1262,51 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
 
   // ---------- ��¶ scrollTo ��������������ת�� ----------
 
+  const scrollSourceTo = useCallback((pos: number, focus = true) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const size = view.state.doc.length;
+    const clamped = Math.max(0, Math.min(size, pos));
+    view.dispatch({
+      selection: { anchor: clamped },
+      effects: EditorView.scrollIntoView(clamped, { y: "start", yMargin: 40 }),
+    });
+    if (focus) view.focus();
+  }, []);
+
+  const scrollPreviewTo = useCallback((pos: number) => {
+    const root = previewRootRef.current;
+    if (!root) return false;
+
+    const target = findMarkdownPreviewHeadingTarget(
+      root.querySelectorAll<HTMLElement>("[data-md-pos]"),
+      pos,
+    );
+    if (!target) return false;
+
+    target.scrollIntoView({ block: "start", behavior: "smooth" });
+    return true;
+  }, []);
+
   useEffect(() => {
     if (!onEditorReady) return;
     const scrollTo = (pos: number) => {
-      const view = viewRef.current;
-      if (!view) return;
-      const size = view.state.doc.length;
-      const clamped = Math.max(0, Math.min(size, pos));
-      view.dispatch({
-        selection: { anchor: clamped },
-        effects: EditorView.scrollIntoView(clamped, { y: "start", yMargin: 40 }),
-      });
-      view.focus();
+      const mode = viewModeRef.current;
+      if (mode === "preview") {
+        if (!scrollPreviewTo(pos)) scrollSourceTo(pos, false);
+        return;
+      }
+
+      if (mode === "split") {
+        scrollSourceTo(pos, false);
+        scrollPreviewTo(pos);
+        return;
+      }
+
+      scrollSourceTo(pos, true);
     };
     onEditorReady(scrollTo);
-  }, [onEditorReady]);
+  }, [onEditorReady, scrollPreviewTo, scrollSourceTo]);
 
   /**
    * ����˸�ʽ�˵��ţ�macOS ԭ���˵� / ��ݼ� �� CodeMirror��
@@ -1629,7 +1670,12 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
           <div className={cn(
             viewMode === "split" ? "w-1/2 min-h-0 overflow-auto px-4 md:px-8" : "h-full"
           )}>
-            <MarkdownPreview markdown={previewMarkdown} className="h-full" compact={viewMode === "split"} />
+            <MarkdownPreview
+              markdown={previewMarkdown}
+              className="h-full"
+              compact={viewMode === "split"}
+              containerRef={previewRootRef}
+            />
           </div>
         )}
       </div>

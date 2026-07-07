@@ -12,6 +12,13 @@
 
 <!-- ADD_NEW_HERE -->
 
+## v1.2.9 - 2026-07-07
+
+### ✨ 新增
+
+- support custom desktop data directory (#168) (82babec)
+
+
 ## v1.2.8 - 2026-07-07
 
 ### ✨ 新增

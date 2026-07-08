@@ -42,6 +42,27 @@ describe("taskSmartRecognition - date/time", () => {
         expect(parseTaskQuickAdd("升级 1.20.3", now).taskPatch.dueDate).toBeUndefined();
     });
 
+    it("requires separators after standalone Chinese date and period tokens", () => {
+        const now = dt("2026-07-08T10:00:00");
+
+        expect(parseTaskQuickAdd("下午茶", now)).toMatchObject({
+            cleanTitle: "下午茶",
+            taskPatch: {},
+        });
+        expect(parseTaskQuickAdd("3月报", now)).toMatchObject({
+            cleanTitle: "3月报",
+            taskPatch: {},
+        });
+        expect(parseTaskQuickAdd("周一报", now)).toMatchObject({
+            cleanTitle: "周一报",
+            taskPatch: {},
+        });
+
+        expect(parseTaskQuickAdd("下午 茶", now).taskPatch.dueAt).toBe("2026-07-08T13:00");
+        expect(parseTaskQuickAdd("3月 报", now).taskPatch.dueDate).toBe("2027-03-01");
+        expect(parseTaskQuickAdd("周一 报", now).taskPatch.dueDate).toBe("2026-07-13");
+    });
+
     it("parses 星期天 as nearest valid Sunday", () => {
         const now = dt("2026-07-08T10:00:00"); // Wednesday
         const parsed = parseTaskQuickAdd("星期天 聚餐", now);
@@ -226,6 +247,27 @@ describe("taskSmartRecognition - repeat", () => {
         expect(longForm.taskPatch.repeatInterval).toBe(1);
         expect(longForm.taskPatch.dueDate).toBe("2026-07-09");
         expect(longForm.cleanTitle).toBe("例会");
+    });
+
+    it("requires separators after standalone Chinese weekly repeat tokens", () => {
+        const now = dt("2026-07-08T10:00:00");
+
+        expect(parseTaskQuickAdd("每周报", now)).toMatchObject({
+            cleanTitle: "每周报",
+            taskPatch: {},
+        });
+        expect(parseTaskQuickAdd("每年3月报", now)).toMatchObject({
+            cleanTitle: "每年3月报",
+            taskPatch: {},
+        });
+        expect(parseTaskQuickAdd("每周 报", now)).toMatchObject({
+            cleanTitle: "报",
+            taskPatch: { repeatRule: "weekly", repeatInterval: 1, dueDate: "2026-07-13" },
+        });
+        expect(parseTaskQuickAdd("每年3月 报", now)).toMatchObject({
+            cleanTitle: "报",
+            taskPatch: { repeatRule: "yearly", repeatInterval: 1, dueDate: "2027-03-01" },
+        });
     });
 
     it("parses 每年3月 and 每年3月6日", () => {

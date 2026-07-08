@@ -301,7 +301,8 @@ const TIME_RULES: TimeRuleDefinition[] = [
         const hour = applyPeriodToHour(rawHour, (m[1] || null) as DayPeriod | null);
         return hour < 0 || hour > 23 ? null : { hour, minute: m[3] ? 30 : 0, range };
     }),
-    timeRule("period", /(早上|上午|中午|下午|傍晚|晚上)|\b(?:in the\s+)?(morning|afternoon|evening|tonight|noon)\b/gi, 20, (m, _ctx, range) => {
+    timeRule("period", /(早上|上午|中午|下午|傍晚|晚上)|\b(?:in the\s+)?(morning|afternoon|evening|tonight|noon)\b/gi, 20, (m, ctx, range) => {
+        if (m[1] && !hasZhRightBoundary(ctx.text, range.end, { allowDigit: true })) return null;
         const period = (m[1] || m[2].toLowerCase()) as DayPeriod;
         const [hour, minute] = DAY_PERIOD_TIME[period];
         return { hour, minute, range };
@@ -363,7 +364,8 @@ const DATE_RULES: DateRuleDefinition[] = [
         const year = m[3] ? Number(m[3]) : null;
         return resolveEnglishMonthDay(ctx.now, parseEnglishMonth(m[2]), Number(m[1]), year, ctx.timeSpec);
     }),
-    dateRule("relativeZh", /(今天|明天|后天)/g, (m, ctx) => {
+    dateRule("relativeZh", /(今天|明天|后天)/g, (m, ctx, range) => {
+        if (!hasZhRightBoundary(ctx.text, range.end, { allowDigit: true, allowPeriodWord: true })) return null;
         let offset = 0;
         if (m[1] === "明天") offset = 1;
         if (m[1] === "后天") offset = 2;
@@ -376,7 +378,8 @@ const DATE_RULES: DateRuleDefinition[] = [
         if (key === "day after tomorrow") offset = 2;
         return addDays(startOfDay(ctx.now), offset);
     }),
-    dateRule("weekdayZh", /(?:周|星期)([一二三四五六日天])/g, (m, ctx) => {
+    dateRule("weekdayZh", /(?:周|星期)([一二三四五六日天])/g, (m, ctx, range) => {
+        if (!hasZhRightBoundary(ctx.text, range.end, { allowDigit: true, allowPeriodWord: true })) return null;
         const day = WEEKDAY_MAP[m[1]];
         return day === undefined ? null : resolveNearestWeekday(ctx.now, day, ctx.timeSpec);
     }),
@@ -387,8 +390,9 @@ const DATE_RULES: DateRuleDefinition[] = [
             ? resolveNextWeekday(ctx.now, day, ctx.timeSpec)
             : resolveNearestWeekday(ctx.now, day, ctx.timeSpec);
     }),
-    dateRule("monthOnlyZh", /(\d{1,2})月(?!\s*\d{1,2}日)/g, (m, ctx) => {
+    dateRule("monthOnlyZh", /(\d{1,2})月(?!\s*\d{1,2}日)/g, (m, ctx, range) => {
         if (/每\s*$/.test(ctx.text.slice(0, m.index))) return null;
+        if (!hasZhRightBoundary(ctx.text, range.end)) return null;
         return resolveNearestMonthDay(ctx.now, Number(m[1]), 1, ctx.timeSpec);
     }),
     dateRule("monthOnlyEn", new RegExp(`\\bin\\s+(${EN_MONTH_NAME_PATTERN})\\.?(?=\\s|$|[,，。.;；])`, "gi"), (m, ctx) => resolveNearestMonthDay(ctx.now, parseEnglishMonth(m[1]), 1, ctx.timeSpec)),
@@ -473,18 +477,22 @@ const REPEAT_RULES: RepeatRuleDefinition[] = [
         resolveNearestFromSet(ctx.now, [0, 6], ctx.timeSpec),
     )),
     repeatRule("yearlyMonthDayZh", /每年\s*(\d{1,2})月\s*(\d{1,2})日/g, 3, (m, ctx) => {
+        if (!hasZhRightBoundary(ctx.text, m.index + m[0].length, { allowDigit: true, allowPeriodWord: true })) return null;
         const anchorDate = resolveNearestMonthDay(ctx.now, Number(m[1]), Number(m[2]), ctx.timeSpec);
         return anchorDate ? repeatCandidate(m, ctx, 3, "yearly", 1, null, anchorDate) : null;
     }),
     repeatRule("yearlyMonthZh", /每年\s*(\d{1,2})月/g, 4, (m, ctx) => {
+        if (!hasZhRightBoundary(ctx.text, m.index + m[0].length, { allowDigit: true, allowPeriodWord: true })) return null;
         const anchorDate = resolveNearestMonthDay(ctx.now, Number(m[1]), 1, ctx.timeSpec);
         return anchorDate ? repeatCandidate(m, ctx, 4, "yearly", 1, null, anchorDate) : null;
     }),
     repeatRule("monthlyNthDayZh", /每月第\s*(\d{1,2})\s*天/g, 5, (m, ctx) => {
+        if (!hasZhRightBoundary(ctx.text, m.index + m[0].length, { allowDigit: true, allowPeriodWord: true })) return null;
         const anchorDate = resolveNearestMonthlyDay(ctx.now, Number(m[1]));
         return anchorDate ? repeatCandidate(m, ctx, 5, "monthly", 1, null, anchorDate) : null;
     }),
     repeatRule("monthlyDayZh", /每月\s*(\d{1,2})\s*日/g, 5, (m, ctx) => {
+        if (!hasZhRightBoundary(ctx.text, m.index + m[0].length, { allowDigit: true, allowPeriodWord: true })) return null;
         const anchorDate = resolveNearestMonthlyDay(ctx.now, Number(m[1]));
         return anchorDate ? repeatCandidate(m, ctx, 5, "monthly", 1, null, anchorDate) : null;
     }),
@@ -513,18 +521,22 @@ const REPEAT_RULES: RepeatRuleDefinition[] = [
         resolveIntervalAnchorDate(ctx.now, ctx.timeSpec, 1, "day"),
     )),
     repeatRule("weeklyWeekdayZh", /每(?:周|星期)([一二三四五六日天])/g, 10, (m, ctx) => {
+        if (!hasZhRightBoundary(ctx.text, m.index + m[0].length, { allowDigit: true, allowPeriodWord: true })) return null;
         const day = WEEKDAY_MAP[m[1]];
         return day === undefined ? null : repeatCandidate(m, ctx, 10, "weekly", 1, null, resolveNearestWeekday(ctx.now, day, ctx.timeSpec));
     }),
-    repeatRule("weeklyZh", /每周(?!末)/g, 10, (m, ctx) => repeatCandidate(
-        m,
-        ctx,
-        10,
-        "weekly",
-        1,
-        null,
-        resolveNearestWeekday(ctx.now, 1, ctx.timeSpec),
-    )),
+    repeatRule("weeklyZh", /每周(?!末)/g, 10, (m, ctx) => {
+        if (!hasZhRightBoundary(ctx.text, m.index + m[0].length, { allowDigit: true, allowPeriodWord: true })) return null;
+        return repeatCandidate(
+            m,
+            ctx,
+            10,
+            "weekly",
+            1,
+            null,
+            resolveNearestWeekday(ctx.now, 1, ctx.timeSpec),
+        );
+    }),
     repeatRule("weeklyEn", /\b(?:weekly|every\s+week)\b/gi, 10, (m, ctx) => repeatCandidate(
         m,
         ctx,
@@ -566,6 +578,7 @@ function intervalRepeatRule(
     unit: "day" | "week" | "month",
 ): RepeatRuleDefinition {
     return repeatRule(name, pattern, priority, (m, ctx) => {
+        if (name.endsWith("Zh") && !hasZhRightBoundary(ctx.text, m.index + m[0].length, { allowDigit: true, allowPeriodWord: true })) return null;
         const interval = clampInterval(Number(m[1]));
         return repeatCandidate(
             m,
@@ -770,6 +783,15 @@ function mergeRanges(ranges: MatchRange[]): MatchRange[] {
 
 function sortUniqueOffsets(offsets: number[]): number[] {
     return [...new Set(offsets.filter((v) => Number.isFinite(v) && v >= 0))].sort((a, b) => a - b);
+}
+
+function hasZhRightBoundary(text: string, end: number, opts: { allowDigit?: boolean; allowPeriodWord?: boolean } = {}): boolean {
+    if (end >= text.length) return true;
+    const rest = text.slice(end);
+    if (/^[\s,，。.;；!！?？、]/.test(rest)) return true;
+    if (opts.allowDigit && /^\d/.test(rest)) return true;
+    if (opts.allowPeriodWord && /^(早上|上午|中午|下午|傍晚|晚上)/.test(rest)) return true;
+    return false;
 }
 
 function startOfDay(date: Date): Date {

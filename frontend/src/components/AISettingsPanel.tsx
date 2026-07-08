@@ -23,7 +23,7 @@ interface ProviderPreset {
   color: string; // gradient color
 }
 
-const PROVIDER_PRESETS: ProviderPreset[] = [
+export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: "qwen",
     name: "通义千问",
@@ -75,10 +75,20 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
     color: "from-orange-500 to-pink-500",
   },
   {
+    id: "custom",
+    name: "自定义 API",
+    desc: "ai.customApiDesc",
+    models: "OpenAI 兼容接口",
+    url: "",
+    defaultModel: "",
+    needsKey: true,
+    color: "from-purple-500 to-indigo-500",
+  },
+  {
     id: "ollama",
-    name: "Custom / Ollama",
-    desc: "ai.ollamaCustomDesc",
-    models: "OpenAI 兼容接口 · Docker 自动连接",
+    name: "Ollama",
+    desc: "ai.ollamaDesc",
+    models: "本地模型 · OpenAI 兼容接口",
     url: "http://localhost:11434/v1",
     defaultModel: "qwen2.5:7b",
     needsKey: false,
@@ -227,6 +237,8 @@ export default function AISettingsPanel() {
 
   const currentPreset = getPreset(settings.ai_provider);
   const needsKey = currentPreset?.needsKey ?? true;
+  const apiUrlPlaceholder = currentPreset?.id === "custom" ? "https://your-api.example.com/v1" : currentPreset?.url || "https://api.openai.com/v1";
+  const modelPlaceholder = currentPreset?.id === "custom" ? "your-model" : currentPreset?.defaultModel || "gpt-4o-mini";
 
   return (
     <div className="space-y-6">
@@ -314,7 +326,7 @@ export default function AISettingsPanel() {
             type="text"
             value={settings.ai_api_url}
             onChange={(e) => setSettings(prev => ({ ...prev, ai_api_url: e.target.value }))}
-            placeholder={currentPreset?.url || "https://api.openai.com/v1"}
+            placeholder={apiUrlPlaceholder}
             className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-accent-primary/40 focus:border-accent-primary outline-none transition-all placeholder:text-zinc-400"
           />
         </div>
@@ -357,7 +369,7 @@ export default function AISettingsPanel() {
                     setModelDropdownOpen(true);
                   }
                 }}
-                placeholder={currentPreset?.defaultModel || "gpt-4o-mini"}
+                placeholder={modelPlaceholder}
                 className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-accent-primary/40 focus:border-accent-primary outline-none transition-all placeholder:text-zinc-400"
               />
               {modelDropdownOpen && models.length > 0 && (

@@ -8,6 +8,7 @@ import {
   FolderInput, Check, Home, Download, FolderOpen,
   Columns2, Columns3, FileType2, Link2, FileText, FileCode,
   Pin, PinOff, StarOff, Lock, Unlock, Image,
+  ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,7 +52,30 @@ import {
   hasExpandedNotebook,
   type NotebookExpandedState,
 } from "@/lib/notebookExpansion";
+import {
+  buildNotebookTree,
+  DEFAULT_NOTEBOOK_SORT_PREF,
+  getNotebookDragHint,
+  normalizeNotebookSortPref,
+  type NotebookSortBy,
+  type NotebookSortPref,
+} from "@/lib/notebookSort";
 import { SIDEBAR_TREE_INDENT, sidebarTreeContentMinWidth, sidebarTreeRowMinWidth } from "@/lib/sidebarLayout";
+
+const NOTEBOOK_SORT_STORAGE_KEY = "nowen.notebookTree.sort";
+
+function loadNotebookSortPref(): NotebookSortPref {
+  try {
+    const raw = localStorage.getItem(NOTEBOOK_SORT_STORAGE_KEY);
+    return raw ? normalizeNotebookSortPref(JSON.parse(raw)) : DEFAULT_NOTEBOOK_SORT_PREF;
+  } catch {
+    return DEFAULT_NOTEBOOK_SORT_PREF;
+  }
+}
+
+function saveNotebookSortPref(pref: NotebookSortPref) {
+  try { localStorage.setItem(NOTEBOOK_SORT_STORAGE_KEY, JSON.stringify(pref)); } catch {}
+}
 
 /* ===== Emoji 图标选择器 ===== */
 const EMOJI_GROUPS = [
@@ -192,31 +216,6 @@ function EmojiIconPicker({
   );
 }
 
-function buildTree(notebooks: Notebook[]): Notebook[] {
-  const map = new Map<string, Notebook>();
-  const roots: Notebook[] = [];
-  notebooks.forEach((nb) => map.set(nb.id, { ...nb, children: [] }));
-  notebooks.forEach((nb) => {
-    const node = map.get(nb.id)!;
-    if (nb.parentId && map.has(nb.parentId)) {
-      map.get(nb.parentId)!.children!.push(node);
-    } else {
-      roots.push(node);
-    }
-  });
-  // 按 sortOrder 稳定排序，确保拖拽后的新顺序立即反映到 UI
-  const byOrder = (a: Notebook, b: Notebook) =>
-    (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
-  const sortRecursive = (list: Notebook[]) => {
-    list.sort(byOrder);
-    list.forEach((n) => {
-      if (n.children && n.children.length > 0) sortRecursive(n.children);
-    });
-  };
-  sortRecursive(roots);
-  return roots;
-}
-
 /* ===== 移动笔记本：树形选择器条目 ===== */
 function NotebookMoveTreeItem({
   notebook, depth, selectedId, disabledIds, currentParentId, onSelect,
@@ -317,7 +316,7 @@ function MoveNotebookModal({
   };
   collect(notebook.id);
 
-  const tree = buildTree(allNotebooks);
+  const tree = buildNotebookTree(allNotebooks);
   const currentParentId = notebook.parentId ?? null;
   // 有效选中目标（包含 root）
   const selectedTarget: string | null | undefined =
@@ -433,6 +432,77 @@ function getMaxNotebookDepth(notebooks: Notebook[], depth = 0): number {
   }, depth);
 }
 
+function NotebookSortMenu({
+  value,
+  onChange,
+  onClose,
+}: {
+  value: NotebookSortPref;
+  onChange: (next: NotebookSortPref) => void;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const options: Array<{ id: NotebookSortBy; label: string }> = [
+    { id: "manual", label: t("noteList.sortManual") },
+    { id: "name", label: t("sidebar.sortName", "名称") },
+    { id: "updatedAt", label: t("noteList.sortUpdatedAt") },
+    { id: "createdAt", label: t("noteList.sortCreatedAt") },
+  ];
+
+  const handlePick = (opt: { id: NotebookSortBy; label: string }) => {
+    const active = value.by === opt.id;
+    const next: NotebookSortPref = active && opt.id !== "manual"
+      ? { by: opt.id, dir: value.dir === "asc" ? "desc" : "asc" }
+      : { by: opt.id, dir: opt.id === "name" ? "asc" : "desc" };
+    onChange(next);
+    onClose();
+  };
+
+  return (
+    <div
+      role="menu"
+      className="absolute right-0 top-7 z-50 w-44 rounded-lg border border-app-border bg-app-elevated shadow-xl py-1"
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <div className="px-3 py-1 text-[10px] uppercase tracking-wide text-tx-tertiary select-none">
+        {t("sidebar.notebookSort", "笔记本排序")}
+      </div>
+      {options.map((opt) => {
+        const active = value.by === opt.id;
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            role="menuitem"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handlePick(opt);
+            }}
+            className={cn(
+              "w-full flex items-center justify-between gap-2 px-3 py-1.5 text-xs transition-colors text-left",
+              active
+                ? "text-accent-primary bg-accent-primary/10"
+                : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary"
+            )}
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              {active ? <Check size={12} className="shrink-0" /> : <span className="w-3 shrink-0" />}
+              <span className="truncate">{opt.label}</span>
+            </span>
+            {active && opt.id !== "manual" && (
+              <span className="flex items-center gap-1 text-[10px] text-tx-tertiary shrink-0">
+                {value.dir === "asc" ? <ArrowUp size={11} /> : <ArrowDown size={11} />}
+                {value.dir === "asc" ? t("noteList.sortAsc") : t("noteList.sortDesc")}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function noteTimeLabel(updatedAt: string): string {
   const d = new Date(updatedAt);
   const diff = Date.now() - d.getTime();
@@ -540,6 +610,7 @@ function NotebookItem({
   editingId, editValue, onEditChange, onEditSubmit, onEditCancel,
   onIconChange,
   draggable, onDragStart, onDragOver, onDragEnd, onDrop, dragOverId, dragOverZone,
+  dragHint,
   noteDragOverId, noteItemDragOverId, noteItemDragOverZone,
   showNotes, notesByNotebookId, loadingNotebookIds, activeNoteId, onSelectNote, onNoteContextMenu,
   onNoteDragStart, onNoteDragOver, onNoteDragEnd, onNoteDrop, onNoteItemDragOver, onNoteItemDrop,
@@ -560,6 +631,7 @@ function NotebookItem({
   onEditChange: (v: string) => void; onEditSubmit: () => void; onEditCancel: () => void;
   onIconChange: (id: string, emoji: string) => void;
   draggable?: boolean;
+  dragHint?: string;
   onDragStart?: (e: React.DragEvent, id: string) => void;
   onDragOver?: (e: React.DragEvent, id: string) => void;
   onDragEnd?: () => void;
@@ -680,6 +752,7 @@ function NotebookItem({
         }}
         onClick={() => onSelect(notebook.id)}
         onContextMenu={(e) => onContextMenu(e, notebook.id)}
+        title={!draggable ? dragHint : undefined}
         onTouchStart={(e) => {
           if (isEditing || !onLongPress) return;
           const touch = e.touches[0];
@@ -739,8 +812,14 @@ function NotebookItem({
             style={{ left: `${(depth - 1) * SIDEBAR_TREE_INDENT + 35}px`, width: "14px" }}
           />
         )}
-        {draggable && (
-          <GripVertical size={12} className="text-tx-tertiary opacity-0 group-hover:opacity-60 transition-opacity shrink-0 cursor-grab active:cursor-grabbing" />
+        {(draggable || dragHint) && (
+          <GripVertical
+            size={12}
+            className={cn(
+              "text-tx-tertiary opacity-0 group-hover:opacity-60 transition-opacity shrink-0",
+              draggable ? "cursor-grab active:cursor-grabbing" : "cursor-not-allowed opacity-30 group-hover:opacity-40"
+            )}
+          />
         )}
         {hasExpandableContent ? (
           <button
@@ -847,6 +926,7 @@ function NotebookItem({
                 onEditCancel={onEditCancel}
                 onIconChange={onIconChange}
                 draggable={draggable}
+                dragHint={dragHint}
                 onDragStart={onDragStart}
                 onDragOver={onDragOver}
                 onDragEnd={onDragEnd}
@@ -1113,6 +1193,9 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
   const [dragOverNoteNotebookId, setDragOverNoteNotebookId] = useState<string | null>(null);
   const [dragOverSidebarNoteId, setDragOverSidebarNoteId] = useState<string | null>(null);
   const [dragOverSidebarNoteZone, setDragOverSidebarNoteZone] = useState<NoteDropZone | null>(null);
+  const [notebookSortPref, setNotebookSortPref] = useState<NotebookSortPref>(() => loadNotebookSortPref());
+  const [showNotebookSortMenu, setShowNotebookSortMenu] = useState(false);
+  const notebookSortMenuRef = useRef<HTMLDivElement>(null);
 
   // 标签颜色选择浮层状态（通过右键 / 长按触发）
   const [tagColorPopover, setTagColorPopover] = useState<{
@@ -1126,7 +1209,9 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
   const tagLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tagLongPressFired = useRef(false);
 
-  const tree = useMemo(() => buildTree(state.notebooks), [state.notebooks]);
+  const canDragNotebookSort = notebookSortPref.by === "manual";
+  const notebookDragHint = getNotebookDragHint(canDragNotebookSort);
+  const tree = useMemo(() => buildNotebookTree(state.notebooks, notebookSortPref), [notebookSortPref, state.notebooks]);
   const notebookTreeMinWidth = useMemo(
     () => sidebarTreeContentMinWidth(getMaxNotebookDepth(tree)),
     [tree]
@@ -1144,6 +1229,25 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
   const toggleAllNotebooksLabel = nextNotebookExpansionState === 0
     ? collapseAllNotebooksLabel
     : expandAllNotebooksLabel;
+  const notebookSortTitle = t("sidebar.notebookSort", "笔记本排序");
+
+  useEffect(() => {
+    if (!showNotebookSortMenu) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (!notebookSortMenuRef.current?.contains(e.target as Node)) {
+        setShowNotebookSortMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [showNotebookSortMenu]);
+
+  useEffect(() => {
+    if (canDragNotebookSort) return;
+    setDragNbId(null);
+    setDragOverNbId(null);
+    setDragOverNbZone(null);
+  }, [canDragNotebookSort]);
 
   useEffect(() => {
     notesByNotebookIdRef.current = notesByNotebookId;
@@ -1275,6 +1379,10 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
 
   // 笔记本拖拽：按鼠标垂直位置区分"before"（同级排到之前）与"inside"（设为子项）
   const handleNbDragStart = useCallback((e: React.DragEvent, id: string) => {
+    if (!canDragNotebookSort) {
+      e.preventDefault();
+      return;
+    }
     setDragNbId(id);
     setDragNoteId(null);
     setDragOverNoteNotebookId(null);
@@ -1282,9 +1390,15 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
     setDragOverSidebarNoteZone(null);
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", id);
-  }, []);
+  }, [canDragNotebookSort]);
 
   const handleNbDragOver = useCallback((e: React.DragEvent, id: string) => {
+    if (!canDragNotebookSort) {
+      e.dataTransfer.dropEffect = "none";
+      setDragOverNbId(null);
+      setDragOverNbZone(null);
+      return;
+    }
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     if (!dragNbId) {
@@ -1313,7 +1427,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
     const zone: "before" | "inside" = offset < rect.height * 0.3 ? "before" : "inside";
     setDragOverNbId(id);
     setDragOverNbZone(zone);
-  }, [dragNbId, isDescendant]);
+  }, [canDragNotebookSort, dragNbId, isDescendant]);
 
   const handleNbDragEnd = useCallback(() => {
     setDragNbId(null);
@@ -1323,6 +1437,12 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
 
   const handleNbDrop = useCallback(async (e: React.DragEvent, targetId: string) => {
     e.preventDefault();
+    if (!canDragNotebookSort) {
+      setDragNbId(null);
+      setDragOverNbId(null);
+      setDragOverNbZone(null);
+      return;
+    }
     const sourceId = dragNbId;
     const zone = dragOverNbZone;
     setDragNbId(null);
@@ -1395,7 +1515,7 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
         actions.refreshNotebooks();
       }
     }
-  }, [dragNbId, dragOverNbZone, isDescendant, state.notebooks, actions]);
+  }, [canDragNotebookSort, dragNbId, dragOverNbZone, isDescendant, state.notebooks, actions]);
 
   const handleSidebarNoteDragStart = useCallback((e: React.DragEvent, noteId: string) => {
     e.stopPropagation();
@@ -2380,7 +2500,30 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
           />
           <span className="text-xs font-medium text-tx-tertiary uppercase tracking-wider">{t('sidebar.notebooks')}</span>
         </button>
-        <div className="flex items-center gap-0.5">
+        <div className="relative flex items-center gap-0.5" ref={notebookSortMenuRef}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn(
+              "h-6 w-6",
+              notebookSortPref.by !== "manual" && "text-accent-primary bg-accent-primary/10"
+            )}
+            onClick={() => setShowNotebookSortMenu((v) => !v)}
+            title={notebookSortTitle}
+            aria-label={notebookSortTitle}
+          >
+            <ArrowUpDown size={14} />
+          </Button>
+          {showNotebookSortMenu && (
+            <NotebookSortMenu
+              value={notebookSortPref}
+              onChange={(next) => {
+                setNotebookSortPref(next);
+                saveNotebookSortPref(next);
+              }}
+              onClose={() => setShowNotebookSortMenu(false)}
+            />
+          )}
           <Button
             variant="ghost"
             size="icon"
@@ -2443,7 +2586,8 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
                     onEditSubmit={handleEditSubmit}
                     onEditCancel={handleEditCancel}
                     onIconChange={handleIconChange}
-                    draggable={true}
+                    draggable={canDragNotebookSort}
+                    dragHint={notebookDragHint}
                     onDragStart={handleNbDragStart}
                     onDragOver={handleNbDragOver}
                     onDragEnd={handleNbDragEnd}

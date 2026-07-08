@@ -405,24 +405,29 @@ function extractSrc(text: string): string {
 function renderMedia(node: SiyuanNode, ctx: RenderContext): string {
     const raw = getString(node, ["src", "href", "url", "Data", "Tokens", "HTML", "html"]) || renderChildrenInline(node, ctx);
     const src = extractSrc(raw);
-    addUnsupported(ctx, node.Type);
     if (src) ctx.attachments.add(src);
     if (node.Type === "NodeIFrame") {
+        addUnsupported(ctx, node.Type, "Siyuan iframe was downgraded to a safe link or supported video embed.");
         return src ? `[嵌入内容](${src})` : "";
     }
     if (node.Type === "NodeVideo") {
+        addUnsupported(ctx, node.Type);
         return src ? `@[video](${src})` : "";
     }
     if (node.Type === "NodeAudio") {
+        addUnsupported(ctx, node.Type, "Siyuan audio was downgraded to a link.");
         return src ? `[音频](${src})` : "";
     }
     if (node.Type === "NodeWidget") {
+        addUnsupported(ctx, node.Type, "Siyuan widget was downgraded to a link.");
         return src ? `[挂件内容](${src})` : raw;
     }
+    addUnsupported(ctx, node.Type);
     return src ? `[附件](${src})` : "";
 }
 
 function renderCallout(node: SiyuanNode, ctx: RenderContext): string {
+    addUnsupported(ctx, node.Type, "Siyuan callout was downgraded to blockquote.");
     const rawType = getString(node, ["CalloutType", "calloutType", "type"]).toUpperCase();
     const allowed = new Set(["NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION"]);
     const type = allowed.has(rawType) ? rawType : "NOTE";

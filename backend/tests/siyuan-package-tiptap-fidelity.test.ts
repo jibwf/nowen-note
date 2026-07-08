@@ -104,6 +104,38 @@ function video(src: string) {
   return { Type: "NodeVideo", Data: `<video src="${src}"></video>` };
 }
 
+function audio(src: string) {
+  return { Type: "NodeAudio", Data: `<audio src="${src}"></audio>` };
+}
+
+function iframe(src: string) {
+  return { Type: "NodeIFrame", Data: `<iframe src="${src}"></iframe>` };
+}
+
+function widget(src: string) {
+  return { Type: "NodeWidget", Data: `<iframe src="${src}"></iframe>` };
+}
+
+function mathBlock(latex: string) {
+  return {
+    Type: "NodeMathBlock",
+    Children: [{ Type: "NodeMathBlockContent", Data: latex }],
+  };
+}
+
+function callout(type: string, title: string, children: any[]) {
+  return {
+    Type: "NodeCallout",
+    CalloutType: type,
+    CalloutTitle: title,
+    Children: children,
+  };
+}
+
+function htmlBlock(raw: string) {
+  return { Type: "NodeHTMLBlock", Data: raw };
+}
+
 function table(rows: any[][]) {
   return {
     Type: "NodeTable",
@@ -337,4 +369,131 @@ test("Rich Text import converts Siyuan tables to supported Tiptap table nodes", 
 
   assert.equal(tableNode.content![2].content?.[1].content?.[0].content?.[0].text, "待办");
   assert.ok(!flattenNodes(parsed).some((node) => node.type === "paragraph" && node.text?.includes("|")));
+});
+
+test("Rich Text import safely preserves advanced Siyuan nodes without unknown schema", async () => {
+  const zipPath = await writeZip("advanced-fidelity.zip", {
+    "advanced.sy": JSON.stringify(syDoc("advanced-doc", "高级节点保真", [
+      paragraph([
+        text("行内公式 "),
+        textMark("inline-math", "a^2+b^2=c^2"),
+      ]),
+      mathBlock("\\int_0^1 x^2 dx"),
+      callout("warning", "注意事项", [
+        paragraph([text("这里是提醒内容")]),
+      ]),
+      codeBlock("mermaid", "flowchart TD\n  A-->B"),
+      htmlBlock('<pre><code class="language-mermaid">sequenceDiagram\n  A->>B: hi</code></pre>'),
+      paragraph([audio("assets/sound.mp3")]),
+      paragraph([iframe("https://www.youtube.com/watch?v=dQw4w9WgXcQ")]),
+      paragraph([iframe("https://example.com/forms/embed")]),
+      paragraph([widget("https://example.com/widget")]),
+    ])),
+    "assets/sound.mp3": new Uint8Array([1, 2, 3, 4]),
+  });
+
+  const result = await importSiyuanPackageFromZipFile(zipPath, {
+    userId: USER_ID,
+    workspaceId: WORKSPACE_ID,
+    targetNotebookId: TARGET_NOTEBOOK_ID,
+    contentFormat: "tiptap-json",
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.stats.importedAssets, 1);
+  assert.equal(result.stats.unsupportedNodes.NodeAudio, 1);
+  assert.equal(result.stats.unsupportedNodes.NodeIFrame, 2);
+  assert.equal(result.stats.unsupportedNodes.NodeWidget, 1);
+  assert.equal(result.stats.unsupportedNodes.NodeCallout, 1);
+  assert.ok(result.warnings.some((item) => item.includes("audio") && item.includes("link")));
+  assert.ok(result.warnings.some((item) => item.includes("iframe") && item.includes("downgraded")));
+  assert.ok(result.warnings.some((item) => item.includes("callout") && item.includes("blockquote")));
+  assert.ok(result.warnings.some((item) => item.includes("widget") && item.includes("link")));
+
+  const note = getNoteByTitle("高级节点保真");
+  assert.ok(note);
+  assert.equal(note.contentFormat, "tiptap-json");
+
+  const parsed = JSON.parse(note.content) as TiptapNode;
+  assert.equal(parsed.type, "doc");
+  const allNodes = flattenNodes(parsed);
+  const nodeTypes = new Set(allNodes.map((node) => node.type));
+  for (const unknown of ["audio", "iframe", "callout", "embed", "mermaid"]) {
+    assert.equal(nodeTypes.has(unknown), false);
+  }
+
+  assert.ok(allNodes.some((node) => node.type === "mathInline" && node.attrs?.latex === "a^2+b^2=c^2"));
+  assert.ok(allNodes.some((node) => node.type === "mathBlock" && node.attrs?.latex === "\\int_0^1 x^2 dx"));
+
+  const calloutNode = parsed.content?.find((node) => node.type === "blockquote");
+  assert.ok(calloutNode);
+  assert.equal(calloutNode.content?.[0].content?.[0].text, "[!WARNING] 注意事项");
+  assert.equal(calloutNode.content?.[1].content?.[0].text, "这里是提醒内容");
+
+  const mermaidBlocks = parsed.content?.filter((node) => node.type === "codeBlock" && node.attrs?.language === "mermaid") || [];
+  assert.equal(mermaidBlocks.length, 2);
+  assert.ok(mermaidBlocks.some((node) => node.content?.[0].text?.includes("flowchart TD")));
+  assert.ok(mermaidBlocks.some((node) => node.content?.[0].text?.includes("sequenceDiagram")));
+
+  const audioLink = allNodes.find((node) =>
+    node.type === "text" &&
+    node.text === "音频附件" &&
+    node.marks?.some((mark) => mark.type === "link" && /^\/api\/attachments\//.test(String(mark.attrs?.href))),
+  );
+  assert.ok(audioLink);
+
+  const videos = parsed.content?.filter((node) => node.type === "video") || [];
+  assert.equal(videos.length, 1);
+  assert.equal(videos[0].attrs?.platform, "youtube");
+  assert.equal(videos[0].attrs?.kind, "iframe");
+  assert.match(String(videos[0].attrs?.src), /^https:\/\/www\.youtube-nocookie\.com\/embed\//);
+
+  const degradedIframe = allNodes.find((node) =>
+    node.type === "text" &&
+    node.text === "嵌入内容" &&
+    node.marks?.some((mark) => mark.type === "link" && mark.attrs?.href === "https://example.com/forms/embed"),
+  );
+  assert.ok(degradedIframe);
+
+  const widgetLink = allNodes.find((node) =>
+    node.type === "text" &&
+    node.text === "挂件内容" &&
+    node.marks?.some((mark) => mark.type === "link" && mark.attrs?.href === "https://example.com/widget"),
+  );
+  assert.ok(widgetLink);
+
+  const referenceCount = db()
+    .prepare("SELECT COUNT(*) AS count FROM attachment_references WHERE noteId = ?")
+    .get(note.id) as { count: number };
+  assert.equal(referenceCount.count, 1);
+});
+
+test("Markdown import keeps advanced Siyuan nodes on the markdown path", async () => {
+  const zipPath = await writeZip("advanced-markdown.zip", {
+    "advanced-md.sy": JSON.stringify(syDoc("advanced-md-doc", "高级节点 Markdown", [
+      paragraph([text("行内公式 "), textMark("inline-math", "x+y")]),
+      mathBlock("E=mc^2"),
+      callout("note", "备注", [paragraph([text("保留为引用")])]),
+      codeBlock("mermaid", "graph LR\n  A-->B"),
+      paragraph([audio("assets/sound-md.mp3")]),
+    ])),
+    "assets/sound-md.mp3": new Uint8Array([9, 8, 7, 6]),
+  });
+
+  const result = await importSiyuanPackageFromZipFile(zipPath, {
+    userId: USER_ID,
+    workspaceId: WORKSPACE_ID,
+    targetNotebookId: TARGET_NOTEBOOK_ID,
+    contentFormat: "markdown",
+  });
+
+  assert.equal(result.success, true);
+  const note = getNoteByTitle("高级节点 Markdown");
+  assert.ok(note);
+  assert.equal(note.contentFormat, "markdown");
+  assert.match(note.content, /\$x\+y\$/);
+  assert.match(note.content, /\$\$\s*E=mc\^2\s*\$\$/s);
+  assert.match(note.content, /> \[!NOTE] 备注/);
+  assert.match(note.content, /```mermaid/);
+  assert.match(note.content, /\[音频]\(\/api\/attachments\/[^)]+\?download=1\)/);
 });

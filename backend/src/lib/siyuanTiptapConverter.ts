@@ -34,6 +34,8 @@ const MARKER_NODE_TYPES = new Set([
     "NodeTaskListItemMarker",
 ]);
 
+const MEDIA_BLOCK_NODE_TYPES = new Set(["NodeImage", "NodeVideo", "NodeAudio", "NodeIFrame", "NodeWidget"]);
+
 function getValue(node: SiyuanNode | undefined, keys: string[]): unknown {
     if (!node) return undefined;
     for (const key of keys) {
@@ -60,8 +62,86 @@ function looksLikeAssetOrUrl(value: string): boolean {
         /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif|mp4|webm|ogg|ogv|m4v|mov|mp3|wav|m4a|flac|aac)([?#].*)?$/i.test(value);
 }
 
+const VIDEO_FILE_EXT_RE = /\.(mp4|webm|ogg|ogv|m4v|mov)([?#].*)?$/i;
+
 function extractSrc(text: string): string {
     return text.match(/\bsrc=["']([^"']+)["']/i)?.[1] || text.match(/\(([^)]+)\)/)?.[1] || text.trim();
+}
+
+function parseSupportedVideoUrl(rawUrl: string, resolvedUrl = rawUrl): { src: string; platform: string; kind: "file" | "iframe" } | null {
+    const url = rawUrl.trim();
+    if (!url) return null;
+    if (VIDEO_FILE_EXT_RE.test(url)) return { src: resolvedUrl, platform: "file", kind: "file" };
+
+    let parsed: URL;
+    try {
+        parsed = new URL(url);
+    } catch {
+        return null;
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+
+    const host = parsed.hostname.toLowerCase();
+    if (host.includes("bilibili.com")) {
+        const match = parsed.pathname.match(/\/video\/(BV[0-9A-Za-z]+|av\d+)/i);
+        if (match) {
+            const id = match[1];
+            const param = /^av/i.test(id) ? `aid=${id.slice(2)}` : `bvid=${id}`;
+            const page = parsed.searchParams.get("p");
+            const pageQuery = page ? `&page=${encodeURIComponent(page)}` : "";
+            return {
+                src: `https://player.bilibili.com/player.html?${param}${pageQuery}&autoplay=0&high_quality=1`,
+                platform: "bilibili",
+                kind: "iframe",
+            };
+        }
+        if (host.includes("player.bilibili.com")) return { src: url, platform: "bilibili", kind: "iframe" };
+    }
+
+    if (host.includes("youtube.com") || host.includes("youtu.be")) {
+        let videoId = "";
+        if (host.includes("youtu.be")) {
+            videoId = parsed.pathname.replace(/^\//, "").split("/")[0];
+        } else if (parsed.pathname.startsWith("/embed/")) {
+            videoId = parsed.pathname.replace(/^\/embed\//, "").split("/")[0];
+            if (videoId) return { src: url, platform: "youtube", kind: "iframe" };
+        } else {
+            videoId = parsed.searchParams.get("v") || "";
+        }
+        if (videoId) {
+            return {
+                src: `https://www.youtube-nocookie.com/embed/${videoId}`,
+                platform: "youtube",
+                kind: "iframe",
+            };
+        }
+    }
+
+    if (host.includes("v.qq.com")) {
+        const match =
+            parsed.pathname.match(/\/(?:cover\/[^/]+|page)\/([A-Za-z0-9]+)\.html/) ||
+            parsed.pathname.match(/\/x\/cover\/[^/]+\/([A-Za-z0-9]+)/);
+        if (match) {
+            return {
+                src: `https://v.qq.com/txp/iframe/player.html?vid=${match[1]}`,
+                platform: "tencent",
+                kind: "iframe",
+            };
+        }
+    }
+
+    if (host.includes("vimeo.com")) {
+        const match = parsed.pathname.match(/\/(\d+)/);
+        if (match) {
+            return {
+                src: `https://player.vimeo.com/video/${match[1]}`,
+                platform: "vimeo",
+                kind: "iframe",
+            };
+        }
+    }
+
+    return null;
 }
 
 function getHeadingLevel(node: SiyuanNode): number {
@@ -146,6 +226,10 @@ function renderTextMark(node: SiyuanNode, options: SiyuanTiptapConvertOptions): 
             return content.map((item) => withMark(item, { type: "highlight" }));
         case "a":
             return href ? content.map((item) => withMark(item, { type: "link", attrs: { href } })) : content;
+        case "inline-math": {
+            const latex = rawText || renderPlainText(node);
+            return latex.trim() ? [{ type: "mathInline", attrs: { latex: latex.trim() } }] : [];
+        }
         default:
             return content;
     }
@@ -195,7 +279,7 @@ function renderParagraphLike(node: SiyuanNode, options: SiyuanTiptapConvertOptio
 
     for (const child of node.Children || []) {
         if (MARKER_NODE_TYPES.has(child.Type)) continue;
-        if (child.Type === "NodeImage" || child.Type === "NodeVideo") {
+        if (MEDIA_BLOCK_NODE_TYPES.has(child.Type)) {
             flushParagraph();
             blocks.push(...renderBlock(child, options));
             continue;
@@ -280,13 +364,32 @@ function renderVideo(node: SiyuanNode, options: SiyuanTiptapConvertOptions): Tip
     const src = extractSrc(raw);
     if (!src) return [];
     const resolved = resolveMediaSrc(src, options);
+    const parsed = parseSupportedVideoUrl(src, resolved) || { src: resolved, platform: "file", kind: "file" as const };
     return [{
         type: "video",
         attrs: {
-            src: resolved,
-            platform: "file",
-            kind: "file",
-            originalUrl: resolved,
+            src: parsed.src,
+            platform: parsed.platform,
+            kind: parsed.kind,
+            originalUrl: src,
+        },
+    }];
+}
+
+function renderIframe(node: SiyuanNode, options: SiyuanTiptapConvertOptions): TiptapJsonNode[] {
+    const raw = getString(node, ["src", "href", "url", "Data", "Tokens", "HTML", "html"]) || renderPlainText(node);
+    const src = extractSrc(raw);
+    if (!src) return [];
+    const resolved = resolveMediaSrc(src, options);
+    const parsed = parseSupportedVideoUrl(src, resolved);
+    if (!parsed) return renderDeferredMedia(node, options, "嵌入内容");
+    return [{
+        type: "video",
+        attrs: {
+            src: parsed.src,
+            platform: parsed.platform,
+            kind: parsed.kind,
+            originalUrl: src,
         },
     }];
 }
@@ -311,6 +414,48 @@ function renderCodeBlock(node: SiyuanNode): TiptapJsonNode[] {
 function renderBlockquote(node: SiyuanNode, options: SiyuanTiptapConvertOptions): TiptapJsonNode[] {
     const content = renderBlocks(node.Children || [], options);
     return [{ type: "blockquote", content: content.length > 0 ? content : [{ type: "paragraph" }] }];
+}
+
+function renderCallout(node: SiyuanNode, options: SiyuanTiptapConvertOptions): TiptapJsonNode[] {
+    const rawType = getString(node, ["CalloutType", "calloutType", "type"]).toUpperCase();
+    const allowed = new Set(["NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION"]);
+    const type = allowed.has(rawType) ? rawType : "NOTE";
+    const title = getString(node, ["CalloutTitle", "title", "Title"]);
+    const marker = title ? `[!${type}] ${title}` : `[!${type}]`;
+    const body = renderBlocks(node.Children || [], options);
+    return [{
+        type: "blockquote",
+        content: [{ type: "paragraph", content: textNode(marker) }, ...body],
+    }];
+}
+
+function extractMathLatex(node: SiyuanNode): string {
+    return (
+        getString(node, ["Data", "content", "latex"]) ||
+        (node.Children || [])
+            .filter((child) => child.Type === "NodeMathBlockContent")
+            .map((child) => getString(child, ["Data"]))
+            .join("\n")
+    ).trim();
+}
+
+function renderMathBlock(node: SiyuanNode): TiptapJsonNode[] {
+    const latex = extractMathLatex(node);
+    return latex ? [{ type: "mathBlock", attrs: { latex } }] : [];
+}
+
+function renderHtmlBlock(node: SiyuanNode): TiptapJsonNode[] {
+    const raw = getString(node, ["Data", "Tokens", "HTML", "html"]);
+    const mermaid = raw.match(/<pre[^>]*>\s*<code[^>]*(?:language-|lang-)?mermaid[^>]*>([\s\S]*?)<\/code>\s*<\/pre>/i)?.[1] ||
+        raw.match(/<div[^>]*class=["'][^"']*mermaid[^"']*["'][^>]*>([\s\S]*?)<\/div>/i)?.[1];
+    if (mermaid?.trim()) {
+        return [{
+            type: "codeBlock",
+            attrs: { language: "mermaid" },
+            content: [{ type: "text", text: mermaid.replace(/<[^>]+>/g, "").trim() }],
+        }];
+    }
+    return raw.trim() ? [{ type: "codeBlock", attrs: { language: "html" }, content: [{ type: "text", text: raw.trim() }] }] : [];
 }
 
 function flattenTableRows(node: SiyuanNode): SiyuanNode[] {
@@ -395,8 +540,14 @@ function renderBlock(node: SiyuanNode, options: SiyuanTiptapConvertOptions): Tip
             return renderList(node, options);
         case "NodeBlockquote":
             return renderBlockquote(node, options);
+        case "NodeCallout":
+            return renderCallout(node, options);
         case "NodeCodeBlock":
             return renderCodeBlock(node);
+        case "NodeMathBlock":
+            return renderMathBlock(node);
+        case "NodeHTMLBlock":
+            return renderHtmlBlock(node);
         case "NodeThematicBreak":
             return [{ type: "horizontalRule" }];
         case "NodeTable":
@@ -408,8 +559,9 @@ function renderBlock(node: SiyuanNode, options: SiyuanTiptapConvertOptions): Tip
         case "NodeAudio":
             return renderDeferredMedia(node, options, "音频附件");
         case "NodeIFrame":
+            return renderIframe(node, options);
         case "NodeWidget":
-            return renderDeferredMedia(node, options, "嵌入内容");
+            return renderDeferredMedia(node, options, "挂件内容");
         default: {
             const childBlocks = renderBlocks(node.Children || [], options);
             if (childBlocks.length > 0) return childBlocks;

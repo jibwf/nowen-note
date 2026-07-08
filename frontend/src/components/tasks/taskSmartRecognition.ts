@@ -90,6 +90,20 @@ type DueReminderRuleDefinition = {
     collect: (ctx: ReminderRuleContext) => DueReminderSpec[];
 };
 
+type DelayedReminderSpec = {
+    dueAt: Date;
+    range: MatchRange;
+};
+
+type DelayedDurationParts = {
+    years?: number;
+    months?: number;
+    weeks?: number;
+    days?: number;
+    hours?: number;
+    minutes?: number;
+};
+
 export type TaskQuickAddParseResult = {
     cleanTitle: string;
     taskPatch: Partial<Task>;
@@ -249,8 +263,15 @@ export function parseTaskQuickAdd(input: string, now = new Date()): TaskQuickAdd
 
     const advanceSpec = parseAdvanceSpec(raw, protectedRanges);
     const dueReminderSpec = parseDueReminderSpec(raw, protectedRanges);
+    const delayedReminderSpec = parseDelayedReminderSpec(raw, now, protectedRanges);
     const reminderOffsets: number[] = [];
-    if (advanceSpec && taskPatch.dueAt) {
+    if (delayedReminderSpec && !taskPatch.dueDate && !taskPatch.dueAt && !repeatSpec && !parsedDateSpec && !timeSpec) {
+        taskPatch.dueDate = formatDateKey(delayedReminderSpec.dueAt);
+        taskPatch.dueAt = formatDueAt(delayedReminderSpec.dueAt);
+        reminderOffsets.push(0);
+        consumedRanges.push(delayedReminderSpec.range);
+        if (dueReminderSpec) consumedRanges.push(dueReminderSpec.range);
+    } else if (advanceSpec && taskPatch.dueAt) {
         reminderOffsets.push(0, advanceSpec.offsetMinutes);
         consumedRanges.push(advanceSpec.range);
         if (dueReminderSpec) consumedRanges.push(dueReminderSpec.range);
@@ -496,6 +517,15 @@ const REPEAT_RULES: RepeatRuleDefinition[] = [
         const anchorDate = resolveNearestMonthlyDay(ctx.now, Number(m[1]));
         return anchorDate ? repeatCandidate(m, ctx, 5, "monthly", 1, null, anchorDate) : null;
     }),
+    repeatRule("monthlyLastDayZh", /每月最后\s*(?:1|一)?天/g, 5, (m, ctx) => repeatCandidate(
+        m,
+        ctx,
+        5,
+        "custom",
+        1,
+        monthlyLastDayCustomJson(),
+        resolveNearestMonthLastDay(ctx.now, ctx.timeSpec),
+    )),
     intervalRepeatRule("everyNDaysZh", /每\s*(\d+)\s*天/g, 6, "daily", "day"),
     intervalRepeatRule("everyNDaysEn", /\bevery\s+(\d+)\s+days?\b/gi, 6, "daily", "day"),
     intervalRepeatRule("everyNWeeksZh", /每\s*(\d+)\s*周/g, 7, "weekly", "week"),
@@ -625,6 +655,10 @@ function weeklyCustomJson(weekdays: number[]): string {
     return JSON.stringify({ frequency: "week", interval: 1, weekdays });
 }
 
+function monthlyLastDayCustomJson(): string {
+    return JSON.stringify({ frequency: "month", interval: 1, monthDay: 31 });
+}
+
 function parseAdvanceSpec(text: string, protectedRanges: MatchRange[]): AdvanceSpec | null {
     const selected = selectAdvanceCandidate(ADVANCE_RULES.flatMap((rule) => rule.collect({ text, protectedRanges })));
     if (!selected) return null;
@@ -722,6 +756,72 @@ function selectDueReminderCandidate(candidates: DueReminderSpec[]): DueReminderS
     return candidates[0];
 }
 
+function parseDelayedReminderSpec(text: string, now: Date, protectedRanges: MatchRange[]): DelayedReminderSpec | null {
+    const candidates: Array<DelayedReminderSpec & { priority: number }> = [];
+    collectDelayedReminderCandidates(
+        text,
+        protectedRanges,
+        /(\d+)\s*小时\s*(\d+)\s*分钟后/g,
+        1,
+        (m) => {
+            const hours = Number(m[1]);
+            const minutes = Number(m[2]);
+            return isPositiveInteger(hours) && isPositiveInteger(minutes) ? { hours, minutes } : null;
+        },
+        candidates,
+        now,
+    );
+    collectDelayedReminderCandidates(
+        text,
+        protectedRanges,
+        /(\d+)\s*(分钟|小时|天|周|月|年)后/g,
+        2,
+        (m) => delayedDurationPart(Number(m[1]), m[2]),
+        candidates,
+        now,
+    );
+
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => {
+        if (a.range.start !== b.range.start) return a.range.start - b.range.start;
+        if (a.priority !== b.priority) return a.priority - b.priority;
+        return (b.range.end - b.range.start) - (a.range.end - a.range.start);
+    });
+    const { priority: _priority, ...result } = candidates[0];
+    return result;
+}
+
+function collectDelayedReminderCandidates(
+    text: string,
+    protectedRanges: MatchRange[],
+    pattern: RegExp,
+    priority: number,
+    buildParts: (match: RegExpExecArray) => DelayedDurationParts | null,
+    candidates: Array<DelayedReminderSpec & { priority: number }>,
+    now: Date,
+): void {
+    pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(text)) !== null) {
+        const range = { start: match.index, end: match.index + match[0].length };
+        if (!isProtectedRange(range, protectedRanges)) {
+            const parts = buildParts(match);
+            if (parts) candidates.push({ dueAt: addDelayedDuration(now, parts), range, priority });
+        }
+    }
+}
+
+function delayedDurationPart(value: number, unit: string): DelayedDurationParts | null {
+    if (!isPositiveInteger(value)) return null;
+    if (unit === "分钟") return { minutes: value };
+    if (unit === "小时") return { hours: value };
+    if (unit === "天") return { days: value };
+    if (unit === "周") return { weeks: value };
+    if (unit === "月") return { months: value };
+    if (unit === "年") return { years: value };
+    return null;
+}
+
 function findProtectedRanges(text: string): MatchRange[] {
     const ranges: MatchRange[] = [];
     const tokenRe = /!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|(https?:\/\/[^\s)]+)/g;
@@ -802,6 +902,18 @@ function addDays(base: Date, days: number): Date {
     const d = new Date(base);
     d.setDate(d.getDate() + days);
     return d;
+}
+
+function addDelayedDuration(now: Date, parts: DelayedDurationParts): Date {
+    let next = new Date(now);
+    next.setSeconds(0, 0);
+    if (parts.years) next = addYearsClamped(next, parts.years);
+    if (parts.months) next = addMonthsClamped(next, parts.months);
+    if (parts.weeks) next.setDate(next.getDate() + parts.weeks * 7);
+    if (parts.days) next.setDate(next.getDate() + parts.days);
+    if (parts.hours) next.setHours(next.getHours() + parts.hours);
+    if (parts.minutes) next.setMinutes(next.getMinutes() + parts.minutes);
+    return next;
 }
 
 function formatDateKey(date: Date): string {
@@ -921,6 +1033,18 @@ function addMonthsClamped(base: Date, months: number): Date {
     return next;
 }
 
+function addYearsClamped(base: Date, years: number): Date {
+    const next = new Date(base);
+    const month = next.getMonth();
+    const day = next.getDate();
+    next.setDate(1);
+    next.setFullYear(next.getFullYear() + years);
+    next.setMonth(month);
+    const lastDay = new Date(next.getFullYear(), month + 1, 0).getDate();
+    next.setDate(Math.min(day, lastDay));
+    return next;
+}
+
 function resolveNearestMonthlyDay(now: Date, day: number): Date | null {
     if (day < 1 || day > 31) return null;
     const baseYear = now.getFullYear();
@@ -935,6 +1059,22 @@ function resolveNearestMonthlyDay(now: Date, day: number): Date | null {
         if (candidate.getTime() >= today.getTime()) return candidate;
     }
     return null;
+}
+
+function resolveNearestMonthLastDay(now: Date, timeSpec: TimeSpec | null): Date {
+    const today = startOfDay(now);
+    for (let i = 0; i < 24; i += 1) {
+        const y = today.getFullYear() + Math.floor((today.getMonth() + i) / 12);
+        const m = (today.getMonth() + i) % 12;
+        const lastDay = new Date(y, m + 1, 0).getDate();
+        const candidate = new Date(y, m, lastDay, 0, 0, 0, 0);
+        if (timeSpec) {
+            if (!isScheduledTimePast(now, candidate, timeSpec)) return candidate;
+            continue;
+        }
+        if (candidate.getTime() >= today.getTime()) return candidate;
+    }
+    return today;
 }
 
 function resolveTimeOnly(now: Date, hour: number, minute: number): Date {
@@ -966,6 +1106,10 @@ function applyPeriodToHour(hour: number, period: DayPeriod | null): number {
 function clampInterval(v: number): number {
     if (!Number.isFinite(v) || v < 1) return 1;
     return Math.min(MAX_REPEAT_INTERVAL, Math.floor(v));
+}
+
+function isPositiveInteger(v: number): boolean {
+    return Number.isFinite(v) && Number.isInteger(v) && v > 0;
 }
 
 function clampAdvanceMinutes(v: number): number {

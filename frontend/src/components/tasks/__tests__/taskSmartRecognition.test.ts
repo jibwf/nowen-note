@@ -336,6 +336,24 @@ describe("taskSmartRecognition - repeat", () => {
         expect(parsed.cleanTitle).toBe("记账");
     });
 
+    it("parses 每月最后1天 as custom monthly last day", () => {
+        const now = dt("2026-07-08T10:00:00");
+        const parsed = parseTaskQuickAdd("每月最后1天提交月报", now);
+
+        expect(parsed.taskPatch.repeatRule).toBe("custom");
+        expect(parsed.taskPatch.repeatInterval).toBe(1);
+        expect(parsed.taskPatch.dueDate).toBe("2026-07-31");
+        expect(parsed.taskPatch.repeatRuleJson).toBe(
+            JSON.stringify({ frequency: "month", interval: 1, monthDay: 31 }),
+        );
+        expect(parsed.cleanTitle).toBe("提交月报");
+
+        const alt = parseTaskQuickAdd("每月最后一天 提交月报", now);
+        expect(alt.taskPatch.repeatRule).toBe("custom");
+        expect(alt.taskPatch.dueDate).toBe("2026-07-31");
+        expect(alt.cleanTitle).toBe("提交月报");
+    });
+
     it("caps oversized 每N月 interval", () => {
         const now = dt("2026-07-08T10:00:00");
         const parsed = parseTaskQuickAdd("每100000月 归档", now);
@@ -407,12 +425,47 @@ describe("taskSmartRecognition - reminders and cleanup", () => {
         expect(parsed.cleanTitle).toBe("写报告 提前提醒我");
     });
 
-    it("does not parse delayed reminder phrases in this iteration", () => {
+    it("parses delayed reminders in minutes/hours/days/weeks/months/years", () => {
         const now = dt("2026-07-08T10:00:00");
-        const parsed = parseTaskQuickAdd("5分钟后 喝水", now);
-        expect(parsed.taskPatch.dueDate).toBeUndefined();
-        expect(parsed.reminderOffsets).toEqual([]);
-        expect(parsed.cleanTitle).toBe("5分钟后 喝水");
+        const minutes = parseTaskQuickAdd("5分钟后喝水", now);
+
+        expect(minutes).toMatchObject({
+            cleanTitle: "喝水",
+            reminderOffsets: [0],
+            taskPatch: {
+                dueDate: "2026-07-08",
+                dueAt: "2026-07-08T10:05",
+            },
+        });
+        expect(minutes.recognizedRanges.map((range) => "5分钟后喝水".slice(range.start, range.end))).toEqual([
+            "5分钟后",
+        ]);
+
+        expect(parseTaskQuickAdd("1小时后 开会", now).taskPatch.dueAt).toBe("2026-07-08T11:00");
+        expect(parseTaskQuickAdd("1天后 交材料", now).taskPatch.dueDate).toBe("2026-07-09");
+        expect(parseTaskQuickAdd("1周后 复查", now).taskPatch.dueDate).toBe("2026-07-15");
+        expect(parseTaskQuickAdd("1月后 续费", now).taskPatch.dueDate).toBe("2026-08-08");
+        expect(parseTaskQuickAdd("1年后 年检", now).taskPatch.dueDate).toBe("2027-07-08");
+    });
+
+    it("parses combined delayed reminder 1小时30分钟后", () => {
+        const now = dt("2026-07-08T10:00:00");
+        const parsed = parseTaskQuickAdd("1小时30分钟后提醒我开会", now);
+
+        expect(parsed.taskPatch.dueDate).toBe("2026-07-08");
+        expect(parsed.taskPatch.dueAt).toBe("2026-07-08T11:30");
+        expect(parsed.reminderOffsets).toEqual([0]);
+        expect(parsed.cleanTitle).toBe("开会");
+        expect(parsed.recognizedRanges.map((range) => "1小时30分钟后提醒我开会".slice(range.start, range.end))).toEqual([
+            "1小时30分钟后提醒我",
+        ]);
+    });
+
+    it("uses calendar month/year math for delayed reminders", () => {
+        const leapDay = dt("2024-02-29T10:00:00");
+
+        expect(parseTaskQuickAdd("1月后 续费", leapDay).taskPatch.dueAt).toBe("2024-03-29T10:00");
+        expect(parseTaskQuickAdd("1年后 年检", leapDay).taskPatch.dueAt).toBe("2025-02-28T10:00");
     });
 
     it("ignores date-like tokens inside raw URL", () => {
@@ -429,6 +482,14 @@ describe("taskSmartRecognition - reminders and cleanup", () => {
         expect(parsed.taskPatch.repeatRule).toBeUndefined();
         expect(parsed.taskPatch.dueDate).toBeUndefined();
         expect(parsed.cleanTitle).toBe("整理 [每2月计划](https://a.example.com/3/6) ![今天](https://a.example.com/1.png)");
+    });
+
+    it("does not parse delayed phrases inside protected ranges", () => {
+        const now = dt("2026-07-08T10:00:00");
+
+        expect(parseTaskQuickAdd("看 https://a.example.com/5分钟后", now).taskPatch.dueAt).toBeUndefined();
+        expect(parseTaskQuickAdd("看 [5分钟后](https://a.example.com)", now).taskPatch.dueAt).toBeUndefined();
+        expect(parseTaskQuickAdd("看 ![5分钟后](https://a.example.com/a.png)", now).taskPatch.dueAt).toBeUndefined();
     });
 
     it("caps oversized advance reminder", () => {

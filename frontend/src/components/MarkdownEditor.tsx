@@ -111,6 +111,12 @@ import { cn } from "@/lib/utils";
 import { normalizeToMarkdown, markdownToPlainText } from "@/lib/contentFormat";
 import { shouldEmitTitleUpdate, shouldSkipTitleChange, shouldSyncTitleValue } from "@/lib/titleIme";
 import { findMarkdownPreviewHeadingTarget } from "@/lib/markdownPreviewOutline";
+import {
+  applyMarkdownTaskCheckboxChange,
+  getMarkdownTaskCheckboxChange,
+  getMarkdownTaskCheckboxChangeAtOffset,
+} from "@/lib/markdownTasks";
+import { clampMarkdownSplitPercent } from "@/lib/markdownSplitPane";
 import { api } from "@/lib/api";
 import { uploadAndInsertImage } from "@/lib/imageUploadService";
 import { isVideoFile, uploadMediaAttachment, type MediaUploadResult } from "@/lib/mediaUploadService";
@@ -361,6 +367,7 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
   const { prefs: userPrefs } = useUserPreferences();
   const hostRef = useRef<HTMLDivElement | null>(null);
   const previewRootRef = useRef<HTMLDivElement | null>(null);
+  const splitContainerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const isTitleComposingRef = useRef(false);
@@ -380,7 +387,6 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
   onHeadingsChangeRef.current = onHeadingsChange;
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const titleDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSettingContent = useRef(false);
 
   // MARKDOWN-PREVIEW-MODE-01: 源码/预览/分屏模式
@@ -389,6 +395,7 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
   const [previewMarkdown, setPreviewMarkdown] = useState(() =>
     normalizeToMarkdown(note.content, note.contentText)
   );
+  const [sourcePaneWidthPercent, setSourcePaneWidthPercent] = useState(50);
   const previewDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewModeRef = useRef<MarkdownViewMode>(viewMode);
 
@@ -753,14 +760,6 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
     onUpdateRef.current({ title, _noteId: noteRef.current.id });
   }, []);
 
-  const scheduleTitleSave = useCallback(() => {
-    if (titleDebounceTimer.current) clearTimeout(titleDebounceTimer.current);
-    titleDebounceTimer.current = setTimeout(() => {
-      titleDebounceTimer.current = null;
-      emitTitleUpdate();
-    }, 500);
-  }, [emitTitleUpdate]);
-
   /**
    * �Ը������¶����ʽ API��
    *   - flushSave(): �л��༭�� / �л��ʼ�ʱ������ pending �� debounce ����д��ȥ��
@@ -775,21 +774,12 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
           debounceTimer.current = null;
           emitSave();
         }
-        if (titleDebounceTimer.current) {
-          clearTimeout(titleDebounceTimer.current);
-          titleDebounceTimer.current = null;
-          emitTitleUpdate();
-        }
       },
       discardPending: () => {
         // �л��༭��ʱ���÷������� PUT����� debounce �����������
         if (debounceTimer.current) {
           clearTimeout(debounceTimer.current);
           debounceTimer.current = null;
-        }
-        if (titleDebounceTimer.current) {
-          clearTimeout(titleDebounceTimer.current);
-          titleDebounceTimer.current = null;
         }
       },
       /**
@@ -817,7 +807,7 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
         } catch { return false; }
       },
     }),
-    [emitSave, emitTitleUpdate],
+    [emitSave],
   );
 
   // ---------- ���ι��أ����� EditorView ----------
@@ -998,6 +988,24 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
 
         // ͼƬ / ���� ճ�� & ��ק���� TiptapEditor ��Ϊ����
         EditorView.domEventHandlers({
+          click(event, view) {
+            if (!editable) return false;
+            const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+            if (typeof pos !== "number") return false;
+
+            const currentMarkdown = view.state.doc.toString();
+            const change = getMarkdownTaskCheckboxChangeAtOffset(currentMarkdown, pos);
+            if (!change) return false;
+
+            event.preventDefault();
+            event.stopPropagation();
+            view.dispatch({
+              changes: { from: change.from, to: change.to, insert: change.insert },
+              selection: { anchor: change.to },
+            });
+            setPreviewMarkdown(applyMarkdownTaskCheckboxChange(currentMarkdown, change));
+            return true;
+          },
           paste(event) {
             if (!editable) return false;
             // 1) 视频文件优先走 Markdown 视频语法
@@ -1085,10 +1093,6 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
         clearTimeout(debounceTimer.current);
         debounceTimer.current = null;
       }
-      if (titleDebounceTimer.current) {
-        clearTimeout(titleDebounceTimer.current);
-        titleDebounceTimer.current = null;
-      }
       view.destroy();
       viewRef.current = null;
     };
@@ -1106,10 +1110,6 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current);
       debounceTimer.current = null;
-    }
-    if (titleDebounceTimer.current) {
-      clearTimeout(titleDebounceTimer.current);
-      titleDebounceTimer.current = null;
     }
 
     // Phase 3: CRDT ģʽ���ĵ��� yCollab �йܣ���Ҫ�ֶ� dispatch setContent��
@@ -1369,32 +1369,22 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
 
   // ---------- ����仯�������� ----------
 
-  const handleTitleChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const nativeEvent = event.nativeEvent as Event & { isComposing?: boolean };
-      if (shouldSkipTitleChange({
-        eventIsComposing: nativeEvent.isComposing,
-        isComposing: isTitleComposingRef.current,
-      })) {
-        return;
-      }
-      scheduleTitleSave();
-    },
-    [scheduleTitleSave]
-  );
+  const handleTitleBlur = useCallback(() => {
+    if (shouldSkipTitleChange({
+      isComposing: isTitleComposingRef.current,
+    })) {
+      return;
+    }
+    emitTitleUpdate();
+  }, [emitTitleUpdate]);
 
   const handleTitleCompositionStart = useCallback(() => {
     isTitleComposingRef.current = true;
-    if (titleDebounceTimer.current) {
-      clearTimeout(titleDebounceTimer.current);
-      titleDebounceTimer.current = null;
-    }
   }, []);
 
   const handleTitleCompositionEnd = useCallback(() => {
     isTitleComposingRef.current = false;
-    emitTitleUpdate();
-  }, [emitTitleUpdate]);
+  }, []);
 
   const handleTitleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -1408,6 +1398,48 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
     },
     [flushSave]
   );
+
+  const handleSplitResizerPointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (viewModeRef.current !== "split") return;
+
+    event.preventDefault();
+    const container = splitContainerRef.current;
+    if (!container) return;
+
+    const updateWidth = (clientX: number) => {
+      const rect = container.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      setSourcePaneWidthPercent(clampMarkdownSplitPercent(((clientX - rect.left) / rect.width) * 100));
+    };
+
+    updateWidth(event.clientX);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      updateWidth(moveEvent.clientX);
+    };
+    const handlePointerUp = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+  }, []);
+
+  const handlePreviewTaskCheckboxChange = useCallback((taskIndex: number, checked: boolean) => {
+    const view = viewRef.current;
+    if (!view || !editable) return;
+
+    const currentMarkdown = view.state.doc.toString();
+    const change = getMarkdownTaskCheckboxChange(currentMarkdown, taskIndex, checked);
+    if (!change) return;
+    const nextMarkdown = applyMarkdownTaskCheckboxChange(currentMarkdown, change);
+
+    view.dispatch({
+      changes: { from: change.from, to: change.to, insert: change.insert },
+    });
+    setPreviewMarkdown(nextMarkdown);
+  }, [editable]);
 
   // ---------- ��ǩ�仯 ----------
 
@@ -1629,7 +1661,7 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
           ref={titleRef}
           defaultValue={note.title}
           placeholder={tr("tiptap.titlePlaceholder") || "�ޱ���"}
-          onChange={handleTitleChange}
+          onBlur={handleTitleBlur}
           onCompositionStart={handleTitleCompositionStart}
           onCompositionEnd={handleTitleCompositionEnd}
           onKeyDown={handleTitleKeyDown}
@@ -1655,26 +1687,41 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
       <div className={cn(
         "flex-1 min-h-0",
         viewMode === "split" ? "flex overflow-hidden" : "overflow-auto px-4 md:px-8"
-      )} style={{ paddingBottom: viewMode !== "split" ? "var(--keyboard-height, 0px)" : undefined }}>
+      )} ref={splitContainerRef} style={{ paddingBottom: viewMode !== "split" ? "var(--keyboard-height, 0px)" : undefined }}>
         {/* CodeMirror host - always mounted, hidden in preview mode */}
         <div className={cn(
-          viewMode === "split" ? "w-1/2 min-h-0 overflow-auto px-4 md:px-8" : "h-full",
+          viewMode === "split" ? "min-h-0 overflow-auto px-4 md:px-8 shrink-0" : "h-full",
           viewMode === "preview" && "hidden"
-        )}>
+        )} style={viewMode === "split" ? { width: `${sourcePaneWidthPercent}%` } : undefined}>
           <div ref={hostRef} className="nowen-md-editor h-full" style={{ minHeight: "100%" }} />
         </div>
         {/* Split divider */}
-        {viewMode === "split" && <div className="w-px bg-app-border/60 shrink-0" />}
+        {viewMode === "split" && (
+          <button
+            type="button"
+            role="separator"
+            aria-orientation="vertical"
+            aria-valuemin={25}
+            aria-valuemax={75}
+            aria-valuenow={Math.round(sourcePaneWidthPercent)}
+            onPointerDown={handleSplitResizerPointerDown}
+            className="group relative w-2 shrink-0 cursor-col-resize touch-none bg-transparent"
+            title={tr("markdown.view.resizeSplit") || "拖拽调整分屏宽度"}
+          >
+            <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-app-border/60 transition-colors group-hover:bg-accent-primary/70" />
+          </button>
+        )}
         {/* Preview area */}
         {(viewMode === "preview" || viewMode === "split") && (
           <div className={cn(
-            viewMode === "split" ? "w-1/2 min-h-0 overflow-auto px-4 md:px-8" : "h-full"
-          )}>
+            viewMode === "split" ? "min-h-0 overflow-auto px-4 md:px-8 shrink-0" : "h-full"
+          )} style={viewMode === "split" ? { width: `${100 - sourcePaneWidthPercent}%` } : undefined}>
             <MarkdownPreview
               markdown={previewMarkdown}
               className="h-full"
               compact={viewMode === "split"}
               containerRef={previewRootRef}
+              onTaskCheckboxChange={editable ? handlePreviewTaskCheckboxChange : undefined}
             />
           </div>
         )}

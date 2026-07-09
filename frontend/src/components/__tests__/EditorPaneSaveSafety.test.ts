@@ -17,6 +17,11 @@ const markdownEditorSource = readFileSync(
   "utf8",
 );
 
+const tiptapEditorSource = readFileSync(
+  path.resolve(__dirname, "../TiptapEditor.tsx"),
+  "utf8",
+);
+
 const apiSource = readFileSync(
   path.resolve(__dirname, "../../lib/api.ts"),
   "utf8",
@@ -124,6 +129,31 @@ describe("EditorPane save safety", () => {
     expect(handleUpdatePrefix).toContain("return;");
   });
 
+  it("defers standalone title saves until the title input blurs", () => {
+    for (const source of [markdownEditorSource, tiptapEditorSource]) {
+      const titleInput = sourceBetween(
+        source,
+        "ref={titleRef}",
+        "className=",
+      );
+
+      expect(titleInput).toContain("onBlur={handleTitleBlur}");
+      expect(titleInput).not.toContain("onChange={handleTitleChange}");
+      expect(source).not.toContain("scheduleTitleSave");
+    }
+  });
+
+  it("wires Markdown split resizing and preview task toggles to the editor", () => {
+    expect(markdownEditorSource).toContain("handleSplitResizerPointerDown");
+    expect(markdownEditorSource).toContain('role="separator"');
+    expect(markdownEditorSource).toContain("sourcePaneWidthPercent");
+    expect(markdownEditorSource).toContain("handlePreviewTaskCheckboxChange");
+    expect(markdownEditorSource).toContain("onTaskCheckboxChange={editable ? handlePreviewTaskCheckboxChange : undefined}");
+    expect(markdownEditorSource).toContain("getMarkdownTaskCheckboxChangeAtOffset");
+    expect(markdownEditorSource).toContain("posAtCoords");
+    expect(markdownEditorSource).toContain("applyMarkdownTaskCheckboxChange");
+  });
+
   it("keeps remote active-note refresh enabled in CRDT mode", () => {
     const applyRemote = sourceBetween(
       editorPaneSource,
@@ -171,7 +201,7 @@ describe("shared editing save safety", () => {
     const fakeNote = sourceBetween(
       sharedNoteViewSource,
       "const fakeNoteForEditing = useMemo<Note | null>(() => {",
-      "const isReadOnlyContent =",
+      "useEffect(() => {",
     );
     const guestSave = sourceBetween(
       sharedNoteViewSource,

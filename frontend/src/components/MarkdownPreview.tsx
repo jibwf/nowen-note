@@ -24,6 +24,8 @@ interface MarkdownPreviewProps {
   compact?: boolean;
   /** 预览滚动容器 ref，用于大纲跳转定位 */
   containerRef?: React.Ref<HTMLDivElement>;
+  /** 点击 GFM 任务复选框时，把第几个任务与目标状态交给上层回写 Markdown 源文档 */
+  onTaskCheckboxChange?: (taskIndex: number, checked: boolean) => void;
 }
 
 /** 图片组件：支持 /api/attachments、http、data:image，带加载失败占位 */
@@ -158,7 +160,8 @@ function CalloutBlockquote({ node, children }: { node?: any; children?: React.Re
 }
 
 /** 自定义渲染器 */
-const components: Record<string, React.FC<any>> = {
+function createComponents(onTaskCheckboxChange?: (taskIndex: number, checked: boolean) => void): Record<string, React.FC<any>> {
+  return {
   // 标题
   h1: ({ node, children }) => (
     <h1 {...headingDataAttrs(node)} className="text-3xl font-bold mt-2 mb-4 leading-tight text-tx-primary">{children}</h1>
@@ -255,18 +258,31 @@ const components: Record<string, React.FC<any>> = {
       return (
         <input
           type="checkbox"
-          checked={checked}
-          readOnly
-          className="mr-1.5 accent-accent-primary align-middle"
+          checked={!!checked}
+          readOnly={!onTaskCheckboxChange}
+          onChange={(event) => {
+            const previewRoot = event.currentTarget.closest(".nowen-md-preview");
+            const taskInputs = Array.from(previewRoot?.querySelectorAll<HTMLInputElement>("input[type='checkbox']") || []);
+            const currentTaskIndex = taskInputs.indexOf(event.currentTarget);
+            if (currentTaskIndex >= 0) {
+              onTaskCheckboxChange?.(currentTaskIndex, event.currentTarget.checked);
+            }
+          }}
+          className={cn(
+            "mr-1.5 accent-accent-primary align-middle",
+            onTaskCheckboxChange && "cursor-pointer",
+          )}
         />
       );
     }
     return <input type={type} />;
   },
-};
+  };
+}
 
-export function MarkdownPreview({ markdown, className, compact, containerRef }: MarkdownPreviewProps) {
+export function MarkdownPreview({ markdown, className, compact, containerRef, onTaskCheckboxChange }: MarkdownPreviewProps) {
   const { t } = useTranslation();
+  const components = createComponents(onTaskCheckboxChange);
   const renderedMarkdown = useMemo(() => {
     const normalized = markdown
       // 去掉常见零宽字符，避免 `##` / `![...]` 被当作普通文本渲染。

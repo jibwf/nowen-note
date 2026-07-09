@@ -1505,17 +1505,6 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
 ) {
   const titleRef = useRef<HTMLInputElement>(null);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
-  // P0-1: 标题 debounce 独立 timer。
-  //   旧实现 handleTitleChange 复用 debounceTimer，导致：
-  //     1) 用户敲内容 500ms 内改标题 → 内容的 debounce 被 clearTimeout 清掉，
-  //        标题保存 payload 里虽然带了当前 editor.getJSON()，但**没有更新**
-  //        lastEmittedContentRef。
-  //     2) PUT 回包 setActiveNote → useEffect([note.id, note.content]) 触发，
-  //        自写守卫因 lastEmittedContentRef 未同步而**未命中** → 走 setContent
-  //        → 编辑器 DOM 重建 → 用户继续在打的字被截断/回退。
-  //   独立 timer 后内容 debounce 不再被标题修改打断；标题保存只发 { title }，
-  //   内容字段照常由 onUpdate 的 content debounce 保存。
-  const titleDebounceTimer = useRef<NodeJS.Timeout | null>(null);
   const isTitleComposingRef = useRef(false);
   const lastEmittedTitleRef = useRef(note.title);
   const [wordStats, setWordStats] = useState({ chars: 0, charsNoSpace: 0, words: 0 });
@@ -2813,10 +2802,6 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
       clearTimeout(debounceTimer.current);
       debounceTimer.current = null;
     }
-    if (titleDebounceTimer.current) {
-      clearTimeout(titleDebounceTimer.current);
-      titleDebounceTimer.current = null;
-    }
 
     if (editor && note) {
       // 笔记切换时重置 lastEmitted 守卫（新笔记的 content 肯定要真正 setContent）
@@ -2931,10 +2916,6 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
       if (debounceTimer.current) {
         clearTimeout(debounceTimer.current);
         debounceTimer.current = null;
-      }
-      if (titleDebounceTimer.current) {
-        clearTimeout(titleDebounceTimer.current);
-        titleDebounceTimer.current = null;
       }
     };
   }, []);
@@ -3778,41 +3759,22 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
     onUpdateRef.current({ title, _noteId: noteRef.current.id });
   }, []);
 
-  const scheduleTitleSave = useCallback(() => {
-    // P0-1: 使用独立的 titleDebounceTimer，不再复用 debounceTimer，
-    // 避免清掉内容的 pending debounce，且只发 title 字段，绝不带 content。
-    // 这样无论标题保存何时返回，都不会触碰 lastEmittedContentRef，
-    // 后续主 effect 的自写守卫继续按"上次派出去的内容"判定，不会误重建编辑器。
-    if (titleDebounceTimer.current) clearTimeout(titleDebounceTimer.current);
-    titleDebounceTimer.current = setTimeout(() => {
-      titleDebounceTimer.current = null;
-      emitTitleUpdate();
-    }, 500);
-  }, [emitTitleUpdate]);
-
-  const handleTitleChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const nativeEvent = event.nativeEvent as Event & { isComposing?: boolean };
+  const handleTitleBlur = useCallback(() => {
     if (shouldSkipTitleChange({
-      eventIsComposing: nativeEvent.isComposing,
       isComposing: isTitleComposingRef.current,
     })) {
       return;
     }
-    scheduleTitleSave();
-  }, [scheduleTitleSave]);
+    emitTitleUpdate();
+  }, [emitTitleUpdate]);
 
   const handleTitleCompositionStart = useCallback(() => {
     isTitleComposingRef.current = true;
-    if (titleDebounceTimer.current) {
-      clearTimeout(titleDebounceTimer.current);
-      titleDebounceTimer.current = null;
-    }
   }, []);
 
   const handleTitleCompositionEnd = useCallback(() => {
     isTitleComposingRef.current = false;
-    emitTitleUpdate();
-  }, [emitTitleUpdate]);
+  }, []);
 
   const handleImageUpload = useCallback(() => {
     if (!editor) return;
@@ -4596,7 +4558,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         <input
           ref={titleRef}
           defaultValue={note.title}
-          onChange={handleTitleChange}
+          onBlur={handleTitleBlur}
           onCompositionStart={handleTitleCompositionStart}
           onCompositionEnd={handleTitleCompositionEnd}
           placeholder={t('tiptap.titlePlaceholder')}

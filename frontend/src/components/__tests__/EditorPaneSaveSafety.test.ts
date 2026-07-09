@@ -32,6 +32,14 @@ const typesSource = readFileSync(
   "utf8",
 );
 
+const zhCnLocale = JSON.parse(
+  readFileSync(path.resolve(__dirname, "../../i18n/locales/zh-CN.json"), "utf8"),
+);
+
+const enLocale = JSON.parse(
+  readFileSync(path.resolve(__dirname, "../../i18n/locales/en.json"), "utf8"),
+);
+
 function sourceBetween(source: string, startNeedle: string, endNeedle: string) {
   const start = source.indexOf(startNeedle);
   const end = source.indexOf(endNeedle, start);
@@ -147,11 +155,19 @@ describe("EditorPane save safety", () => {
     expect(markdownEditorSource).toContain("handleSplitResizerPointerDown");
     expect(markdownEditorSource).toContain('role="separator"');
     expect(markdownEditorSource).toContain("sourcePaneWidthPercent");
+    expect(markdownEditorSource).toContain("bg-app-hover/70");
+    expect(markdownEditorSource).toContain("rounded-full");
+    expect(markdownEditorSource).toContain("shadow-sm");
     expect(markdownEditorSource).toContain("handlePreviewTaskCheckboxChange");
     expect(markdownEditorSource).toContain("onTaskCheckboxChange={editable ? handlePreviewTaskCheckboxChange : undefined}");
     expect(markdownEditorSource).toContain("getMarkdownTaskCheckboxChangeAtOffset");
     expect(markdownEditorSource).toContain("posAtCoords");
     expect(markdownEditorSource).toContain("applyMarkdownTaskCheckboxChange");
+  });
+
+  it("localizes the Markdown split resize tooltip", () => {
+    expect(zhCnLocale.markdown.view.resizeSplit).toBe("拖拽调整分屏宽度");
+    expect(enLocale.markdown.view.resizeSplit).toBe("Drag to resize split panes");
   });
 
   it("keeps remote active-note refresh enabled in CRDT mode", () => {

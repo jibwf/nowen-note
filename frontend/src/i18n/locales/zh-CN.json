@@ -2385,7 +2385,8 @@
     "view": {
       "source": "源码",
       "preview": "预览",
-      "split": "分屏"
+      "split": "分屏",
+      "resizeSplit": "拖拽调整分屏宽度"
     },
     "preview": {
       "imageLoadFailed": "图片加载失败",

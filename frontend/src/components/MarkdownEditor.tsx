@@ -1705,10 +1705,11 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
             aria-valuemax={75}
             aria-valuenow={Math.round(sourcePaneWidthPercent)}
             onPointerDown={handleSplitResizerPointerDown}
-            className="group relative w-2 shrink-0 cursor-col-resize touch-none bg-transparent"
+            className="group relative flex w-3 shrink-0 cursor-col-resize touch-none items-center justify-center bg-app-hover/70 transition-colors hover:bg-accent-primary/10 active:bg-accent-primary/15"
             title={tr("markdown.view.resizeSplit") || "拖拽调整分屏宽度"}
           >
-            <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-app-border/60 transition-colors group-hover:bg-accent-primary/70" />
+            <span className="h-full w-px bg-app-border transition-colors group-hover:bg-accent-primary/80" />
+            <span className="absolute left-1/2 top-1/2 h-10 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-app-border bg-app-surface shadow-sm transition-colors group-hover:border-accent-primary/70 group-hover:bg-accent-primary/10" />
           </button>
         )}
         {/* Preview area */}

@@ -6,8 +6,8 @@ import { aiProfiles, emitAIProfilesChanged, type AIProfile } from "@/lib/aiProfi
 function getCopy() {
   const language = (localStorage.getItem("i18nextLng") || navigator.language || "").toLowerCase();
   return language.startsWith("zh")
-    ? { label: "AI 配置", loading: "切换中", empty: "暂无 AI 配置", failed: "切换 AI 配置失败" }
-    : { label: "AI profile", loading: "Switching", empty: "No AI profiles", failed: "Failed to switch AI profile" };
+    ? { label: "AI 配置", empty: "暂无 AI 配置" }
+    : { label: "AI profile", empty: "No AI profiles" };
 }
 
 function findAIChatHeader(): HTMLElement | null {
@@ -50,14 +50,7 @@ export default function AIProfileSwitcherBridge() {
   const [activeProfileId, setActiveProfileId] = useState("");
   const [switching, setSwitching] = useState(false);
   const frameRef = useRef<number | null>(null);
-
-  const reconcile = useCallback(() => {
-    if (frameRef.current !== null) return;
-    frameRef.current = window.requestAnimationFrame(() => {
-      frameRef.current = null;
-      setHost(ensureHost());
-    });
-  }, []);
+  const previousHostRef = useRef<HTMLElement | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -70,15 +63,29 @@ export default function AIProfileSwitcherBridge() {
     }
   }, []);
 
+  const reconcile = useCallback(() => {
+    if (frameRef.current !== null) return;
+    frameRef.current = window.requestAnimationFrame(() => {
+      frameRef.current = null;
+      const nextHost = ensureHost();
+      setHost(nextHost);
+      if (nextHost && nextHost !== previousHostRef.current) {
+        previousHostRef.current = nextHost;
+        void reload();
+      }
+      if (!nextHost) previousHostRef.current = null;
+    });
+  }, [reload]);
+
   useEffect(() => {
     reconcile();
-    void reload();
     const observer = new MutationObserver(reconcile);
     observer.observe(document.body, { childList: true, subtree: true });
-    window.addEventListener("nowen:ai-profiles-changed", reload as EventListener);
+    const onProfilesChanged = () => { void reload(); };
+    window.addEventListener("nowen:ai-profiles-changed", onProfilesChanged);
     return () => {
       observer.disconnect();
-      window.removeEventListener("nowen:ai-profiles-changed", reload as EventListener);
+      window.removeEventListener("nowen:ai-profiles-changed", onProfilesChanged);
       if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
     };
   }, [reconcile, reload]);

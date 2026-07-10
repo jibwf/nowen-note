@@ -1,26 +1,57 @@
 // electron/updater.js
-// electron-updater 包装：自动检查 + 手动触发 + 事件广播给 renderer。
-// publish 配置在 builder.config.js（GitHub Releases 作为 feed）。
+//
+// Nowen Note 桌面端应用内更新状态机：
+//   idle -> checking -> available -> downloading -> downloaded -> installing
+//                        \-> not-available / error
+//
+// 设计原则：
+//   - 仅使用 electron-builder 固定的官方 GitHub Release provider；renderer 无法传入 URL。
+//   - 禁止预发布版与降级，版本比较、平台/架构选择、SHA-512 校验交给 electron-updater。
+//   - 检测到版本后先由应用内 UI 征得用户同意，再开始下载（autoDownload=false）。
+//   - 兼容旧 preload：继续复用 updater:check / updater:quit-and-install 两个 IPC。
+//     updater:check 会根据当前状态执行“检查 / 开始下载 / 失败重试 / 退出时安装”。
+//   - 安装前广播 preparing-install，让 renderer 有时间触发编辑器立即保存和队列落盘。
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const fs = require("fs");
 const path = require("path");
 
 let autoUpdater = null;
 try {
-  // electron-updater 是运行时依赖，构建环境可能未安装；开发环境降级为 noop
   autoUpdater = require("electron-updater").autoUpdater;
-} catch (e) {
-  console.warn("[updater] electron-updater 未安装，更新功能已禁用。");
+} catch (error) {
+  console.warn("[updater] electron-updater 未安装，更新功能已禁用。", error?.message || "");
 }
 
 let initialized = false;
+let checkPromise = null;
+let downloadPromise = null;
+let installPromise = null;
+let availableInfo = null;
+let lastErrorStage = "check";
+let backupPrepared = false;
 
-// ---- 上下文（由 main.js 注入） --------------------------------------------
-// main.js 在 app.whenReady 之后会调 setUpdaterContext({ getUserDataPath })
-// 把 userData 目录的真实路径告诉 updater。这样升级前备份就能落在与 backend
-// 完全一致的 `{userData}/nowen-data` 下，不会出现两套数据目录的怪异情况。
+let state = {
+  status: "idle",
+  phase: "idle",
+  currentVersion: "",
+  version: null,
+  releaseName: "",
+  releaseNotes: "",
+  releaseDate: "",
+  fileSize: null,
+  percent: 0,
+  transferred: 0,
+  total: 0,
+  bytesPerSecond: 0,
+  checkedAt: null,
+  installOnQuit: false,
+  message: "",
+  errorStage: null,
+  platform: process.platform,
+  arch: process.arch,
+};
+
 let ctx = {
-  /** 返回 backend 实际使用的数据目录（含 SQLite）。默认兜底写进 app.getPath("userData") */
   getUserDataPath: () => {
     try {
       return path.join(app.getPath("userData"), "nowen-data");
@@ -30,199 +61,488 @@ let ctx = {
   },
 };
 
-/**
- * 注入运行期上下文（由 main.js 调用，避免 updater 反向 require main.js 循环依赖）。
- * @param {{ getUserDataPath?: () => string | null }} next
- */
 function setUpdaterContext(next) {
-  if (!next) return;
-  if (typeof next.getUserDataPath === "function") {
+  if (next && typeof next.getUserDataPath === "function") {
     ctx.getUserDataPath = next.getUserDataPath;
   }
 }
 
+function isPortableBuild() {
+  return Boolean(process.env.PORTABLE_EXECUTABLE_FILE);
+}
+
+function isUnsupportedLinuxPackage() {
+  // electron-updater 对 Linux 的完整自动安装依赖 AppImage 环境变量。
+  return process.platform === "linux" && !process.env.APPIMAGE;
+}
+
+function updaterDisabledReason() {
+  if (!autoUpdater) return "updater-unavailable";
+  if (!app.isPackaged) return "development-build";
+  if (isPortableBuild()) return "portable-build";
+  if (isUnsupportedLinuxPackage()) return "linux-package-not-supported";
+  return null;
+}
+
+function sanitizeError(error) {
+  let message = error?.message || String(error || "更新失败");
+  // 日志/renderer 不暴露 URL query、GitHub token、Authorization 等敏感值。
+  message = message
+    .replace(/([?&](?:token|access_token|auth|signature|sig)=)[^&\s]+/gi, "$1***")
+    .replace(/(authorization\s*[:=]\s*)([^\s,;]+)/gi, "$1***")
+    .replace(/gh[pousr]_[A-Za-z0-9_]+/g, "***")
+    .replace(/[\r\n]+/g, " ")
+    .trim();
+  return message.slice(0, 500) || "更新失败";
+}
+
+function normalizeReleaseNotes(value) {
+  if (typeof value === "string") return value.trim().slice(0, 5000);
+  if (!Array.isArray(value)) return "";
+  return value
+    .map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (entry && typeof entry.note === "string") return entry.note;
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n\n")
+    .trim()
+    .slice(0, 5000);
+}
+
+function pickFileSize(info) {
+  if (!info || !Array.isArray(info.files)) return null;
+  const sizes = info.files
+    .map((file) => Number(file?.size))
+    .filter((size) => Number.isFinite(size) && size > 0);
+  return sizes.length ? Math.max(...sizes) : null;
+}
+
+function publicState() {
+  return { ...state };
+}
+
+function broadcast(status, patch = {}) {
+  state = {
+    ...state,
+    ...patch,
+    status,
+    currentVersion: state.currentVersion || app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+  };
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send("updater:status", publicState());
+    }
+  }
+  return publicState();
+}
+
+function infoPayload(info) {
+  return {
+    version: typeof info?.version === "string" ? info.version : null,
+    releaseName: typeof info?.releaseName === "string" ? info.releaseName.slice(0, 300) : "",
+    releaseNotes: normalizeReleaseNotes(info?.releaseNotes),
+    releaseDate: typeof info?.releaseDate === "string" ? info.releaseDate : "",
+    fileSize: pickFileSize(info),
+  };
+}
+
+function isStableVersion(version) {
+  return typeof version === "string" && /^v?\d+\.\d+\.\d+(?:\+[^-\s]+)?$/.test(version.trim());
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
- * 升级前自动备份 SQLite。
- *
- * 为什么需要：
- *   autoUpdater.quitAndInstall 会在退出后立刻替换二进制并执行 migrations。
- *   若新版本引入了**向下不兼容**的 schema 改动（列删除、表重命名等），
- *   用户一旦发现数据异常想回退，就只能找更早的整库备份。这里在 install
- *   之前做一次"纯粹的 DB 快照"作为最后一道兜底。
- *
- * 策略：
- *   - 源文件：{userData}/nowen-data/nowen-note.db
- *   - 目标：  {userData}/nowen-data/backups-pre-update/<ISO-ts>.db
- *   - 只保留最近 3 份（按文件名字典序；ISO 时间戳保证与创建顺序一致）
- *   - 使用 fs.copyFileSync；SQLite 支持 WAL 模式时 .db 单文件可能不含最新
- *     事务，但 backend 进程此刻已被 autoUpdater 退出流程停掉，checkpoint
- *     一般已 flush 回主文件。极端情况下丢最后几条写入可以接受——这不是
- *     代替正常备份，只是"升级崩盘"的最后救命稻草。
- *   - 全链路 try/catch：备份失败绝不阻塞升级，只打 warn 让用户后续排查。
+ * 升级前备份 SQLite 主库及 WAL/SHM。每次升级放入独立目录，只保留最近 3 份。
+ * 同时保存 WAL/SHM 比只复制 .db 更能覆盖尚未 checkpoint 的最新事务。
  */
 function backupDatabaseBeforeUpdate() {
+  if (backupPrepared) return;
+  backupPrepared = true;
   try {
     const userDataPath = ctx.getUserDataPath?.();
-    if (!userDataPath) {
-      console.warn("[updater] 备份跳过：userDataPath 为空");
-      return;
-    }
+    if (!userDataPath) return;
     const dbPath = path.join(userDataPath, "nowen-note.db");
-    if (!fs.existsSync(dbPath)) {
-      console.log("[updater] 备份跳过：DB 文件不存在", dbPath);
-      return;
-    }
-    const backupDir = path.join(userDataPath, "backups-pre-update");
-    fs.mkdirSync(backupDir, { recursive: true });
+    if (!fs.existsSync(dbPath)) return;
 
-    // ISO 时间戳 + 去冒号：Windows 文件名不允许 `:`
-    const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    const target = path.join(backupDir, `${ts}.db`);
-    fs.copyFileSync(dbPath, target);
-    console.log("[updater] 升级前 DB 已备份到", target);
+    const root = path.join(userDataPath, "backups-pre-update");
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const targetDir = path.join(root, stamp);
+    fs.mkdirSync(targetDir, { recursive: true });
 
-    // 只留最近 3 份
-    try {
-      const files = fs
-        .readdirSync(backupDir)
-        .filter((f) => f.endsWith(".db"))
-        .sort(); // ISO 前缀保证自然顺序 = 时间顺序
-      const toDelete = files.slice(0, Math.max(0, files.length - 3));
-      for (const f of toDelete) {
-        try {
-          fs.unlinkSync(path.join(backupDir, f));
-        } catch (e) {
-          console.warn("[updater] 清理旧备份失败", f, e?.message || e);
-        }
+    for (const suffix of ["", "-wal", "-shm"]) {
+      const source = dbPath + suffix;
+      if (fs.existsSync(source)) {
+        fs.copyFileSync(source, path.join(targetDir, `nowen-note.db${suffix}`));
       }
-    } catch (e) {
-      console.warn("[updater] 清理旧备份遍历失败", e?.message || e);
     }
-  } catch (e) {
-    console.warn("[updater] 升级前备份失败（已忽略，不阻塞升级）:", e?.message || e);
+    fs.writeFileSync(
+      path.join(targetDir, "update.json"),
+      JSON.stringify(
+        {
+          fromVersion: app.getVersion(),
+          toVersion: state.version,
+          createdAt: new Date().toISOString(),
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const directories = fs
+      .readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+    for (const old of directories.slice(0, Math.max(0, directories.length - 3))) {
+      fs.rmSync(path.join(root, old), { recursive: true, force: true });
+    }
+    console.log("[updater] 升级前数据快照已创建", targetDir);
+  } catch (error) {
+    // 备份失败不静默，但也不能把已验证通过的更新变成启动阻断。
+    console.warn("[updater] 升级前备份失败：", sanitizeError(error));
   }
 }
 
-function broadcast(status, payload) {
-  const wins = BrowserWindow.getAllWindows();
-  for (const w of wins) {
-    if (!w.isDestroyed()) {
-      w.webContents.send("updater:status", { status, ...payload });
-    }
+async function checkNow({ manual = false } = {}) {
+  const disabled = updaterDisabledReason();
+  if (disabled) {
+    return {
+      ok: false,
+      reason: disabled,
+      state: broadcast("error", {
+        phase: "error",
+        message: disabled,
+        errorStage: "check",
+        manual,
+      }),
+    };
   }
-}
-
-/**
- * 初始化自动更新。仅在打包后的生产环境生效。
- * @param {{ onQuitRequested?: () => void }} [opts]
- */
-function initAutoUpdater(opts = {}) {
-  if (initialized) return;
-  initialized = true;
-
-  if (!autoUpdater || !app.isPackaged) {
-    console.log("[updater] 跳过自动更新（dev 或 electron-updater 缺失）");
-    // 仍注册 IPC，以便 UI 层调用时给出明确反馈
-    registerIpc({ manualTrigger: true, disabled: true });
-    return;
+  if (checkPromise) return checkPromise;
+  if (["downloading", "downloaded", "preparing-install", "installing"].includes(state.status)) {
+    return { ok: true, state: publicState() };
   }
 
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
-
-  autoUpdater.on("checking-for-update", () => broadcast("checking"));
-  autoUpdater.on("update-available", (info) =>
-    broadcast("available", { version: info?.version })
-  );
-  autoUpdater.on("update-not-available", () => broadcast("not-available"));
-  autoUpdater.on("download-progress", (p) =>
-    broadcast("downloading", {
-      percent: p.percent,
-      transferred: p.transferred,
-      total: p.total,
-      bytesPerSecond: p.bytesPerSecond,
-    })
-  );
-  autoUpdater.on("update-downloaded", (info) => {
-    broadcast("downloaded", { version: info?.version });
-    // 提示用户立即重启安装
-    dialog
-      .showMessageBox({
-        type: "info",
-        buttons: ["立即重启并安装", "稍后"],
-        defaultId: 0,
-        cancelId: 1,
-        title: "更新已下载",
-        message: `Nowen Note ${info?.version} 已下载完成`,
-        detail: "重启后将自动安装新版本。安装前会自动保留一份数据库快照。",
-      })
-      .then((r) => {
-        if (r.response === 0) {
-          // 先做升级前 DB 备份（失败不阻塞）
-          backupDatabaseBeforeUpdate();
-          opts.onQuitRequested?.();
-          autoUpdater.quitAndInstall();
-        }
-      });
+  lastErrorStage = "check";
+  broadcast("checking", {
+    phase: "checking",
+    message: "",
+    errorStage: null,
+    manual,
+    checkedAt: new Date().toISOString(),
   });
-  autoUpdater.on("error", (err) =>
-    broadcast("error", { message: err?.message || String(err) })
-  );
 
-  // 启动 5 秒后静默检查一次
-  setTimeout(() => {
-    autoUpdater.checkForUpdates().catch((e) => console.error("[updater]", e));
-  }, 5000);
-
-  registerIpc({ manualTrigger: true, disabled: false });
+  checkPromise = autoUpdater
+    .checkForUpdates()
+    .then((result) => ({
+      ok: true,
+      version: result?.updateInfo?.version,
+      state: publicState(),
+    }))
+    .catch((error) => {
+      const message = sanitizeError(error);
+      console.error("[updater] check failed:", message);
+      return {
+        ok: false,
+        reason: message,
+        state: broadcast("error", {
+          phase: "error",
+          message,
+          errorStage: "check",
+          manual,
+        }),
+      };
+    })
+    .finally(() => {
+      checkPromise = null;
+    });
+  return checkPromise;
 }
 
-function registerIpc({ disabled } = {}) {
-  // 避免重复注册
+async function downloadAvailableUpdate() {
+  if (!autoUpdater || !availableInfo) {
+    return { ok: false, reason: "no-update-available", state: publicState() };
+  }
+  if (downloadPromise) return downloadPromise;
+  if (state.status === "downloaded") return { ok: true, state: publicState() };
+
+  lastErrorStage = "download";
+  autoUpdater.autoInstallOnAppQuit = false;
+  broadcast("downloading", {
+    phase: "downloading",
+    percent: 0,
+    transferred: 0,
+    total: state.fileSize || 0,
+    bytesPerSecond: 0,
+    message: "",
+    errorStage: null,
+    installOnQuit: false,
+  });
+
+  downloadPromise = autoUpdater
+    .downloadUpdate()
+    .then(() => ({ ok: true, state: publicState() }))
+    .catch((error) => {
+      const message = sanitizeError(error);
+      console.error("[updater] download failed:", message);
+      return {
+        ok: false,
+        reason: message,
+        state: broadcast("error", {
+          phase: "error",
+          message,
+          errorStage: "download",
+        }),
+      };
+    })
+    .finally(() => {
+      downloadPromise = null;
+    });
+  return downloadPromise;
+}
+
+function armInstallOnQuit() {
+  if (!autoUpdater || state.status !== "downloaded") {
+    return { ok: false, reason: "update-not-downloaded", state: publicState() };
+  }
+  autoUpdater.autoInstallOnAppQuit = true;
+  const next = broadcast("downloaded", {
+    phase: "downloaded",
+    installOnQuit: true,
+    message: "退出应用时将自动安装更新",
+  });
+  return { ok: true, armed: true, state: next };
+}
+
+async function installNow(opts = {}) {
+  if (!autoUpdater || state.status !== "downloaded") {
+    return { ok: false, reason: "update-not-downloaded", state: publicState() };
+  }
+  if (installPromise) return installPromise;
+
+  installPromise = (async () => {
+    // renderer 收到此状态后会立即触发 Ctrl/Cmd+S、blur 和自定义 flush 事件。
+    broadcast("preparing-install", {
+      phase: "installing",
+      message: "正在保存笔记和同步队列…",
+      installOnQuit: false,
+    });
+    await delay(1800);
+
+    backupDatabaseBeforeUpdate();
+    try {
+      opts.onQuitRequested?.();
+    } catch (error) {
+      console.warn("[updater] onQuitRequested failed:", sanitizeError(error));
+    }
+
+    broadcast("installing", {
+      phase: "installing",
+      message: "正在退出并安装更新…",
+    });
+
+    // 先让 invoke 返回，随后退出。isSilent=false 让 Windows 安装器在需要时能展示 UAC。
+    setTimeout(() => {
+      try {
+        autoUpdater.quitAndInstall(false, true);
+      } catch (error) {
+        const message = sanitizeError(error);
+        console.error("[updater] quitAndInstall failed:", message);
+        broadcast("error", {
+          phase: "error",
+          message,
+          errorStage: "install",
+        });
+        installPromise = null;
+      }
+    }, 150);
+    return { ok: true, state: publicState() };
+  })();
+
+  return installPromise;
+}
+
+function registerIpc(opts, disabled) {
   ipcMain.removeHandler("updater:check");
   ipcMain.removeHandler("updater:quit-and-install");
 
   ipcMain.handle("updater:check", async () => {
-    if (disabled || !autoUpdater) {
-      return { ok: false, reason: "updater-disabled" };
+    if (disabled) return { ok: false, reason: disabled, state: publicState() };
+
+    // 兼容旧 preload 的单一 checkForUpdates()：按状态推进下一步。
+    if (state.status === "available") return downloadAvailableUpdate();
+    if (state.status === "downloaded") return armInstallOnQuit();
+    if (state.status === "error" && lastErrorStage === "download" && availableInfo) {
+      return downloadAvailableUpdate();
     }
-    try {
-      const r = await autoUpdater.checkForUpdates();
-      return { ok: true, version: r?.updateInfo?.version };
-    } catch (e) {
-      return { ok: false, reason: e?.message || "check-failed" };
+    if (["checking", "downloading", "preparing-install", "installing"].includes(state.status)) {
+      return { ok: true, state: publicState() };
     }
+    return checkNow({ manual: true });
   });
 
-  ipcMain.handle("updater:quit-and-install", () => {
-    if (disabled || !autoUpdater) return { ok: false };
-    // 走手动调用通道同样保证升级前备份
-    backupDatabaseBeforeUpdate();
-    autoUpdater.quitAndInstall();
-    return { ok: true };
-  });
+  ipcMain.handle("updater:quit-and-install", () => installNow(opts));
 }
 
-/** 供菜单"检查更新"调用 */
+function initAutoUpdater(opts = {}) {
+  if (initialized) return;
+  initialized = true;
+  state.currentVersion = app.getVersion();
+
+  const disabled = updaterDisabledReason();
+  if (disabled) {
+    console.log("[updater] 自动更新不可用：", disabled);
+    registerIpc(opts, disabled);
+    return;
+  }
+
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.allowPrerelease = false;
+  autoUpdater.allowDowngrade = false;
+  autoUpdater.autoRunAppAfterInstall = true;
+
+  autoUpdater.on("checking-for-update", () => {
+    if (state.status !== "checking") {
+      broadcast("checking", {
+        phase: "checking",
+        checkedAt: new Date().toISOString(),
+        message: "",
+        errorStage: null,
+      });
+    }
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    // 双保险：provider 已禁止 prerelease；元数据异常时仍拒绝下载。
+    if (!isStableVersion(info?.version)) {
+      console.warn("[updater] 忽略非稳定或非法版本：", info?.version);
+      availableInfo = null;
+      broadcast("not-available", {
+        phase: "up-to-date",
+        version: null,
+        message: "当前已是最新稳定版",
+        checkedAt: new Date().toISOString(),
+      });
+      return;
+    }
+    availableInfo = info;
+    backupPrepared = false;
+    broadcast("available", {
+      phase: "update-available",
+      ...infoPayload(info),
+      percent: 0,
+      transferred: 0,
+      total: pickFileSize(info) || 0,
+      bytesPerSecond: 0,
+      checkedAt: new Date().toISOString(),
+      installOnQuit: false,
+      message: "发现新版本",
+      errorStage: null,
+    });
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    availableInfo = null;
+    broadcast("not-available", {
+      phase: "up-to-date",
+      version: null,
+      releaseName: "",
+      releaseNotes: "",
+      fileSize: null,
+      checkedAt: new Date().toISOString(),
+      message: "已是最新版本",
+      errorStage: null,
+    });
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    broadcast("downloading", {
+      phase: "downloading",
+      percent: Number(progress?.percent) || 0,
+      transferred: Number(progress?.transferred) || 0,
+      total: Number(progress?.total) || state.total || 0,
+      bytesPerSecond: Number(progress?.bytesPerSecond) || 0,
+      message: "正在下载更新",
+      errorStage: null,
+    });
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    availableInfo = info || availableInfo;
+    autoUpdater.autoInstallOnAppQuit = false;
+    broadcast("downloaded", {
+      phase: "downloaded",
+      ...infoPayload(info || availableInfo),
+      percent: 100,
+      transferred: state.total || state.transferred,
+      installOnQuit: false,
+      message: "更新已下载完成",
+      errorStage: null,
+    });
+  });
+
+  autoUpdater.on("error", (error) => {
+    // checkNow/downloadUpdate 自己会输出更准确的阶段；事件仅兜底未知异步错误。
+    if (state.status === "error") return;
+    const message = sanitizeError(error);
+    broadcast("error", {
+      phase: "error",
+      message,
+      errorStage: lastErrorStage,
+    });
+  });
+
+  app.on("before-quit", () => {
+    if (state.status === "downloaded" && state.installOnQuit) {
+      backupDatabaseBeforeUpdate();
+    }
+  });
+
+  registerIpc(opts, null);
+  // 自动检查由 renderer 在主 UI 挂载并读取用户偏好后触发，避免启动阶段丢事件。
+}
+
+/** 系统菜单“检查更新”：只检查，不会因当前 available 状态误触发下载。 */
 async function checkForUpdatesManually() {
-  if (!autoUpdater || !app.isPackaged) {
+  const disabled = updaterDisabledReason();
+  if (disabled) {
     await dialog.showMessageBox({
       type: "info",
-      message: "当前为开发模式",
-      detail: "自动更新仅在打包后的正式版本中可用。",
+      title: "无法自动更新",
+      message: disabled === "portable-build" ? "免安装版不支持自动更新" : "当前版本无法使用自动更新",
+      detail:
+        disabled === "development-build"
+          ? "自动更新仅在打包后的正式安装版中可用。"
+          : "请在“设置 → 关于”中查看当前发行包的更新说明。",
     });
     return;
   }
-  try {
-    broadcast("checking");
-    const r = await autoUpdater.checkForUpdates();
-    if (!r || !r.updateInfo) {
-      await dialog.showMessageBox({ type: "info", message: "已是最新版本" });
-    }
-  } catch (e) {
-    await dialog.showErrorBox("检查更新失败", e?.message || String(e));
+
+  if (state.status === "available") {
+    broadcast("available", { ...state, manual: true });
+    return;
+  }
+  if (["downloading", "downloaded", "preparing-install", "installing"].includes(state.status)) {
+    broadcast(state.status, { ...state, manual: true });
+    return;
+  }
+
+  const result = await checkNow({ manual: true });
+  if (result.ok && result.state?.status === "not-available") {
+    await dialog.showMessageBox({ type: "info", title: "检查更新", message: "当前已是最新版本" });
   }
 }
 
-module.exports = { initAutoUpdater, checkForUpdatesManually, setUpdaterContext };
-
+module.exports = {
+  initAutoUpdater,
+  checkForUpdatesManually,
+  setUpdaterContext,
+};

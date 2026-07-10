@@ -11,6 +11,7 @@ type SearchRow = {
   notebookId: string;
   workspaceId: string | null;
   title: string;
+  contentText?: string;
   updatedAt: string;
   isFavorite: number;
   isPinned: number;
@@ -18,8 +19,10 @@ type SearchRow = {
   titleHtml: string;
   snippetHtml: string;
   score: number;
-  matchedField?: string; // 命中的字段：title, content, title+content
+  matchedField?: "title" | "content" | "title+content";
+  matchCount?: number;
   contentFormat?: string;
+  notebookName?: string | null;
 };
 
 function escapeHtml(text: string): string {
@@ -31,38 +34,96 @@ function escapeHtml(text: string): string {
     .replace(/'/g, "&#39;");
 }
 
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getSearchTerms(query: string): string[] {
+  const terms = splitSearchTerms(query)
+    .map((term) => term.trim())
+    .filter(Boolean);
+  return Array.from(new Set(terms.length > 0 ? terms : [query.trim()]))
+    .sort((a, b) => b.length - a.length);
+}
+
+function countOccurrences(source: string, term: string): number {
+  if (!source || !term) return 0;
+  const haystack = source.toLocaleLowerCase();
+  const needle = term.toLocaleLowerCase();
+  let count = 0;
+  let from = 0;
+  while (from < haystack.length) {
+    const index = haystack.indexOf(needle, from);
+    if (index < 0) break;
+    count += 1;
+    from = index + Math.max(needle.length, 1);
+  }
+  return count;
+}
+
+function buildMatchMeta(title: string, contentText: string, query: string): {
+  matchedField: "title" | "content" | "title+content";
+  matchCount: number;
+} {
+  const terms = getSearchTerms(query);
+  const titleCount = terms.reduce((sum, term) => sum + countOccurrences(title || "", term), 0);
+  const contentCount = terms.reduce((sum, term) => sum + countOccurrences(contentText || "", term), 0);
+
+  const matchedField = titleCount > 0 && contentCount > 0
+    ? "title+content"
+    : titleCount > 0
+      ? "title"
+      : "content";
+
+  // FTS tokenization may match a normalized form that cannot be reproduced with a literal
+  // substring count (for example punctuation-separated terms). A returned search row still
+  // represents at least one match, so never expose a zero badge to the client.
+  return { matchedField, matchCount: Math.max(1, titleCount + contentCount) };
+}
+
 function markPlainText(text: string, query: string): string {
   if (!text || !query) return escapeHtml(text || "");
-  const escaped = escapeHtml(text);
-  const escapedQuery = escapeHtml(query);
-  if (!escapedQuery) return escaped;
-  return escaped.replaceAll(escapedQuery, `<mark>${escapedQuery}</mark>`);
+  const terms = getSearchTerms(query).filter(Boolean);
+  if (terms.length === 0) return escapeHtml(text);
+
+  const matcher = new RegExp(`(${terms.map(escapeRegExp).join("|")})`, "gi");
+  return text
+    .split(matcher)
+    .map((part, index) => index % 2 === 1 ? `<mark>${escapeHtml(part)}</mark>` : escapeHtml(part))
+    .join("");
+}
+
+function findFirstMatch(source: string, terms: string[]): { index: number; length: number } | null {
+  if (!source) return null;
+  const lowerSource = source.toLocaleLowerCase();
+  let best: { index: number; length: number } | null = null;
+
+  for (const term of terms) {
+    const index = lowerSource.indexOf(term.toLocaleLowerCase());
+    if (index < 0) continue;
+    if (!best || index < best.index || (index === best.index && term.length > best.length)) {
+      best = { index, length: term.length };
+    }
+  }
+  return best;
 }
 
 function buildPlainSnippet(title: string, contentText: string, query: string): string {
-  // 优先从正文中查找命中片段
-  if (contentText) {
-    const index = contentText.indexOf(query);
-    if (index >= 0) {
-      const start = Math.max(0, index - 40);
-      const end = Math.min(contentText.length, index + query.length + 80);
-      const prefix = start > 0 ? "..." : "";
-      const suffix = end < contentText.length ? "..." : "";
-      return `${prefix}${markPlainText(contentText.slice(start, end), query)}${suffix}`;
-    }
+  const terms = getSearchTerms(query);
+  const contentMatch = findFirstMatch(contentText, terms);
+  if (contentMatch) {
+    const start = Math.max(0, contentMatch.index - 70);
+    const end = Math.min(contentText.length, contentMatch.index + contentMatch.length + 150);
+    const prefix = start > 0 ? "..." : "";
+    const suffix = end < contentText.length ? "..." : "";
+    return `${prefix}${markPlainText(contentText.slice(start, end), query)}${suffix}`;
   }
 
-  // 如果正文没有命中，从标题中查找
-  if (title) {
-    const index = title.indexOf(query);
-    if (index >= 0) {
-      return markPlainText(title, query);
-    }
-  }
+  const titleMatch = findFirstMatch(title, terms);
+  if (titleMatch) return markPlainText(title, query);
 
-  // 如果都没有命中，返回正文前120个字符
   const source = contentText || title || "";
-  return markPlainText(source.slice(0, 120), query);
+  return markPlainText(source.slice(0, 220), query);
 }
 
 app.get("/", (c) => {
@@ -87,12 +148,12 @@ app.get("/", (c) => {
             OR EXISTS (
               SELECT 1
               FROM notebook_members nm
-              JOIN notebooks nb ON nb.id = nm.notebookId
+              JOIN notebooks shared_nb ON shared_nb.id = nm.notebookId
               WHERE nm.notebookId = n.notebookId
                 AND nm.userId = ?
                 AND nm.status = 'active'
-                AND nb.userId <> ?
-                AND nb.isDeleted = 0
+                AND shared_nb.userId <> ?
+                AND shared_nb.isDeleted = 0
             ))`;
         })();
 
@@ -103,41 +164,49 @@ app.get("/", (c) => {
 
   if (searchTerm) {
     const ftsRows = db.prepare(`
-      SELECT n.id, n.userId, n.notebookId, n.workspaceId, n.title, n.updatedAt,
+      SELECT n.id, n.userId, n.notebookId, n.workspaceId, n.title, n.contentText, n.updatedAt,
         CASE WHEN EXISTS(SELECT 1 FROM favorites f WHERE f.noteId = n.id AND f.userId = ?) THEN 1 ELSE 0 END AS isFavorite,
         n.isPinned,
-        snippet(notes_fts, 1, '<mark>', '</mark>', '...', 60) AS snippet,
+        snippet(notes_fts, 1, '<mark>', '</mark>', '...', 90) AS snippet,
         highlight(notes_fts, 0, '<mark>', '</mark>') AS titleHtml,
-        snippet(notes_fts, 1, '<mark>', '</mark>', '...', 60) AS snippetHtml,
+        snippet(notes_fts, 1, '<mark>', '</mark>', '...', 90) AS snippetHtml,
         rank AS score,
-        n.contentFormat
+        n.contentFormat,
+        nb.name AS notebookName
       FROM notes_fts
       JOIN notes n ON notes_fts.rowid = n.rowid
+      LEFT JOIN notebooks nb ON nb.id = n.notebookId
       WHERE notes_fts MATCH ? AND ${scopeSql} AND n.isTrashed = 0
       ORDER BY rank
       LIMIT 100
     `).all(userId, searchTerm, ...scopeParams) as SearchRow[];
 
     for (const row of ftsRows) {
-      // FTS 搜索默认命中标题和内容
-      rows.set(row.id, { ...row, matchedField: "title+content" });
+      rows.set(row.id, {
+        ...row,
+        ...buildMatchMeta(row.title, row.contentText || "", q),
+      });
     }
   }
 
   if (hasHanText(q)) {
-    // 拆分搜索词，使用 AND 逻辑确保所有词都必须出现
-    const terms = splitSearchTerms(q).filter(Boolean);
+    // FTS5's default tokenizer is not reliable for every CJK phrase. Keep the existing
+    // literal AND fallback, but return the same rich result contract as the FTS branch.
+    const terms = splitSearchTerms(q).map((term) => term.trim()).filter(Boolean);
     if (terms.length > 0) {
-      // 构建 AND 条件：每个词都必须在标题或正文中出现
-      const andConditions = terms.map(() => `(n.title LIKE '%' || ? || '%' OR n.contentText LIKE '%' || ? || '%')`).join(' AND ');
-      const likeParams = terms.flatMap(t => [t, t]);
+      const andConditions = terms
+        .map(() => `(n.title LIKE '%' || ? || '%' OR n.contentText LIKE '%' || ? || '%')`)
+        .join(" AND ");
+      const likeParams = terms.flatMap((term) => [term, term]);
 
       const likeRows = db.prepare(`
         SELECT n.id, n.userId, n.notebookId, n.workspaceId, n.title, n.contentText, n.updatedAt,
           CASE WHEN EXISTS(SELECT 1 FROM favorites f WHERE f.noteId = n.id AND f.userId = ?) THEN 1 ELSE 0 END AS isFavorite,
           n.isPinned,
-          n.contentFormat
+          n.contentFormat,
+          nb.name AS notebookName
         FROM notes n
+        LEFT JOIN notebooks nb ON nb.id = n.notebookId
         WHERE ${scopeSql} AND n.isTrashed = 0
           AND (${andConditions})
         ORDER BY n.updatedAt DESC
@@ -147,13 +216,7 @@ app.get("/", (c) => {
       for (const row of likeRows) {
         if (rows.has(row.id)) continue;
         const snippetHtml = buildPlainSnippet(row.title, row.contentText || "", q);
-
-        // 确定命中字段
-        let matchedField = "title+content";
-        const titleMatch = terms.some(t => row.title?.includes(t));
-        const contentMatch = terms.some(t => row.contentText?.includes(t));
-        if (titleMatch && !contentMatch) matchedField = "title";
-        else if (!titleMatch && contentMatch) matchedField = "content";
+        const matchMeta = buildMatchMeta(row.title, row.contentText || "", q);
 
         rows.set(row.id, {
           id: row.id,
@@ -161,6 +224,7 @@ app.get("/", (c) => {
           notebookId: row.notebookId,
           workspaceId: row.workspaceId,
           title: row.title,
+          contentText: row.contentText,
           updatedAt: row.updatedAt,
           isFavorite: row.isFavorite,
           isPinned: row.isPinned,
@@ -168,7 +232,9 @@ app.get("/", (c) => {
           titleHtml: markPlainText(row.title, q),
           snippetHtml,
           score: 10,
-          matchedField,
+          contentFormat: row.contentFormat,
+          notebookName: row.notebookName,
+          ...matchMeta,
         });
       }
     }
@@ -178,10 +244,10 @@ app.get("/", (c) => {
     Array.from(rows.values())
       .sort((a, b) => a.score - b.score || b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, 100)
-      .map(({ score, ...row }) => ({
+      .map(({ score, contentText: _contentText, ...row }) => ({
         ...row,
-        // 确保 matchedField 字段被返回
-        matchedField: row.matchedField || "title+content"
+        matchedField: row.matchedField || "title+content",
+        matchCount: Math.max(1, row.matchCount || 1),
       })),
   );
 });

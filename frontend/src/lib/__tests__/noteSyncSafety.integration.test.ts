@@ -100,7 +100,31 @@ describe("installed note sync safety", () => {
     expect(localStorage.getItem("nowen-note-sync-conflicts:v1")).toContain("new server body");
   });
 
-  it("allows a stale cached detail only after a fresh GET confirms the same revision", async () => {
+  it("blocks same-version writes when the cached base body differs from the server", async () => {
+    const transportGet = vi.fn().mockResolvedValue(note(4, "important server body"));
+    const transportUpdate = vi.fn();
+    (api as any).getNote = transportGet;
+    (api as any).updateNote = transportUpdate;
+    markOfflineNoteSnapshot(note(4, ""));
+    installNoteSyncSafety();
+
+    await expect(api.updateNote("note-1", {
+      version: 4,
+      title: "Title",
+      content: "",
+      contentText: "",
+      contentFormat: "markdown",
+    } as any)).rejects.toMatchObject({
+      status: 409,
+      code: "VERSION_CONFLICT",
+      currentVersion: 4,
+      baseContentMismatch: true,
+    });
+
+    expect(transportUpdate).not.toHaveBeenCalled();
+  });
+
+  it("allows a cached detail only after a fresh GET confirms revision and base body", async () => {
     const transportGet = vi.fn().mockResolvedValue(note(4, "cached body"));
     const transportUpdate = vi.fn().mockResolvedValue(note(5, "edited body"));
     (api as any).getNote = transportGet;
@@ -117,6 +141,25 @@ describe("installed note sync safety", () => {
     } as any)).resolves.toMatchObject({ version: 5, content: "edited body" });
 
     expect(transportGet).toHaveBeenCalledTimes(1);
+    expect(transportUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("still permits an intentional clear when the cached base matches the server", async () => {
+    const transportGet = vi.fn().mockResolvedValue(note(4, "cached body"));
+    const transportUpdate = vi.fn().mockResolvedValue(note(5, ""));
+    (api as any).getNote = transportGet;
+    (api as any).updateNote = transportUpdate;
+    markOfflineNoteSnapshot(note(4, "cached body"));
+    installNoteSyncSafety();
+
+    await expect(api.updateNote("note-1", {
+      version: 4,
+      title: "Title",
+      content: "",
+      contentText: "",
+      contentFormat: "markdown",
+    } as any)).resolves.toMatchObject({ version: 5, content: "" });
+
     expect(transportUpdate).toHaveBeenCalledTimes(1);
   });
 });

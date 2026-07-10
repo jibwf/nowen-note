@@ -100,13 +100,41 @@ function prepareNode(node: SiyuanNode): SiyuanNode {
     return copy;
 }
 
+function collectHtmlAssetRefs(node: SiyuanNode, images: Set<string>, attachments: Set<string>): void {
+    if (node.Type === "NodeHTMLBlock" || node.Type === "NodeInlineHTML") {
+        const raw = readString(node, ["Data", "Tokens", "HTML", "html"]);
+        const tagPattern = /<(img|video|audio|source|iframe)\b[^>]*?\bsrc=["']([^"']+)["'][^>]*>/gi;
+        let match: RegExpExecArray | null;
+        while ((match = tagPattern.exec(raw)) !== null) {
+            const ref = match[2]?.trim();
+            if (!ref) continue;
+            if (match[1].toLowerCase() === "img") images.add(ref);
+            else attachments.add(ref);
+        }
+    }
+    for (const child of node.Children || []) collectHtmlAssetRefs(child, images, attachments);
+}
+
 /**
  * Compatibility wrapper around the mature SiYuan parser.
  *
  * The legacy converter remains responsible for all existing block fidelity. We only
- * normalize two pieces it previously dropped: emoji nodes and iframe nodes. Iframes
- * become raw HTML and are rendered later by the sanitized Markdown preview.
+ * normalize pieces it previously dropped: emoji nodes, iframe nodes and asset refs
+ * embedded inside raw HTML. Iframes become raw HTML and are rendered later by the
+ * sanitized Markdown preview.
  */
 export function siyuanSyToMarkdown(doc: SiyuanNode): SiyuanSyMarkdownResult {
-    return legacySiyuanSyToMarkdown(prepareNode(doc));
+    const prepared = prepareNode(doc);
+    const result = legacySiyuanSyToMarkdown(prepared);
+    const images = new Set(result.stats.images);
+    const attachments = new Set(result.stats.attachments);
+    collectHtmlAssetRefs(prepared, images, attachments);
+    return {
+        ...result,
+        stats: {
+            ...result.stats,
+            images: [...images].sort((a, b) => a.localeCompare(b)),
+            attachments: [...attachments].sort((a, b) => a.localeCompare(b)),
+        },
+    };
 }

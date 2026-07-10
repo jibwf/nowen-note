@@ -36,7 +36,7 @@ function ensureHost(): HTMLElement | null {
 
   const host = document.createElement("div");
   host.setAttribute("data-nowen-ai-profile-switcher-host", "1");
-  host.className = "ml-auto mr-1 min-w-0";
+  host.className = "ml-auto mr-1 min-w-0 shrink";
   const actions = header.lastElementChild;
   if (actions) header.insertBefore(host, actions);
   else header.appendChild(host);
@@ -107,15 +107,15 @@ export default function AIProfileSwitcherBridge() {
   if (!host) return null;
 
   return createPortal(
-    <label className="relative flex items-center min-w-0 max-w-[220px]">
+    <label className="relative flex min-w-0 max-w-[220px] items-center">
       <span className="sr-only">{copy.label}</span>
-      <Bot size={12} className="absolute left-2.5 text-violet-500 pointer-events-none" />
+      <Bot size={12} className="pointer-events-none absolute left-2 text-violet-500" />
       <select
         value={activeProfileId}
         disabled={switching || profiles.length === 0}
         onChange={(event) => void handleChange(event.target.value)}
         title={copy.label}
-        className="h-8 min-w-[128px] max-w-[220px] appearance-none rounded-lg border border-app-border bg-app-bg pl-7 pr-7 text-[11px] font-medium text-tx-secondary outline-none transition-colors hover:border-accent-primary/40 focus:border-accent-primary disabled:opacity-50"
+        className="h-8 w-[104px] min-w-0 appearance-none truncate rounded-lg border border-app-border bg-app-bg pl-6 pr-6 text-[10px] font-medium text-tx-secondary outline-none transition-colors hover:border-accent-primary/40 focus:border-accent-primary disabled:opacity-50 sm:w-[168px] sm:text-[11px]"
       >
         {profiles.length === 0 ? (
           <option value="">{copy.empty}</option>
@@ -126,8 +126,8 @@ export default function AIProfileSwitcherBridge() {
         ))}
       </select>
       {switching
-        ? <Loader2 size={12} className="absolute right-2 animate-spin text-accent-primary pointer-events-none" />
-        : <ChevronDown size={12} className="absolute right-2 text-tx-tertiary pointer-events-none" />}
+        ? <Loader2 size={12} className="pointer-events-none absolute right-2 animate-spin text-accent-primary" />
+        : <ChevronDown size={12} className="pointer-events-none absolute right-2 text-tx-tertiary" />}
     </label>,
     host,
   );

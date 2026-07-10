@@ -178,13 +178,22 @@ export async function deleteNotebook(id: string): Promise<void> {
   await safe(async () => { await (await connection).delete("notebooks", id); }, undefined, "deleteNotebook");
 }
 
-/** Store a server-confirmed full detail. Empty content is valid and remains distinguishable. */
-export async function putNote(note: Note): Promise<void> {
+/**
+ * Upsert a note while preserving an explicit placeholder/detail marker.
+ * Full server-detail callers must pass `__detailCached: true`; metadata-only rewrites from
+ * an existing cache object retain `false` and cannot manufacture an empty detail.
+ */
+export async function putNote(note: CachedNote): Promise<void> {
   const connection = getDb();
   if (!connection) return;
+  const detailCached = note.__detailCached === true
+    ? true
+    : note.__detailCached === false
+      ? false
+      : typeof note.content === "string" && note.content.length > 0;
   await safe(async () => {
     const db = await connection;
-    await db.put("notes", { ...note, __detailCached: true });
+    await db.put("notes", { ...note, __detailCached: detailCached });
   }, undefined, "putNote");
 }
 

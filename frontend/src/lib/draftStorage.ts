@@ -67,14 +67,16 @@ function mergeDraft(previous: NoteDraft | null, incoming: NoteDraft): NoteDraft 
     previous.title === incoming.title;
   if (!sameBody) return incoming;
 
-  // A later error handler may observe the newest server version and save the same stale
-  // body again. Never rebase identical content automatically: keep the oldest revision it
-  // actually came from and retain the explicit conflict marker until the user resolves it.
+  const attemptedRebase = incoming.baseVersion > previous.baseVersion;
   return {
     ...incoming,
     baseVersion: Math.min(previous.baseVersion, incoming.baseVersion),
-    conflicted: previous.conflicted || incoming.conflicted || undefined,
-    serverVersion: Math.max(previous.serverVersion || 0, incoming.serverVersion || 0) || undefined,
+    conflicted: previous.conflicted || incoming.conflicted || attemptedRebase || undefined,
+    serverVersion: Math.max(
+      previous.serverVersion || 0,
+      incoming.serverVersion || 0,
+      attemptedRebase ? incoming.baseVersion : 0,
+    ) || undefined,
   };
 }
 
@@ -137,8 +139,6 @@ export function shouldOfferRestore(
   serverContent: string | undefined,
 ): boolean {
   if (!draft) return false;
-  // Conflicted drafts must always remain visible for explicit resolution. They are never
-  // automatically applied; EditorPane only restores after the user confirms.
   if (draft.conflicted) return true;
   if (draft.baseVersion > serverVersion) return false;
   if (serverUpdatedAt) {

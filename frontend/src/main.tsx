@@ -4,6 +4,7 @@ import "./lib/androidCompat";
 import "./i18n";
 import App from "./App";
 import NoteIconBridge from "./components/NoteIconBridge";
+import AIProfileSwitcherBridge from "./components/AIProfileSwitcherBridge";
 import "./index.css";
 import "./overlay-layers.css";
 import { initCodeBlockTheme } from "./lib/codeBlockTheme";
@@ -58,6 +59,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BootSplashRemover />
     <NoteIconBridge />
+    <AIProfileSwitcherBridge />
     <App />
   </React.StrictMode>
 );

@@ -7,6 +7,7 @@ describe("draft conflict preservation", () => {
   beforeEach(() => localStorage.clear());
 
   it("does not silently rebase identical stale content to a newer server revision", () => {
+    const now = Date.now();
     saveDraft({
       noteId: "note-1",
       editorMode: "md",
@@ -14,7 +15,7 @@ describe("draft conflict preservation", () => {
       content: "stale local body",
       contentText: "stale local body",
       baseVersion: 3,
-      savedAt: 100,
+      savedAt: now,
     });
 
     saveDraft({
@@ -24,7 +25,7 @@ describe("draft conflict preservation", () => {
       content: "stale local body",
       contentText: "stale local body",
       baseVersion: 9,
-      savedAt: 200,
+      savedAt: now + 100,
     });
 
     expect(loadDraft("note-1")).toEqual(expect.objectContaining({
@@ -42,7 +43,7 @@ describe("draft conflict preservation", () => {
       content: "local",
       contentText: "local",
       baseVersion: 3,
-      savedAt: 100,
+      savedAt: Date.now(),
       conflicted: true,
       serverVersion: 9,
     };
@@ -56,6 +57,7 @@ describe("draft conflict preservation", () => {
   });
 
   it("allows a genuinely changed local body to start a new draft lineage", () => {
+    const now = Date.now();
     saveDraft({
       noteId: "note-1",
       editorMode: "md",
@@ -63,7 +65,7 @@ describe("draft conflict preservation", () => {
       content: "old local body",
       contentText: "old local body",
       baseVersion: 3,
-      savedAt: 100,
+      savedAt: now,
       conflicted: true,
     });
     saveDraft({
@@ -73,7 +75,7 @@ describe("draft conflict preservation", () => {
       content: "new explicit edit",
       contentText: "new explicit edit",
       baseVersion: 9,
-      savedAt: 300,
+      savedAt: now + 100,
     });
 
     expect(loadDraft("note-1")).toEqual(expect.objectContaining({

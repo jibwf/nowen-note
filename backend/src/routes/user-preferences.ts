@@ -50,12 +50,10 @@ function ensureNoteIconsTable(): void {
 
 function normalizeNoteIcon(input: unknown): string | null {
   if (input === null || input === undefined) return null;
-  if (typeof input !== "string") {
-    throw new Error("icon must be a string or null");
-  }
+  if (typeof input !== "string") throw new Error("icon must be a string or null");
   const icon = input.trim();
   if (!icon) return null;
-  if (/\r\n\t/.test(icon) || Array.from(icon).length > MAX_NOTE_ICON_CODE_POINTS) {
+  if (/[\r\n\t]/.test(icon) || Array.from(icon).length > MAX_NOTE_ICON_CODE_POINTS) {
     throw new Error(`icon must contain at most ${MAX_NOTE_ICON_CODE_POINTS} characters without line breaks`);
   }
   return icon;
@@ -64,10 +62,7 @@ function normalizeNoteIcon(input: unknown): string | null {
 function normalizeNoteIds(raw: string | undefined): string[] {
   if (!raw) return [];
   return Array.from(new Set(
-    raw
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean),
+    raw.split(",").map((item) => item.trim()).filter(Boolean),
   )).slice(0, MAX_NOTE_ICON_BATCH);
 }
 
@@ -91,12 +86,10 @@ function normalizePrefs(input: unknown, base: UserPreferences = DEFAULT_PREFS): 
 }
 
 function readStoredPreferences(userId: string): { prefs: UserPreferences; hasPreferences: boolean } {
-  const db = getDb();
-  const row = db
+  const row = getDb()
     .prepare("SELECT preferencesJson FROM user_preferences WHERE userId = ?")
     .get(userId) as { preferencesJson: string } | undefined;
   if (!row) return { prefs: DEFAULT_PREFS, hasPreferences: false };
-
   try {
     return { prefs: normalizePrefs(JSON.parse(row.preferencesJson)), hasPreferences: true };
   } catch {
@@ -104,15 +97,8 @@ function readStoredPreferences(userId: string): { prefs: UserPreferences; hasPre
   }
 }
 
-// ---------------------------------------------------------------------------
-// AI profiles
-// ---------------------------------------------------------------------------
-// The existing AI implementation reads ai_provider/ai_api_url/ai_api_key/ai_model
-// from system_settings. Profiles are stored as one versioned JSON value and the
-// active profile is mirrored back to those legacy keys. This keeps every existing
-// AI entry point compatible while enabling fast switching and multiple saved
-// providers without a database migration.
-
+// AI profiles are stored as versioned JSON. Activating one mirrors its values to
+// the legacy ai_* settings so all existing AI routes keep working unchanged.
 interface AIProfile {
   id: string;
   name: string;
@@ -133,15 +119,7 @@ function readSystemSetting(key: string): string {
   return row?.value || "";
 }
 
-function writeSystemSetting(key: string, value: string): void {
-  getDb().prepare(`
-    INSERT INTO system_settings (key, value, updatedAt)
-    VALUES (?, ?, datetime('now'))
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = datetime('now')
-  `).run(key, value);
-}
-
-function normalizeProfile(input: unknown, base?: AIProfile): AIProfile {
+function normalizeProfile(input: unknown, base?: AIProfile, touchUpdatedAt = true): AIProfile {
   const raw = input && typeof input === "object" ? input as Record<string, unknown> : {};
   const now = new Date().toISOString();
   const text = (value: unknown, fallback: string, max: number) =>
@@ -162,8 +140,8 @@ function normalizeProfile(input: unknown, base?: AIProfile): AIProfile {
     apiUrl,
     apiKey: text(raw.apiKey, base?.apiKey || "", 2000),
     model: text(raw.model, base?.model || "", 200),
-    createdAt: base?.createdAt || now,
-    updatedAt: now,
+    createdAt: text(raw.createdAt, base?.createdAt || now, 64),
+    updatedAt: touchUpdatedAt ? now : text(raw.updatedAt, base?.updatedAt || now, 64),
   };
 }
 
@@ -186,7 +164,7 @@ function parseStoredProfiles(): AIProfile[] {
     return parsed
       .slice(0, MAX_AI_PROFILES)
       .map((item) => {
-        try { return normalizeProfile(item, item as AIProfile); } catch { return null; }
+        try { return normalizeProfile(item, item as AIProfile, false); } catch { return null; }
       })
       .filter((item): item is AIProfile => !!item);
   } catch {
@@ -195,26 +173,24 @@ function parseStoredProfiles(): AIProfile[] {
 }
 
 function saveAIProfiles(profiles: AIProfile[], activeProfileId: string): void {
-  const db = getDb();
-  const upsert = db.prepare(`
+  const upsert = getDb().prepare(`
     INSERT INTO system_settings (key, value, updatedAt)
     VALUES (?, ?, datetime('now'))
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = datetime('now')
   `);
-  db.transaction(() => {
+  getDb().transaction(() => {
     upsert.run(AI_PROFILES_KEY, JSON.stringify(profiles));
     upsert.run(AI_ACTIVE_PROFILE_KEY, activeProfileId);
   })();
 }
 
 function syncLegacyAISettings(profile: AIProfile): void {
-  const db = getDb();
-  const upsert = db.prepare(`
+  const upsert = getDb().prepare(`
     INSERT INTO system_settings (key, value, updatedAt)
     VALUES (?, ?, datetime('now'))
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = datetime('now')
   `);
-  db.transaction(() => {
+  getDb().transaction(() => {
     upsert.run("ai_provider", profile.provider);
     upsert.run("ai_api_url", profile.apiUrl);
     upsert.run("ai_api_key", profile.apiKey);
@@ -247,8 +223,7 @@ function publicAIProfile(profile: AIProfile) {
 }
 
 function resolveProfileKey(rawKey: unknown, currentKey: string): string {
-  if (rawKey === undefined) return currentKey;
-  if (typeof rawKey !== "string") return currentKey;
+  if (rawKey === undefined || typeof rawKey !== "string") return currentKey;
   if (rawKey.includes("****")) return currentKey;
   return rawKey.trim().slice(0, 2000);
 }
@@ -266,13 +241,10 @@ function extractModels(data: any): Array<{ id: string; name: string }> {
       : Array.isArray(data?.models)
         ? data.models
         : [];
-
   const seen = new Set<string>();
   const models: Array<{ id: string; name: string }> = [];
   for (const row of rows) {
-    const id = typeof row === "string"
-      ? row
-      : String(row?.id || row?.name || row?.model || "").trim();
+    const id = typeof row === "string" ? row : String(row?.id || row?.name || row?.model || "").trim();
     if (!id || seen.has(id)) continue;
     seen.add(id);
     models.push({ id, name: String(row?.display_name || row?.displayName || row?.name || id) });
@@ -296,10 +268,14 @@ app.post("/ai-profiles", async (c) => {
 
   let profile: AIProfile;
   try {
-    profile = normalizeProfile(body);
+    profile = normalizeProfile({ ...body, id: undefined });
   } catch (error) {
     return c.json({ error: (error as Error).message }, 400);
   }
+  if (state.profiles.some((item) => item.id === profile.id)) {
+    profile = { ...profile, id: `ai-${randomUUID()}` };
+  }
+
   const profiles = [...state.profiles, profile];
   const activate = body.activate !== false;
   const activeProfileId = activate ? profile.id : state.activeProfileId;
@@ -322,7 +298,7 @@ app.post("/ai-profiles/discover-models", async (c) => {
       ...body,
       id: stored?.id,
       apiKey: resolveProfileKey(body.apiKey, stored?.apiKey || ""),
-    }, stored);
+    }, stored, false);
   } catch (error) {
     return c.json({ error: (error as Error).message, models: [] }, 400);
   }
@@ -348,20 +324,14 @@ app.post("/ai-profiles/discover-models", async (c) => {
   const failures: string[] = [];
   for (const endpoint of Array.from(new Set(candidates))) {
     try {
-      const response = await fetch(endpoint, {
-        headers,
-        signal: AbortSignal.timeout(12_000),
-      });
+      const response = await fetch(endpoint, { headers, signal: AbortSignal.timeout(12_000) });
       if (!response.ok) {
         const detail = await response.text().catch(() => "");
         failures.push(`${response.status} ${detail.slice(0, 160)}`.trim());
         continue;
       }
-      const data = await response.json();
-      const models = extractModels(data);
-      if (models.length > 0) {
-        return c.json({ models, source: endpoint });
-      }
+      const models = extractModels(await response.json());
+      if (models.length > 0) return c.json({ models, source: endpoint });
       failures.push("接口返回成功，但没有可识别的模型列表");
     } catch (error) {
       failures.push((error as Error)?.message || "模型接口请求失败");
@@ -413,9 +383,7 @@ app.put("/ai-profiles/:profileId", async (c) => {
 app.delete("/ai-profiles/:profileId", (c) => {
   const profileId = c.req.param("profileId");
   const state = ensureAIProfiles();
-  if (state.profiles.length <= 1) {
-    return c.json({ error: "至少需要保留一个 AI 配置" }, 400);
-  }
+  if (state.profiles.length <= 1) return c.json({ error: "至少需要保留一个 AI 配置" }, 400);
   if (!state.profiles.some((item) => item.id === profileId)) {
     return c.json({ error: "AI 配置不存在" }, 404);
   }
@@ -427,21 +395,11 @@ app.delete("/ai-profiles/:profileId", (c) => {
   return c.json({ success: true, activeProfileId });
 });
 
-/**
- * Batch-load note icons for currently rendered cards.
- *
- * The endpoint intentionally accepts note IDs instead of returning the whole table:
- * - it keeps payloads bounded for users with large libraries;
- * - every requested note still goes through the existing note ACL;
- * - callers can batch up to 200 visible cards into one request.
- */
 app.get("/note-icons", (c) => {
   const userId = c.req.header("X-User-Id");
   if (!userId) return c.json({ error: "Unauthorized" }, 401);
-
   const requestedIds = normalizeNoteIds(c.req.query("ids"));
   if (requestedIds.length === 0) return c.json({ icons: {} });
-
   const readableIds = requestedIds.filter((noteId) => {
     const { permission } = resolveNotePermission(noteId, userId);
     return hasPermission(permission, "read");
@@ -453,16 +411,12 @@ app.get("/note-icons", (c) => {
   const rows = getDb()
     .prepare(`SELECT noteId, icon FROM note_icons WHERE noteId IN (${placeholders})`)
     .all(...readableIds) as Array<{ noteId: string; icon: string }>;
-
-  return c.json({
-    icons: Object.fromEntries(rows.map((row) => [row.noteId, row.icon])),
-  });
+  return c.json({ icons: Object.fromEntries(rows.map((row) => [row.noteId, row.icon])) });
 });
 
 app.get("/note-icons/:noteId", (c) => {
   const userId = c.req.header("X-User-Id");
   if (!userId) return c.json({ error: "Unauthorized" }, 401);
-
   const noteId = c.req.param("noteId");
   const { permission } = resolveNotePermission(noteId, userId);
   if (!hasPermission(permission, "read")) {
@@ -479,7 +433,6 @@ app.get("/note-icons/:noteId", (c) => {
 app.put("/note-icons/:noteId", async (c) => {
   const userId = c.req.header("X-User-Id");
   if (!userId) return c.json({ error: "Unauthorized" }, 401);
-
   const noteId = c.req.param("noteId");
   const { permission } = resolveNotePermission(noteId, userId);
   if (!hasPermission(permission, "write")) {
@@ -490,9 +443,7 @@ app.put("/note-icons/:noteId", async (c) => {
     .prepare("SELECT id, isLocked FROM notes WHERE id = ?")
     .get(noteId) as { id: string; isLocked: number } | undefined;
   if (!note) return c.json({ error: "Note not found", code: "NOT_FOUND" }, 404);
-  if (note.isLocked === 1) {
-    return c.json({ error: "Note is locked", code: "NOTE_LOCKED" }, 403);
-  }
+  if (note.isLocked === 1) return c.json({ error: "Note is locked", code: "NOTE_LOCKED" }, 403);
 
   const body = await c.req.json().catch(() => ({}));
   let icon: string | null;
@@ -503,24 +454,19 @@ app.put("/note-icons/:noteId", async (c) => {
   }
 
   ensureNoteIconsTable();
-  const db = getDb();
   if (icon === null) {
-    db.prepare("DELETE FROM note_icons WHERE noteId = ?").run(noteId);
+    getDb().prepare("DELETE FROM note_icons WHERE noteId = ?").run(noteId);
   } else {
-    db.prepare(`
+    getDb().prepare(`
       INSERT INTO note_icons (noteId, icon, updatedAt)
       VALUES (?, ?, datetime('now'))
-      ON CONFLICT(noteId) DO UPDATE SET
-        icon = excluded.icon,
-        updatedAt = datetime('now')
+      ON CONFLICT(noteId) DO UPDATE SET icon = excluded.icon, updatedAt = datetime('now')
     `).run(noteId, icon);
   }
 
-  const result = db
+  const result = getDb()
     .prepare("SELECT updatedAt FROM note_icons WHERE noteId = ?")
     .get(noteId) as { updatedAt: string } | undefined;
-
-  // Same-account clients that are currently on another note/list receive the icon update too.
   try {
     broadcastToUser(userId, {
       type: "note:list-updated" as any,
@@ -531,14 +477,12 @@ app.put("/note-icons/:noteId", async (c) => {
   } catch (error) {
     console.warn("[note-icons] broadcast failed:", error);
   }
-
   return c.json({ noteId, icon, updatedAt: result?.updatedAt ?? null });
 });
 
 app.get("/", (c) => {
   const userId = c.req.header("X-User-Id");
   if (!userId) return c.json({ error: "Unauthorized" }, 401);
-
   const { prefs, hasPreferences } = readStoredPreferences(userId);
   return c.json({ ...prefs, hasPreferences });
 });
@@ -546,19 +490,14 @@ app.get("/", (c) => {
 app.put("/", async (c) => {
   const userId = c.req.header("X-User-Id");
   if (!userId) return c.json({ error: "Unauthorized" }, 401);
-
   const body = await c.req.json().catch(() => ({}));
   const current = readStoredPreferences(userId).prefs;
   const next = normalizePrefs(body, current);
-
-  getDb().prepare(
-    `INSERT INTO user_preferences (userId, preferencesJson, updatedAt)
-     VALUES (?, ?, datetime('now'))
-     ON CONFLICT(userId) DO UPDATE SET
-       preferencesJson = excluded.preferencesJson,
-       updatedAt = datetime('now')`,
-  ).run(userId, JSON.stringify(next));
-
+  getDb().prepare(`
+    INSERT INTO user_preferences (userId, preferencesJson, updatedAt)
+    VALUES (?, ?, datetime('now'))
+    ON CONFLICT(userId) DO UPDATE SET preferencesJson = excluded.preferencesJson, updatedAt = datetime('now')
+  `).run(userId, JSON.stringify(next));
   return c.json({ ...next, hasPreferences: true });
 });
 

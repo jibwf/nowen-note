@@ -39,7 +39,7 @@ describe("androidNativeHttpBridge", () => {
     vi.restoreAllMocks();
   });
 
-  it("routes Android API GET requests through CapacitorHttp first", async () => {
+  it("routes Android startup auth through CapacitorHttp first", async () => {
     capacitorState.request.mockResolvedValueOnce({
       status: 200,
       headers: { "content-type": "application/json" },
@@ -61,6 +61,23 @@ describe("androidNativeHttpBridge", () => {
     expect(browserFetch).not.toHaveBeenCalled();
   });
 
+  it("routes JSON API reads through CapacitorHttp", async () => {
+    capacitorState.request.mockResolvedValueOnce({
+      status: 200,
+      headers: { "content-type": "application/json" },
+      data: [{ id: "n1" }],
+    });
+    cleanup = installAndroidNativeHttpBridge();
+
+    const response = await fetch("https://note.example.com/api/notes", {
+      headers: { "Content-Type": "application/json" },
+    });
+
+    await expect(response.json()).resolves.toEqual([{ id: "n1" }]);
+    expect(capacitorState.request).toHaveBeenCalledTimes(1);
+    expect(browserFetch).not.toHaveBeenCalled();
+  });
+
   it("falls back to WebView fetch when the native request fails", async () => {
     capacitorState.request.mockRejectedValueOnce(new Error("native network failed"));
     browserFetch.mockResolvedValueOnce(new Response(JSON.stringify([{ id: "n1" }]), {
@@ -69,7 +86,9 @@ describe("androidNativeHttpBridge", () => {
     }));
     cleanup = installAndroidNativeHttpBridge();
 
-    const response = await fetch("https://note.example.com/api/notes");
+    const response = await fetch("https://note.example.com/api/notes", {
+      headers: { "Content-Type": "application/json" },
+    });
 
     await expect(response.json()).resolves.toEqual([{ id: "n1" }]);
     expect(capacitorState.request).toHaveBeenCalledTimes(1);
@@ -85,8 +104,19 @@ describe("androidNativeHttpBridge", () => {
 
     await fetch("https://note.example.com/api/notebooks", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: "Work" }),
     });
+
+    expect(capacitorState.request).not.toHaveBeenCalled();
+    expect(browserFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps binary API reads on the existing fetch path", async () => {
+    browserFetch.mockResolvedValueOnce(new Response("binary-data", { status: 200 }));
+    cleanup = installAndroidNativeHttpBridge();
+
+    await fetch("https://note.example.com/api/attachments/file-1/download");
 
     expect(capacitorState.request).not.toHaveBeenCalled();
     expect(browserFetch).toHaveBeenCalledTimes(1);
@@ -108,6 +138,8 @@ describe("androidNativeHttpBridge", () => {
     cleanup = installAndroidNativeHttpBridge();
 
     expect(cleanup).toBeNull();
-    expect(shouldUseAndroidNativeHttp("https://note.example.com/api/notes")).toBe(false);
+    expect(shouldUseAndroidNativeHttp("https://note.example.com/api/notes", {
+      headers: { "Content-Type": "application/json" },
+    })).toBe(false);
   });
 });

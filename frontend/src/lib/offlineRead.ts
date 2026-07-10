@@ -43,12 +43,19 @@ function setOffline(value: boolean): void {
 export function markOfflineNoteSnapshot(
   note: Pick<Note, "id" | "version"> & { updatedAt?: string; content?: string },
 ): void {
+  const version = Number.isFinite(note.version) ? note.version : 0;
+  const previous = offlineNoteSnapshots.get(note.id);
+  const explicitFingerprint = fingerprintNoteContent(note.content);
   const snapshot: OfflineNoteSnapshot = {
     noteId: note.id,
-    version: Number.isFinite(note.version) ? note.version : 0,
-    updatedAt: note.updatedAt,
+    version,
+    updatedAt: note.updatedAt ?? previous?.updatedAt,
     capturedAt: Date.now(),
-    contentFingerprint: fingerprintNoteContent(note.content),
+    // Queue acknowledgements do not include the base body. Preserve the prior fingerprint
+    // only when they refer to the same revision; never carry it across a revision change.
+    contentFingerprint: explicitFingerprint ?? (
+      previous?.version === version ? previous.contentFingerprint : undefined
+    ),
   };
   offlineNoteSnapshots.set(note.id, snapshot);
   if (typeof window !== "undefined") {

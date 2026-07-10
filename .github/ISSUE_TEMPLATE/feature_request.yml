@@ -1,127 +1,35 @@
 name: ✨ 功能建议
-description: 提议新功能、交互优化或现有能力增强
+description: 想增加什么功能？一句话也可以
 title: "[Feature] "
 body:
   - type: markdown
     attributes:
       value: |
-        感谢你为 Nowen Note 提供建议。请重点说明真实使用场景和要解决的问题，方案可以选择性填写。
-
-  - type: dropdown
-    id: request_type
-    attributes:
-      label: 建议类型
-      options:
-        - 新功能
-        - 现有功能增强
-        - UI / UX 优化
-        - 性能优化
-        - 移动端适配
-        - 桌面端适配
-        - 导入 / 导出兼容
-        - 其他
-    validations:
-      required: true
-
-  - type: dropdown
-    id: module
-    attributes:
-      label: 所属模块
-      options:
-        - 编辑器 / Markdown
-        - 笔记 / 笔记本 / 文件夹
-        - 搜索
-        - 同步
-        - 导入 / 导出
-        - 附件 / 文件管理
-        - AI 助手
-        - 待办任务
-        - 用户 / 权限 / 协作
-        - 设置 / 系统
-        - 首页 / 数据统计
-        - 新模块
-        - 其他
-    validations:
-      required: true
+        感谢建议！不用考虑怎么实现，只需要告诉我们你想要什么。
 
   - type: textarea
-    id: problem
+    id: idea
     attributes:
-      label: 使用场景与现有问题
-      description: 请说明在什么场景下遇到什么问题，以及目前为什么不方便
-      placeholder: 当我在……时，目前只能……，因此会导致……
-    validations:
-      required: true
-
-  - type: textarea
-    id: solution
-    attributes:
-      label: 期望的解决方案
-      description: 描述你希望产品如何工作，不需要提供技术实现细节
-      placeholder: 我希望能够……
+      label: 你希望增加或改进什么？
+      description: 简单说明想要的功能，以及它能解决什么问题。
+      placeholder: 例如：希望支持笔记本分享，这样可以一次分享整个目录，不用逐篇操作。
     validations:
       required: true
 
   - type: dropdown
     id: platform
     attributes:
-      label: 主要使用平台
+      label: 主要用在哪？
       options:
-        - Docker / 自建服务
-        - Electron 桌面端
-        - Web 浏览器
-        - 移动端浏览器
         - 全平台
-        - 其他
-    validations:
-      required: true
-
-  - type: dropdown
-    id: priority
-    attributes:
-      label: 对你的重要程度
-      options:
-        - 高：缺少该功能会明显阻碍日常使用
-        - 中：可以提升效率或体验
-        - 低：属于锦上添花
-    validations:
-      required: true
+        - 电脑端
+        - 手机端
+        - Docker / 自建服务
+        - 不确定
 
   - type: textarea
-    id: alternatives
+    id: reference
     attributes:
-      label: 当前替代方案
-      description: 你目前如何绕过这个问题？没有可留空
-      placeholder: 例如：使用其他软件、手动处理、编写脚本等
-
-  - type: textarea
-    id: references
-    attributes:
-      label: 参考产品、截图或原型
-      description: 可提供类似产品链接、截图、录屏、草图或交互说明
-
-  - type: textarea
-    id: additional
-    attributes:
-      label: 其他补充信息
-      description: 可补充边界情况、数据规模、兼容要求或相关 Issue
-
-  - type: checkboxes
-    id: contribution
-    attributes:
-      label: 参与意愿（可选）
-      options:
-        - label: 我愿意参与需求讨论或提供更多测试信息
-          required: false
-        - label: 我愿意尝试提交 Pull Request 实现该功能
-          required: false
-
-  - type: checkboxes
-    id: confirmation
-    attributes:
-      label: 提交前确认
-      options:
-        - label: 我已搜索现有 Issue，确认没有内容相同的重复建议
-          required: true
-        - label: 我已描述真实使用场景，而不只是功能名称
-          required: true
+      label: 截图、录屏或参考产品（可选）
+      description: 有参考效果可以直接拖进来，没有可留空。
+      placeholder: 把截图、录屏、链接或补充说明放这里……

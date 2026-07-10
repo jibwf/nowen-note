@@ -17,7 +17,7 @@ export interface GesturePoint {
   y: number;
 }
 
-function directButtons(element: Element | null): HTMLButtonElement[] {
+function directButtons(element: Element | null | undefined): HTMLButtonElement[] {
   if (!element) return [];
   return Array.from(element.children).filter(
     (child): child is HTMLButtonElement => child instanceof HTMLButtonElement,

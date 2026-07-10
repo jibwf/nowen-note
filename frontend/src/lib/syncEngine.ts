@@ -1,21 +1,3 @@
-/**
- * syncEngine — 本地缓存与服务端的同步引擎（Phase B 骨架 / Phase E 完善）
- * =========================================================================
- *
- * 职责：
- *   1. **登录后全量 pull**：拉笔记本树 / 列表项 / 标签写入 localStore；
- *   2. **打开某篇笔记时按需 pull 正文**（Phase C/E 接入）；
- *   3. **联机回复时 flush offline queue + 把本地版本与服务端 reconcile**（Phase E）；
- *   4. **登出时 setCurrentUser(null)** —— 不删数据，便于下次重登秒开。
- *
- * 此文件 Phase B 仅落地"骨架 + bootstrap"。Phase C/D/E 会在此基础上扩展。
- *
- * 与 offlineQueue 的分工：
- *   - offlineQueue 处理"写"（POST/PUT/DELETE 失败时入队 → 联网时 flush）；
- *   - syncEngine 处理"读"（pull 服务端最新到本地 + 启动期 bootstrap）；
- *   - 两者通过 localStore 共享状态，但相互独立。
- */
-
 import { api } from "@/lib/api";
 import {
   setCurrentUser,
@@ -33,16 +15,19 @@ import {
   deleteTag,
   isReady as localStoreReady,
 } from "@/lib/localStore";
-import { flushQueue, getQueue as getOfflineQueue, getQueueLength, subscribe as subscribeOfflineQueue } from "@/lib/offlineQueue";
+import {
+  flushQueue,
+  getQueue as getOfflineQueue,
+  getQueueLength,
+  subscribe as subscribeOfflineQueue,
+} from "@/lib/offlineQueue";
 import { offlineQueueFetch } from "@/lib/offlineQueueFetch";
 import type { Note, User } from "@/types";
-
-// ─── 状态机 ────────────────────────────────────────────────────────────────────
 
 type SyncState = "idle" | "bootstrapping" | "ready" | "error";
 let state: SyncState = "idle";
 let lastError: string | null = null;
-const stateListeners = new Set<(s: SyncState) => void>();
+const stateListeners = new Set<(state: SyncState) => void>();
 
 export interface SyncSummary {
   state: SyncState;
@@ -51,7 +36,7 @@ export interface SyncSummary {
   lastSyncAt: number | null;
 }
 
-const summaryListeners = new Set<(s: SyncSummary) => void>();
+const summaryListeners = new Set<(summary: SyncSummary) => void>();
 let lastSyncAtCache: number | null = null;
 let queueSubscribed = false;
 
@@ -64,18 +49,18 @@ function buildSummary(): SyncSummary {
   };
 }
 
-function notifySummary() {
+function notifySummary(): void {
   const summary = buildSummary();
-  summaryListeners.forEach((fn) => {
-    try { fn(summary); } catch { /* ignore */ }
+  summaryListeners.forEach((listener) => {
+    try { listener(summary); } catch { /* listener isolation */ }
   });
 }
 
-function setState(s: SyncState, err?: string) {
-  state = s;
-  lastError = err || null;
-  stateListeners.forEach((fn) => {
-    try { fn(s); } catch { /* ignore */ }
+function setState(next: SyncState, error?: string): void {
+  state = next;
+  lastError = error || null;
+  stateListeners.forEach((listener) => {
+    try { listener(next); } catch { /* listener isolation */ }
   });
   notifySummary();
 }
@@ -84,66 +69,64 @@ export function getSyncState(): { state: SyncState; lastError: string | null } {
   return { state, lastError };
 }
 
-export function subscribeSyncState(fn: (s: SyncState) => void): () => void {
-  stateListeners.add(fn);
-  return () => { stateListeners.delete(fn); };
+export function subscribeSyncState(listener: (state: SyncState) => void): () => void {
+  stateListeners.add(listener);
+  return () => { stateListeners.delete(listener); };
 }
 
 export function getSyncSummary(): SyncSummary {
   return buildSummary();
 }
 
-export function subscribeSyncSummary(fn: (s: SyncSummary) => void): () => void {
+export function subscribeSyncSummary(listener: (summary: SyncSummary) => void): () => void {
   if (!queueSubscribed) {
     queueSubscribed = true;
     subscribeOfflineQueue(() => notifySummary());
   }
-  summaryListeners.add(fn);
-  fn(buildSummary());
-  return () => { summaryListeners.delete(fn); };
+  summaryListeners.add(listener);
+  listener(buildSummary());
+  return () => { summaryListeners.delete(listener); };
 }
 
 async function pullServerSnapshot(): Promise<void> {
-  const [notebooksRes, notesRes, tagsRes] = await Promise.allSettled([
+  const [notebooksResult, notesResult, tagsResult] = await Promise.allSettled([
     api.getNotebooks(),
     api.getNotes(),
     api.getTags(),
   ]);
 
-  if (notebooksRes.status === "fulfilled") {
-    const localNotebooks = await getAllNotebooks();
-    const remoteIds = new Set(notebooksRes.value.map((n) => n.id));
-    for (const nb of localNotebooks) {
-      if (!remoteIds.has(nb.id)) await deleteNotebook(nb.id);
+  if (notebooksResult.status === "fulfilled") {
+    const local = await getAllNotebooks();
+    const remoteIds = new Set(notebooksResult.value.map((notebook) => notebook.id));
+    for (const notebook of local) {
+      if (!remoteIds.has(notebook.id)) await deleteNotebook(notebook.id);
     }
-    await putNotebooks(notebooksRes.value);
+    await putNotebooks(notebooksResult.value);
   } else {
-    console.warn("[syncEngine] pull notebooks failed:", notebooksRes.reason);
+    console.warn("[syncEngine] pull notebooks failed:", notebooksResult.reason);
   }
 
-  if (notesRes.status === "fulfilled") {
-    const localNotes = await getAllNotes();
-    const remoteIds = new Set(notesRes.value.map((n) => n.id));
-    const queueIds = await getQueuedNoteIds();
-    for (const note of localNotes) {
-      if (!remoteIds.has(note.id) && !queueIds.has(note.id)) {
-        await deleteNote(note.id);
-      }
+  if (notesResult.status === "fulfilled") {
+    const local = await getAllNotes();
+    const remoteIds = new Set(notesResult.value.map((note) => note.id));
+    const queuedIds = await getQueuedNoteIds();
+    for (const note of local) {
+      if (!remoteIds.has(note.id) && !queuedIds.has(note.id)) await deleteNote(note.id);
     }
-    await putNoteListItems(notesRes.value);
+    await putNoteListItems(notesResult.value);
   } else {
-    console.warn("[syncEngine] pull notes list failed:", notesRes.reason);
+    console.warn("[syncEngine] pull notes list failed:", notesResult.reason);
   }
 
-  if (tagsRes.status === "fulfilled") {
-    const localTags = await getAllTags();
-    const remoteIds = new Set(tagsRes.value.map((t) => t.id));
-    for (const t of localTags) {
-      if (!remoteIds.has(t.id)) await deleteTag(t.id);
+  if (tagsResult.status === "fulfilled") {
+    const local = await getAllTags();
+    const remoteIds = new Set(tagsResult.value.map((tag) => tag.id));
+    for (const tag of local) {
+      if (!remoteIds.has(tag.id)) await deleteTag(tag.id);
     }
-    await putTags(tagsRes.value);
+    await putTags(tagsResult.value);
   } else {
-    console.warn("[syncEngine] pull tags failed:", tagsRes.reason);
+    console.warn("[syncEngine] pull tags failed:", tagsResult.reason);
   }
 
   lastSyncAtCache = Date.now();
@@ -151,108 +134,122 @@ async function pullServerSnapshot(): Promise<void> {
   notifySummary();
 }
 
-// ─── Bootstrap：登录后调一次 ───────────────────────────────────────────────────
-
-/**
- * 绑定用户 + 第一次全量 pull。
- *
- * 调用时机：
- *   - AuthGate 拿到 user 之后（无论是 zero-login 还是正常密码登录）；
- *   - 切换账号时也要重新调（先 setCurrentUser(null) 再 setCurrentUser(newId)）。
- *
- * 失败语义：
- *   - 网络失败 → state=error，但 currentUserId 仍设上，离线读能用旧缓存；
- *   - localStore 写入失败 → 静默（safe 包裹），不阻塞主流程。
- */
 export async function bootstrap(user: User): Promise<void> {
   setCurrentUser(user.id);
 
-  // 没联网时：直接走"使用本地缓存"路径，不发请求
   if (typeof navigator !== "undefined" && !navigator.onLine) {
-    setState("ready"); // 有缓存就是 ready；无缓存上层自然啥也展示不出来
+    setState("ready");
     return;
   }
 
   setState("bootstrapping");
-
   try {
     if (getOfflineQueue().length > 0) {
-      await flushQueue(offlineQueueFetch).catch((e) => {
-        console.warn("[syncEngine] flush offline queue before pull failed:", e);
+      await flushQueue(offlineQueueFetch).catch((error) => {
+        console.warn("[syncEngine] flush offline queue before pull failed:", error);
       });
     }
-
     await pullServerSnapshot();
     setState("ready");
-  } catch (e: unknown) {
-    console.warn("[syncEngine] bootstrap failed:", e);
-    setState("error", e instanceof Error ? e.message : String(e));
+  } catch (error) {
+    console.warn("[syncEngine] bootstrap failed:", error);
+    setState("error", error instanceof Error ? error.message : String(error));
   }
 }
 
-export async function syncNow(): Promise<{ ok: boolean; pending: number; lastSyncAt?: number; error?: string }> {
+export async function syncNow(): Promise<{
+  ok: boolean;
+  pending: number;
+  lastSyncAt?: number;
+  error?: string;
+}> {
   if (typeof navigator !== "undefined" && !navigator.onLine) {
-    const err = "offline";
-    setState("error", err);
-    return { ok: false, pending: getQueueLength(), lastSyncAt: lastSyncAtCache ?? undefined, error: err };
+    const error = "offline";
+    setState("error", error);
+    return {
+      ok: false,
+      pending: getQueueLength(),
+      lastSyncAt: lastSyncAtCache ?? undefined,
+      error,
+    };
   }
 
   setState("bootstrapping");
   try {
-    if (getQueueLength() > 0) {
-      await flushQueue(offlineQueueFetch);
-    }
+    if (getQueueLength() > 0) await flushQueue(offlineQueueFetch);
     await pullServerSnapshot();
     setState("ready");
-    return { ok: true, pending: getQueueLength(), lastSyncAt: lastSyncAtCache ?? undefined };
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.warn("[syncEngine] syncNow failed:", e);
-    setState("error", msg);
-    return { ok: false, pending: getQueueLength(), lastSyncAt: lastSyncAtCache ?? undefined, error: msg };
+    return {
+      ok: true,
+      pending: getQueueLength(),
+      lastSyncAt: lastSyncAtCache ?? undefined,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("[syncEngine] syncNow failed:", error);
+    setState("error", message);
+    return {
+      ok: false,
+      pending: getQueueLength(),
+      lastSyncAt: lastSyncAtCache ?? undefined,
+      error: message,
+    };
   }
 }
 
-/**
- * Phase E: 拿到 offline queue 里所有"涉及 noteId"的项，
- * bootstrap 做 diff 时跳过它们以免误删本地新增。
- */
 async function getQueuedNoteIds(): Promise<Set<string>> {
   try {
-    const q = getOfflineQueue();
-    return new Set(q.map((x) => x.noteId));
+    return new Set(getOfflineQueue().map((item) => item.noteId));
   } catch {
     return new Set();
   }
 }
 
-/**
- * 登出 / 断开服务器时调。
- * 不删本地缓存（用户重登可秒开），仅清当前用户绑定。
- */
 export function teardown(): void {
   setCurrentUser(null);
   setState("idle");
 }
 
-/**
- * 上次成功同步的时间戳（ms），无则 null。
- */
 export async function getLastSyncAt(): Promise<number | null> {
   if (!localStoreReady()) return null;
-  const v = await getMeta<number>("lastSyncAt");
-  lastSyncAtCache = typeof v === "number" ? v : null;
+  const value = await getMeta<number>("lastSyncAt");
+  lastSyncAtCache = typeof value === "number" ? value : null;
   notifySummary();
   return lastSyncAtCache;
 }
 
 /**
- * Phase C: 在线打开某篇笔记时顺手写入本地缓存，以便后续离线访问。
- * 由 EditorPane / api.getNote 调用；失败静默。
+ * Only a complete detail response may replace the IndexedDB note body.
+ *
+ * Retryable update failures are intentionally represented by api.ts as optimistic partial
+ * objects. Caching one of those objects would erase a previously complete body and can later
+ * make the editor believe the note is empty. List metadata has its own merge-safe path in
+ * putNoteListItems and must not use this function.
  */
+export function isCompleteNoteDetail(note: unknown): note is Note {
+  const value = note as Partial<Note> | null;
+  return !!value &&
+    typeof value.id === "string" && value.id.length > 0 &&
+    typeof value.title === "string" &&
+    typeof value.content === "string" &&
+    typeof value.contentText === "string" &&
+    typeof value.version === "number" && Number.isFinite(value.version);
+}
+
 export async function cacheNoteContent(note: Note): Promise<void> {
   if (!localStoreReady()) return;
-  if (!note?.id) return;
-  try { await putNote(note); }
-  catch (e) { console.warn("[syncEngine] cacheNoteContent failed:", e); }
+  if (!isCompleteNoteDetail(note)) {
+    console.warn("[syncEngine] refused incomplete note detail cache write", {
+      id: (note as any)?.id,
+      version: (note as any)?.version,
+      hasContent: typeof (note as any)?.content === "string",
+      hasContentText: typeof (note as any)?.contentText === "string",
+    });
+    return;
+  }
+  try {
+    await putNote(note);
+  } catch (error) {
+    console.warn("[syncEngine] cacheNoteContent failed:", error);
+  }
 }

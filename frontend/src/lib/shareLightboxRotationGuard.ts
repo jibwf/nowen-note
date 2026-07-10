@@ -3,7 +3,7 @@ import {
   normalizeQuarterTurn,
 } from "@/lib/imageExperience";
 
-const INSTALL_KEY = Symbol.for("nowen.share-lightbox-rotation-guard");
+const INSTALL_KEY = "__NOWEN_SHARE_LIGHTBOX_ROTATION_GUARD__" as const;
 
 type GuardedWindow = Window & typeof globalThis & {
   [INSTALL_KEY]?: () => void;
@@ -20,7 +20,7 @@ function readScale(transform: string): number {
  * updates, keeping zoom and rotation independent and preventing mutation feedback loops.
  */
 export function installShareLightboxRotationGuard(): void {
-  if (typeof window === "undefined" || typeof document === "undefined") return;
+  if (typeof window === "undefined" || typeof document === "undefined" || !document.body) return;
   const guardedWindow = window as GuardedWindow;
   if (guardedWindow[INSTALL_KEY]) return;
 

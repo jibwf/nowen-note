@@ -2,11 +2,14 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "./lib/androidCompat";
 import "./i18n";
+// Must run before App and its import/export/editor schemas are evaluated.
+import "./lib/imageNodeTransformBootstrap";
 import App from "./App";
 import NoteIconBridge from "./components/NoteIconBridge";
 import AIProfileSwitcherBridge from "./components/AIProfileSwitcherBridge";
 import MarkdownExperienceBridge from "./components/MarkdownExperienceBridge";
 import ImageExperienceBridge from "./components/ImageExperienceBridge";
+import EditorImageTransformBridge from "./components/EditorImageTransformBridge";
 import "./index.css";
 import "./overlay-layers.css";
 import { initCodeBlockTheme } from "./lib/codeBlockTheme";
@@ -66,6 +69,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <AIProfileSwitcherBridge />
     <MarkdownExperienceBridge />
     <ImageExperienceBridge />
+    <EditorImageTransformBridge />
     <App />
   </React.StrictMode>
 );

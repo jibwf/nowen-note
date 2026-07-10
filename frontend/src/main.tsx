@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import "./lib/androidCompat";
 import "./i18n";
 import App from "./App";
+import NoteIconFeatureBridge from "./components/NoteIconFeatureBridge";
 import "./index.css";
 import "./overlay-layers.css";
 import { initCodeBlockTheme } from "./lib/codeBlockTheme";
@@ -51,6 +52,7 @@ try {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BootSplashRemover />
+    <NoteIconFeatureBridge />
     <App />
   </React.StrictMode>
 );

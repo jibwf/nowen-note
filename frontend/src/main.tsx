@@ -5,6 +5,7 @@ import "./i18n";
 import App from "./App";
 import NoteIconBridge from "./components/NoteIconBridge";
 import AIProfileSwitcherBridge from "./components/AIProfileSwitcherBridge";
+import MarkdownExperienceBridge from "./components/MarkdownExperienceBridge";
 import "./index.css";
 import "./overlay-layers.css";
 import { initCodeBlockTheme } from "./lib/codeBlockTheme";
@@ -60,6 +61,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <BootSplashRemover />
     <NoteIconBridge />
     <AIProfileSwitcherBridge />
+    <MarkdownExperienceBridge />
     <App />
   </React.StrictMode>
 );

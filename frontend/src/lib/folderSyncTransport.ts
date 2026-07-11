@@ -13,6 +13,7 @@ export interface FolderSyncImportResult {
   attachmentId?: string;
   sha256: string;
   reason?: string;
+  detached?: boolean;
   conflictCopyNoteId?: string;
   extracted?: boolean;
   extractedChars?: number;

@@ -10,7 +10,6 @@ import { extractAttachmentText } from "../services/attachment-indexer";
 import { folderSyncFilesRepository } from "../repositories";
 
 const app = new Hono();
-
 const MAX_TEXT_CHARS = 2 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 const EXTRACT_LIMIT = 200_000;
@@ -49,8 +48,7 @@ type TrackedNote = {
 function isUnsafePath(value: unknown): boolean {
   if (typeof value !== "string" || !value || value.length > 1024) return true;
   if (value.startsWith("/") || value.startsWith("\\") || /^[A-Za-z]:/.test(value)) return true;
-  const parts = value.replace(/\\/g, "/").split("/");
-  return parts.some((part) => part === ".." || part.includes("\0"));
+  return value.replace(/\\/g, "/").split("/").some((part) => part === ".." || part.includes("\0"));
 }
 
 function isSha256(value: unknown): value is string {
@@ -83,25 +81,19 @@ function stripAllSyncMetadata(value: string | null | undefined): string {
 }
 
 function extractManagedContentHash(content: string): string | null {
-  const match = content.match(/contentHash=([a-f0-9]{64})/i);
-  return match?.[1]?.toLowerCase() || null;
-}
-
-function buildSyncComment(relativePath: string, sourceSha: string, sourcePathHash: string, contentHash: string): string {
-  const encodedPath = encodeURIComponent(relativePath).slice(0, 2048);
-  return `\n\n<!-- nowen-folder-sync: sourcePathHash=${sourcePathHash} sha256=${sourceSha} contentHash=${contentHash} relativePath=${encodedPath} -->`;
+  return content.match(/contentHash=([a-f0-9]{64})/i)?.[1]?.toLowerCase() || null;
 }
 
 function buildManagedContent(baseContent: string, relativePath: string, sourceSha: string, sourcePathHash: string): string {
   const normalizedBase = baseContent.trimEnd();
-  return normalizedBase + buildSyncComment(relativePath, sourceSha, sourcePathHash, sha256Text(normalizedBase));
+  const encodedPath = encodeURIComponent(relativePath).slice(0, 2048);
+  const comment = `<!-- nowen-folder-sync: sourcePathHash=${sourcePathHash} sha256=${sourceSha} contentHash=${sha256Text(normalizedBase)} relativePath=${encodedPath} -->`;
+  return `${normalizedBase}\n\n${comment}`;
 }
 
 function parseDbTime(value: string | null | undefined): number {
   if (!value) return 0;
-  const normalized = /[zZ]|[+-]\d\d:\d\d$/.test(value)
-    ? value
-    : `${value.replace(" ", "T")}Z`;
+  const normalized = /[zZ]|[+-]\d\d:\d\d$/.test(value) ? value : `${value.replace(" ", "T")}Z`;
   const parsed = Date.parse(normalized);
   return Number.isFinite(parsed) ? parsed : 0;
 }
@@ -127,26 +119,29 @@ function getTrackedNote(noteId: string | null | undefined): TrackedNote | undefi
   `).get(noteId) as TrackedNote | undefined;
 }
 
-function hasManualConflict(note: TrackedNote | undefined, syncRow: SyncRow | undefined): boolean {
-  if (!note || !syncRow) return false;
-  const managedHash = extractManagedContentHash(note.content || "");
-  if (managedHash) {
-    return sha256Text(stripSyncComment(note.content || "")) !== managedHash;
-  }
-  // Backward compatibility for notes created by the MVP before contentHash existed.
-  return parseDbTime(note.updatedAt) > parseDbTime(syncRow.updatedAt) + 500;
+function isSameSourceState(row: SyncRow | undefined, sha256: string, relativePath: string, filename: string): boolean {
+  return !!row
+    && row.sha256.toLowerCase() === sha256.toLowerCase()
+    && row.relativePath === relativePath
+    && row.filename === filename;
 }
 
-function assertNoteOwner(note: TrackedNote | undefined, userId: string): { ok: true } | { ok: false; status: 400 | 403 | 404; error: string; code: string } {
-  if (!note) return { ok: false, status: 404, error: "同步目标笔记不存在", code: "NOTE_NOT_FOUND" };
-  if (note.userId !== userId) return { ok: false, status: 403, error: "无权修改他人的笔记", code: "FORBIDDEN" };
-  if (note.isTrashed === 1) return { ok: false, status: 400, error: "同步目标笔记已在回收站", code: "NOTE_TRASHED" };
-  return { ok: true };
+function hasManualConflict(note: TrackedNote | undefined, row: SyncRow | undefined): boolean {
+  if (!note || !row) return false;
+  const managedHash = extractManagedContentHash(note.content || "");
+  if (managedHash) return sha256Text(stripSyncComment(note.content || "")) !== managedHash;
+  return parseDbTime(note.updatedAt) > parseDbTime(row.updatedAt) + 500;
+}
+
+function assertNoteOwner(note: TrackedNote | undefined, userId: string) {
+  if (!note) return { ok: false as const, status: 404 as const, error: "同步目标笔记不存在", code: "NOTE_NOT_FOUND" };
+  if (note.userId !== userId) return { ok: false as const, status: 403 as const, error: "无权修改他人的笔记", code: "FORBIDDEN" };
+  if (note.isTrashed === 1) return { ok: false as const, status: 400 as const, error: "同步目标笔记已在回收站", code: "NOTE_TRASHED" };
+  return { ok: true as const };
 }
 
 function resolveTargetNotebook(targetNotebookId: string, userId: string): { id: string; workspaceId: string | null } | null {
-  const db = getDb();
-  const notebook = db.prepare(`
+  const notebook = getDb().prepare(`
     SELECT id, "workspaceId" AS workspaceId, "isDeleted" AS isDeleted
       FROM notebooks WHERE id = ?
   `).get(targetNotebookId) as { id: string; workspaceId: string | null; isDeleted: number } | undefined;
@@ -158,9 +153,6 @@ function resolveTargetNotebook(targetNotebookId: string, userId: string): { id: 
 function cloneIndependentNote(note: TrackedNote): string {
   const copyId = uuid();
   const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
-  const title = `${note.title}（同步冲突副本 ${stamp}）`.slice(0, 255);
-  const content = stripAllSyncMetadata(note.content);
-  const contentText = stripAllSyncMetadata(note.contentText || content);
   getDb().prepare(`
     INSERT INTO notes (
       id, "userId", "notebookId", "workspaceId", title, content,
@@ -171,9 +163,9 @@ function cloneIndependentNote(note: TrackedNote): string {
     note.userId,
     note.notebookId,
     note.workspaceId,
-    title,
-    content,
-    contentText,
+    `${note.title}（同步冲突副本 ${stamp}）`.slice(0, 255),
+    stripAllSyncMetadata(note.content),
+    stripAllSyncMetadata(note.contentText || note.content),
     note.contentFormat || "markdown",
   );
   return copyId;
@@ -189,9 +181,7 @@ function broadcastChanged(noteId: string, userId: string, title: string, content
       contentText: contentText.slice(0, 200),
       actorUserId: userId,
     });
-  } catch {
-    // realtime notification is best effort
-  }
+  } catch { /* realtime is best effort */ }
 }
 
 function getAttachmentBaseDir(): string {
@@ -204,6 +194,21 @@ function safeRemoveAttachmentFile(relativePath: string): void {
   const full = path.resolve(root, relativePath);
   if (!full.startsWith(`${root}${path.sep}`)) return;
   try { fs.unlinkSync(full); } catch { /* best effort */ }
+}
+
+function resolveNoteForImport(userId: string, existingNoteId: string | undefined, row: SyncRow | undefined): {
+  note: TrackedNote | undefined;
+  syncRow: SyncRow | undefined;
+  error?: { status: 400 | 403 | 404; error: string; code: string };
+} {
+  const note = getTrackedNote(existingNoteId || row?.noteId);
+  if (note) {
+    const ownership = assertNoteOwner(note, userId);
+    if (!ownership.ok) return { note, syncRow: row, error: ownership };
+    return { note, syncRow: row };
+  }
+  if (row) folderSyncFilesRepository.delete(row.id);
+  return { note: undefined, syncRow: undefined };
 }
 
 app.post("/import-file", async (c) => {
@@ -228,66 +233,50 @@ app.post("/import-file", async (c) => {
   if (!notebook) return c.json({ error: "目标笔记本不存在、已删除或无写权限", code: "FORBIDDEN" }, 403);
 
   let syncRow = getSyncRow(userId, sourcePathHash);
-  if (syncRow?.sha256 === sourceSha) {
-    return c.json({ success: true, created: false, updated: false, skipped: true, reason: "unchanged", noteId: syncRow.noteId, sha256: sourceSha });
+  if (isSameSourceState(syncRow, sourceSha, relativePath, filename)) {
+    return c.json({ success: true, created: false, updated: false, skipped: true, reason: "unchanged", noteId: syncRow!.noteId, sha256: sourceSha });
   }
 
-  let note = getTrackedNote(existingNoteId || syncRow?.noteId);
-  if (note) {
-    const owner = assertNoteOwner(note, userId);
-    if (!owner.ok) return c.json({ error: owner.error, code: owner.code }, owner.status);
-  } else if (syncRow) {
-    folderSyncFilesRepository.delete(syncRow.id);
-    syncRow = undefined;
-  }
-
+  const resolved = resolveNoteForImport(userId, existingNoteId, syncRow);
+  if (resolved.error) return c.json({ error: resolved.error.error, code: resolved.error.code }, resolved.error.status);
+  const note = resolved.note;
+  syncRow = resolved.syncRow;
   const conflict = hasManualConflict(note, syncRow);
   if (conflict && conflictPolicy === "protect") {
     return c.json({ error: "Nowen 内的同步笔记已被手动修改，已阻止源文件静默覆盖", code: "SYNC_CONFLICT", noteId: note?.id }, 409);
   }
 
   const title = filenameToTitle(filename);
+  const ext = path.extname(filename).toLowerCase();
+  const contentFormat = ext === ".html" || ext === ".htm" ? "html" : "markdown";
   const content = buildManagedContent(contentText, relativePath, sourceSha, sourcePathHash);
-  let noteId = note?.id || uuid();
+  const noteId = note?.id || uuid();
   let conflictCopyNoteId: string | undefined;
 
-  const transaction = getDb().transaction(() => {
+  getDb().transaction(() => {
     if (conflict && conflictPolicy === "copy" && note) conflictCopyNoteId = cloneIndependentNote(note);
     if (note) {
       getDb().prepare(`
         UPDATE notes
            SET title = ?, content = ?, "contentText" = ?, "notebookId" = ?,
-               "workspaceId" = ?, "contentFormat" = 'markdown',
-               version = version + 1, "updatedAt" = datetime('now')
+               "workspaceId" = ?, "contentFormat" = ?, version = version + 1,
+               "updatedAt" = datetime('now')
          WHERE id = ?
-      `).run(title, content, contentText, targetNotebookId, notebook.workspaceId, noteId);
+      `).run(title, content, contentText, targetNotebookId, notebook.workspaceId, contentFormat, noteId);
     } else {
       getDb().prepare(`
         INSERT INTO notes (
           id, "userId", "notebookId", "workspaceId", title, content,
           "contentText", "contentFormat"
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'markdown')
-      `).run(noteId, userId, targetNotebookId, notebook.workspaceId, title, content, contentText);
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(noteId, userId, targetNotebookId, notebook.workspaceId, title, content, contentText, contentFormat);
     }
+    if (syncRow) folderSyncFilesRepository.update(syncRow.id, { sha256: sourceSha, relativePath, filename, noteId });
+    else folderSyncFilesRepository.create({ id: uuid(), userId, sourcePathHash, relativePath, filename, sha256: sourceSha, noteId });
+  })();
 
-    if (syncRow) {
-      folderSyncFilesRepository.update(syncRow.id, { sha256: sourceSha, relativePath, filename, noteId });
-    } else {
-      folderSyncFilesRepository.create({ id: uuid(), userId, sourcePathHash, relativePath, filename, sha256: sourceSha, noteId });
-    }
-  });
-  transaction();
   broadcastChanged(noteId, userId, title, contentText);
-
-  return c.json({
-    success: true,
-    created: !note,
-    updated: !!note,
-    skipped: false,
-    noteId,
-    sha256: sourceSha,
-    conflictCopyNoteId,
-  });
+  return c.json({ success: true, created: !note, updated: !!note, skipped: false, noteId, sha256: sourceSha, conflictCopyNoteId });
 });
 
 app.post("/import-attachment", async (c) => {
@@ -306,6 +295,7 @@ app.post("/import-attachment", async (c) => {
   if (!(file instanceof File)) return c.json({ error: "未上传文件", code: "NO_FILE" }, 400);
   if (!filename || filename.length > 255 || isUnsafePath(relativePath)) return c.json({ error: "文件参数无效", code: "INVALID_PARAMS" }, 400);
   if (!isSha256(sourceSha) || !isSha256(sourcePathHash)) return c.json({ error: "哈希无效", code: "INVALID_HASH" }, 400);
+  if (!targetNotebookId) return c.json({ error: "targetNotebookId 不能为空", code: "MISSING_NOTEBOOK" }, 400);
   if (file.size > MAX_ATTACHMENT_BYTES) return c.json({ error: "附件超过 50MB 限制", code: "FILE_TOO_LARGE" }, 413);
   const ext = path.extname(filename).toLowerCase();
   if (![".pdf", ".docx"].includes(ext)) return c.json({ error: `不支持的文件类型: ${ext}`, code: "UNSUPPORTED_FILE_TYPE" }, 400);
@@ -314,18 +304,14 @@ app.post("/import-attachment", async (c) => {
   if (!notebook) return c.json({ error: "目标笔记本不存在、已删除或无写权限", code: "FORBIDDEN" }, 403);
 
   let syncRow = getSyncRow(userId, sourcePathHash);
-  if (syncRow?.sha256 === sourceSha) {
-    return c.json({ success: true, created: false, updated: false, skipped: true, reason: "unchanged", noteId: syncRow.noteId, sha256: sourceSha });
-  }
-  let note = getTrackedNote(existingNoteId || syncRow?.noteId);
-  if (note) {
-    const owner = assertNoteOwner(note, userId);
-    if (!owner.ok) return c.json({ error: owner.error, code: owner.code }, owner.status);
-  } else if (syncRow) {
-    folderSyncFilesRepository.delete(syncRow.id);
-    syncRow = undefined;
+  if (isSameSourceState(syncRow, sourceSha, relativePath, filename)) {
+    return c.json({ success: true, created: false, updated: false, skipped: true, reason: "unchanged", noteId: syncRow!.noteId, sha256: sourceSha });
   }
 
+  const resolved = resolveNoteForImport(userId, existingNoteId, syncRow);
+  if (resolved.error) return c.json({ error: resolved.error.error, code: resolved.error.code }, resolved.error.status);
+  const note = resolved.note;
+  syncRow = resolved.syncRow;
   const conflict = hasManualConflict(note, syncRow);
   if (conflict && conflictPolicy === "protect") {
     return c.json({ error: "Nowen 内的同步笔记已被手动修改，已阻止源文件静默覆盖", code: "SYNC_CONFLICT", noteId: note?.id }, 409);
@@ -346,7 +332,7 @@ app.post("/import-attachment", async (c) => {
     `- SHA-256：${sourceSha}`,
   ].join("\n");
   const content = buildManagedContent(baseContent, relativePath, sourceSha, sourcePathHash);
-  let noteId = note?.id || uuid();
+  const noteId = note?.id || uuid();
   let conflictCopyNoteId: string | undefined;
 
   const now = new Date();
@@ -360,15 +346,13 @@ app.post("/import-attachment", async (c) => {
   const relativeAttachmentPath = `${year}/${month}/${fileNameOnDisk}`;
   fs.writeFileSync(fullPath, fileBuffer);
 
-  const oldAttachments = noteId
-    ? getDb().prepare(`
-        SELECT id, path FROM attachments
-         WHERE "noteId" = ? AND "userId" = ? AND "uploadSource" = 'folder_sync'
-      `).all(noteId, userId) as Array<{ id: string; path: string }>
-    : [];
+  const oldAttachments = getDb().prepare(`
+    SELECT id, path FROM attachments
+     WHERE "noteId" = ? AND "userId" = ? AND "uploadSource" = 'folder_sync'
+  `).all(noteId, userId) as Array<{ id: string; path: string }>;
 
   try {
-    const transaction = getDb().transaction(() => {
+    getDb().transaction(() => {
       if (conflict && conflictPolicy === "copy" && note) conflictCopyNoteId = cloneIndependentNote(note);
       if (note) {
         getDb().prepare(`
@@ -386,25 +370,19 @@ app.post("/import-attachment", async (c) => {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, 'markdown')
         `).run(noteId, userId, targetNotebookId, notebook.workspaceId, title, content, baseContent);
       }
-
       getDb().prepare(`
         INSERT INTO attachments (
           id, "userId", "noteId", filename, "mimeType", size, path,
           "workspaceId", hash, "uploadSource"
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'folder_sync')
       `).run(attachmentId, userId, noteId, filename, file.type || "application/octet-stream", fileBuffer.length, relativeAttachmentPath, notebook.workspaceId, actualSha);
-
       if (oldAttachments.length) {
         const placeholders = oldAttachments.map(() => "?").join(",");
         getDb().prepare(`DELETE FROM attachments WHERE id IN (${placeholders})`).run(...oldAttachments.map((item) => item.id));
       }
-      if (syncRow) {
-        folderSyncFilesRepository.update(syncRow.id, { sha256: sourceSha, relativePath, filename, noteId });
-      } else {
-        folderSyncFilesRepository.create({ id: uuid(), userId, sourcePathHash, relativePath, filename, sha256: sourceSha, noteId });
-      }
-    });
-    transaction();
+      if (syncRow) folderSyncFilesRepository.update(syncRow.id, { sha256: sourceSha, relativePath, filename, noteId });
+      else folderSyncFilesRepository.create({ id: uuid(), userId, sourcePathHash, relativePath, filename, sha256: sourceSha, noteId });
+    })();
   } catch (error) {
     try { fs.unlinkSync(fullPath); } catch { /* best effort */ }
     throw error;
@@ -437,9 +415,7 @@ app.post("/import-attachment", async (c) => {
         extractionTruncated = result.text.length > EXTRACT_LIMIT;
         const extractedBlock = `\n\n<!-- nowen-folder-sync-extracted:start -->\n${text}\n<!-- nowen-folder-sync-extracted:end -->`;
         getDb().prepare(`UPDATE notes SET "contentText" = ? WHERE id = ?`).run(`${baseContent}${extractedBlock}`, noteId);
-      } else {
-        noText = true;
-      }
+      } else noText = true;
     } catch (error: any) {
       extractionError = String(error?.message || "extraction failed").slice(0, 200);
       console.warn("[folder-sync] attachment extraction failed:", filename, extractionError);
@@ -474,28 +450,21 @@ app.post("/source-deleted", async (c) => {
   if (!syncRow) return c.json({ success: true, action: policy, noteId: null, mappingRemoved: false });
   const note = getTrackedNote(syncRow.noteId);
   if (note && note.userId !== userId) return c.json({ error: "无权处理该同步笔记", code: "FORBIDDEN" }, 403);
-  if (note && !resolveTargetNotebook(note.notebookId, userId)) {
-    return c.json({ error: "目标笔记本无写权限", code: "FORBIDDEN" }, 403);
-  }
+  if (note && !resolveTargetNotebook(note.notebookId, userId)) return c.json({ error: "目标笔记本无写权限", code: "FORBIDDEN" }, 403);
 
-  const transaction = getDb().transaction(() => {
+  getDb().transaction(() => {
     if (note && policy === "trash") {
-      getDb().prepare(`
-        UPDATE notes SET "isTrashed" = 1, version = version + 1, "updatedAt" = datetime('now') WHERE id = ?
-      `).run(note.id);
+      getDb().prepare(`UPDATE notes SET "isTrashed" = 1, version = version + 1, "updatedAt" = datetime('now') WHERE id = ?`).run(note.id);
     } else if (note && policy === "detach") {
-      const content = stripAllSyncMetadata(note.content);
-      const contentText = stripAllSyncMetadata(note.contentText);
       getDb().prepare(`
         UPDATE notes
            SET content = ?, "contentText" = ?, version = version + 1,
                "updatedAt" = datetime('now')
          WHERE id = ?
-      `).run(content, contentText, note.id);
+      `).run(stripAllSyncMetadata(note.content), stripAllSyncMetadata(note.contentText), note.id);
     }
     folderSyncFilesRepository.delete(syncRow.id);
-  });
-  transaction();
+  })();
 
   if (note && policy !== "keep") {
     broadcastChanged(note.id, userId, note.title, policy === "detach" ? stripAllSyncMetadata(note.contentText) : note.contentText);
@@ -506,9 +475,7 @@ app.post("/source-deleted", async (c) => {
 app.post("/check-dedup", async (c) => {
   const userId = c.req.header("X-User-Id") || "";
   const body = await c.req.json().catch(() => ({})) as { sourcePathHashes?: unknown };
-  const hashes = Array.isArray(body.sourcePathHashes)
-    ? body.sourcePathHashes.filter(isSha256).slice(0, 500)
-    : [];
+  const hashes = Array.isArray(body.sourcePathHashes) ? body.sourcePathHashes.filter(isSha256).slice(0, 500) : [];
   if (!hashes.length) return c.json({});
   return c.json(folderSyncFilesRepository.batchGetNoteIds(userId, hashes));
 });
@@ -519,6 +486,7 @@ export const folderSyncInternals = {
   extractManagedContentHash,
   buildManagedContent,
   hasManualConflict,
+  isSameSourceState,
   normalizeConflictPolicy,
   normalizeDeletionPolicy,
 };

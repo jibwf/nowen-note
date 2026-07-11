@@ -1,10 +1,12 @@
 import type {
+  FolderSyncConfig,
   FolderSyncPendingUploads,
   FolderSyncScanResult,
   FolderSyncUploadCandidate,
 } from "@/lib/desktopBridge";
 import {
   getFolderSyncPreferences,
+  isFolderSyncPathExcluded,
   pushFolderSyncPreferences,
   sanitizeFolderSyncExcludePatterns,
 } from "@/lib/folderSyncPreferences";
@@ -64,6 +66,19 @@ function base64ToFile(base64: string, filename: string, mimeType: string): File 
   return new File([bytes], filename, { type: mimeType || "application/octet-stream" });
 }
 
+function isOutsideConfiguredScope(
+  candidate: ExtendedCandidate,
+  config: FolderSyncConfig | undefined,
+  excludePatterns: string[],
+): boolean {
+  if (isFolderSyncPathExcluded(candidate.relativePath, excludePatterns)) return true;
+  if (!config) return false;
+  const normalizedPath = candidate.relativePath.replace(/\\/g, "/");
+  if (!config.includeSubfolders && normalizedPath.includes("/")) return true;
+  const configuredTypes = new Set((config.fileTypes || []).map((item) => item.toLowerCase()));
+  return configuredTypes.size > 0 && !configuredTypes.has(candidate.ext.toLowerCase());
+}
+
 function emptyResult(folderId: string, error?: string): SyncRunResult {
   return {
     ok: !error,
@@ -106,7 +121,6 @@ export async function runFolderSyncOnce(
 
   let preferences = getFolderSyncPreferences(folderId);
   try {
-    // Push before scanning so main-process exclusion and scan policy use the same snapshot.
     await pushFolderSyncPreferences(fs, folderId, preferences);
   } catch (error) {
     console.warn("[folder-sync] failed to push advanced preferences:", error);
@@ -128,6 +142,12 @@ export async function runFolderSyncOnce(
   }
   const pendingResult = rawPending as ExtendedPending;
   const targetNotebookId = pendingResult.config.targetNotebookId;
+  let activeConfig: FolderSyncConfig | undefined;
+  try {
+    activeConfig = (await fs.getConfigs()).find((config) => config.folderId === folderId);
+  } catch {
+    // The sync pass can still proceed; only scope-change deletion protection loses precision.
+  }
 
   let imported = 0;
   let updated = 0;
@@ -140,10 +160,13 @@ export async function runFolderSyncOnce(
   for (const candidate of pendingResult.pending) {
     if (candidate.action === "delete") {
       try {
+        const outsideScope = isOutsideConfiguredScope(candidate, activeConfig, preferences.excludePatterns);
         if (candidate.sourcePathHash) {
           await handleFolderSyncSourceDeleted({
             sourcePathHash: candidate.sourcePathHash,
-            policy: preferences.deletionPolicy,
+            // Narrowing extensions, subfolder scope or exclusion patterns is a configuration
+            // change, not proof that the source was deleted. Always preserve the note.
+            policy: outsideScope ? "detach" : preferences.deletionPolicy,
           });
         }
         await fs.markUploadResult(folderId, candidate.relativePath, {
@@ -151,6 +174,13 @@ export async function runFolderSyncOnce(
           noteId: candidate.existingNoteId || undefined,
         });
         deleted += 1;
+        if (outsideScope) {
+          await appendSafeLog(
+            folderId,
+            "warn",
+            `${candidate.relativePath}: removed from sync scope; preserved Nowen note and detached source mapping`,
+          );
+        }
       } catch (error: any) {
         failed += 1;
         await fs.markUploadResult(folderId, candidate.relativePath, {
@@ -181,8 +211,6 @@ export async function runFolderSyncOnce(
       continue;
     }
 
-    // “停止跟踪”需要把该精确路径加入持久化排除列表。先确认列表仍有容量；
-    // 如果已满，则本次退化为 protect，避免后端解除映射后下一轮又把文件重新导入。
     const detachedPatterns = preferences.conflictPolicy === "detach"
       ? sanitizeFolderSyncExcludePatterns([...preferences.excludePatterns, candidate.relativePath])
       : preferences.excludePatterns;

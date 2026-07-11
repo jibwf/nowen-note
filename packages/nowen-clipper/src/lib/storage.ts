@@ -128,10 +128,32 @@ export function getAccountScope(cfg: Pick<NowenClipperConfig, "serverUrl" | "use
   return `${encodeURIComponent(server)}::${encodeURIComponent(identity)}`;
 }
 
+/**
+ * 0.2.0 升级窗口：旧 token 可能尚未通过 /api/me 回填 userId，最初几次选择会按 username 保存。
+ * 回填稳定 userId 后，从 username scope 读取并迁移，避免用户误以为“记住上次选择”失效。
+ */
+function getLegacyUsernameScope(cfg: Pick<NowenClipperConfig, "serverUrl" | "username">): string | null {
+  const username = cfg.username.trim().toLowerCase();
+  if (!username) return null;
+  const server = normalizeBaseUrl(cfg.serverUrl).toLowerCase();
+  return `${encodeURIComponent(server)}::${encodeURIComponent(username)}`;
+}
+
+function readScopedState(
+  all: Record<string, Partial<AccountCaptureState>>,
+  cfg: NowenClipperConfig,
+): Partial<AccountCaptureState> {
+  const current = all[getAccountScope(cfg)];
+  if (current) return current;
+  if (!cfg.userId) return {};
+  const legacyScope = getLegacyUsernameScope(cfg);
+  return legacyScope ? all[legacyScope] || {} : {};
+}
+
 export async function getAccountState(cfg: NowenClipperConfig): Promise<AccountCaptureState> {
   const data = (await chrome.storage.local.get(ACCOUNT_STATE_KEY)) as Record<string, unknown>;
   const all = (data[ACCOUNT_STATE_KEY] || {}) as Record<string, Partial<AccountCaptureState>>;
-  const raw = all[getAccountScope(cfg)] || {};
+  const raw = readScopedState(all, cfg);
   return {
     ...DEFAULT_ACCOUNT_STATE,
     imageMode: cfg.imageMode,
@@ -151,10 +173,15 @@ export async function setAccountState(
     ...DEFAULT_ACCOUNT_STATE,
     imageMode: cfg.imageMode,
     outputFormat: cfg.outputFormat,
-    ...(all[scope] || {}),
+    ...readScopedState(all, cfg),
   } as AccountCaptureState;
   const next = { ...current, ...patch } as AccountCaptureState;
-  await chrome.storage.local.set({ [ACCOUNT_STATE_KEY]: { ...all, [scope]: next } });
+  const nextAll = { ...all, [scope]: next };
+
+  const legacyScope = cfg.userId ? getLegacyUsernameScope(cfg) : null;
+  if (legacyScope && legacyScope !== scope) delete nextAll[legacyScope];
+
+  await chrome.storage.local.set({ [ACCOUNT_STATE_KEY]: nextAll });
   return next;
 }
 
@@ -163,6 +190,8 @@ export async function resetAccountState(cfg: NowenClipperConfig): Promise<Accoun
   const data = (await chrome.storage.local.get(ACCOUNT_STATE_KEY)) as Record<string, unknown>;
   const all = (data[ACCOUNT_STATE_KEY] || {}) as Record<string, Partial<AccountCaptureState>>;
   delete all[getAccountScope(cfg)];
+  const legacyScope = getLegacyUsernameScope(cfg);
+  if (legacyScope) delete all[legacyScope];
   await chrome.storage.local.set({ [ACCOUNT_STATE_KEY]: all });
   return { ...DEFAULT_ACCOUNT_STATE, imageMode: cfg.imageMode, outputFormat: cfg.outputFormat };
 }

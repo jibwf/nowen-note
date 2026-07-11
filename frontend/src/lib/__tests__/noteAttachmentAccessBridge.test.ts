@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("sonner", () => ({
+vi.mock("@/lib/toast", () => ({
   toast: { error: vi.fn() },
 }));
 
@@ -17,7 +17,7 @@ const ATTACHMENT_ID = "123e4567-e89b-42d3-a456-426614174216";
 
 describe("noteAttachmentAccessBridge", () => {
   beforeEach(() => {
-    window.history.replaceState({}, "", "https://notes.example.com/note/test");
+    window.history.replaceState({}, "", "/note/test");
   });
 
   it("recognizes only canonical note attachment ids", () => {

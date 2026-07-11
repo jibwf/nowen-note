@@ -30,7 +30,7 @@ function db() {
 }
 
 function signedRoute(url: string): string {
-  const parsed = new URL(url);
+  const parsed = new URL(url, "http://localhost");
   return `${parsed.pathname.replace(/^\/api/, "")}${parsed.search}`;
 }
 

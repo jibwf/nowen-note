@@ -1,4 +1,4 @@
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 const INSTALL_KEY = "__NOWEN_NOTE_ATTACHMENT_ACCESS_BRIDGE_V1__";
 const ATTACHMENT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

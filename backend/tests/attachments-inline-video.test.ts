@@ -9,10 +9,12 @@ import type Database from "better-sqlite3";
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nowen-attachment-video-"));
 process.env.DB_PATH = path.join(tmpDir, "test.db");
 process.env.ELECTRON_USER_DATA = tmpDir;
+process.env.ATTACHMENT_LEGACY_PUBLIC_URL = "false";
 
 let app: Hono;
 let getDb: () => Database.Database;
 let closeDb: () => void;
+let loginToken = "";
 
 const USER_ID = "user-video";
 const NOTEBOOK_ID = "nb-video";
@@ -20,6 +22,10 @@ const NOTE_ID = "note-video";
 
 function db() {
   return getDb();
+}
+
+function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return { Authorization: `Bearer ${loginToken}`, ...extra };
 }
 
 function seedBase() {
@@ -58,9 +64,10 @@ async function uploadVideo(options: { type?: string; filename?: string; seed?: n
 }
 
 test.before(async () => {
-  const [attachmentsModule, schemaModule] = await Promise.all([
+  const [attachmentsModule, schemaModule, authModule] = await Promise.all([
     import("../src/routes/attachments"),
     import("../src/db/schema"),
+    import("../src/lib/auth-security"),
   ]);
   app = new Hono();
   app.get("/attachments/:id", attachmentsModule.handleDownloadAttachment);
@@ -68,6 +75,11 @@ test.before(async () => {
   getDb = schemaModule.getDb;
   closeDb = schemaModule.closeDb;
   seedBase();
+  loginToken = authModule.signLoginToken({
+    userId: USER_ID,
+    username: USER_ID,
+    tokenVersion: 0,
+  });
 });
 
 test.after(async () => {
@@ -92,12 +104,13 @@ test("video attachments can be uploaded and previewed inline", async () => {
   assert.match(uploaded.url, /^\/api\/attachments\//);
 
   const inlineRes = await app.request(`/attachments/${uploaded.id}?inline=1`, {
-    headers: { "X-User-Id": USER_ID },
+    headers: authHeaders(),
   });
 
   assert.equal(inlineRes.status, 200);
   assert.equal(inlineRes.headers.get("content-type"), "video/mp4");
   assert.equal(inlineRes.headers.get("content-disposition"), null);
+  assert.equal(inlineRes.headers.get("cache-control"), "private, no-store, no-transform");
 });
 
 test("empty Android MIME is normalized from a known video extension", async () => {
@@ -109,7 +122,7 @@ test("empty Android MIME is normalized from a known video extension", async () =
   assert.equal(uploaded.mimeType, "video/mp4");
 
   const inlineRes = await app.request(`/attachments/${uploaded.id}?inline=1`, {
-    headers: { "X-User-Id": USER_ID },
+    headers: authHeaders(),
   });
   assert.equal(inlineRes.status, 200);
   assert.equal(inlineRes.headers.get("content-type"), "video/mp4");
@@ -121,7 +134,7 @@ test("legacy octet-stream video rows are repaired lazily before inline playback"
     .run(uploaded.id);
 
   const inlineRes = await app.request(`/attachments/${uploaded.id}?inline=1`, {
-    headers: { "X-User-Id": USER_ID },
+    headers: authHeaders(),
   });
   assert.equal(inlineRes.status, 200);
   assert.equal(inlineRes.headers.get("content-type"), "video/mp4");
@@ -134,10 +147,7 @@ test("legacy octet-stream video rows are repaired lazily before inline playback"
 test("video attachments respond to browser byte ranges for seeking", async () => {
   const uploaded = await uploadVideo({ seed: 22 });
   const rangeRes = await app.request(`/attachments/${uploaded.id}?inline=1`, {
-    headers: {
-      "X-User-Id": USER_ID,
-      Range: "bytes=2-5",
-    },
+    headers: authHeaders({ Range: "bytes=2-5" }),
   });
 
   assert.equal(rangeRes.status, 206);
@@ -150,10 +160,7 @@ test("video attachments respond to browser byte ranges for seeking", async () =>
 test("unsatisfiable video ranges return RFC-compatible 416 metadata", async () => {
   const uploaded = await uploadVideo({ seed: 23 });
   const rangeRes = await app.request(`/attachments/${uploaded.id}?inline=1`, {
-    headers: {
-      "X-User-Id": USER_ID,
-      Range: "bytes=99-120",
-    },
+    headers: authHeaders({ Range: "bytes=99-120" }),
   });
 
   assert.equal(rangeRes.status, 416);
@@ -165,10 +172,17 @@ test("download=1 keeps video attachments as forced downloads", async () => {
   const uploaded = await uploadVideo({ seed: 24 });
 
   const downloadRes = await app.request(`/attachments/${uploaded.id}?download=1`, {
-    headers: { "X-User-Id": USER_ID },
+    headers: authHeaders(),
   });
-
   assert.equal(downloadRes.status, 200);
   assert.equal(downloadRes.headers.get("content-type"), "video/mp4");
   assert.match(downloadRes.headers.get("content-disposition") || "", /^attachment;/);
+});
+
+test("pre-JWT X-User-Id spoofing is rejected", async () => {
+  const uploaded = await uploadVideo({ seed: 26 });
+  const response = await app.request(`/attachments/${uploaded.id}`, {
+    headers: { "X-User-Id": USER_ID },
+  });
+  assert.equal(response.status, 401);
 });

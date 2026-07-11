@@ -20,6 +20,7 @@ import "./index.css";
 import "./overlay-layers.css";
 import { initCodeBlockTheme } from "./lib/codeBlockTheme";
 import { installAndroidNativeHttpBridge } from "./lib/androidNativeHttpBridge";
+import { installNoteAttachmentAccessBridge } from "./lib/noteAttachmentAccessBridge";
 import { installShareLightboxRotationGuard } from "./lib/shareLightboxRotationGuard";
 import { installMobileImageFocusGuard } from "./lib/mobileImageFocusGuard";
 import { installNoteSyncSafety } from "./lib/noteSyncSafety";
@@ -47,6 +48,9 @@ function BootSplashRemover() {
 }
 
 installAndroidNativeHttpBridge();
+// The attachment bridge wraps the active transport so Web, Electron and Capacitor all exchange
+// note/share read permission for the same revocable signed URLs before content is rendered.
+installNoteAttachmentAccessBridge();
 // Observe auth responses after the Android transport bridge is installed so Web, Electron and
 // Capacitor all persist the same short-lived 2FA challenge before LoginPage can be remounted.
 installTwoFactorLoginChallengeBridge();

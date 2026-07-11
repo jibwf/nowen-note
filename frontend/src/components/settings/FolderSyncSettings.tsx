@@ -79,6 +79,13 @@ function statusLabel(status: string): string {
   return labels[status] || status;
 }
 
+function conflictPolicyLabel(policy: FolderSyncPreferences["conflictPolicy"]): string {
+  if (policy === "copy") return "保留副本";
+  if (policy === "overwrite") return "源文件覆盖";
+  if (policy === "detach") return "保留编辑并停止跟踪";
+  return "停止覆盖";
+}
+
 function StatusIcon({ status }: { status: string }) {
   if (status === "conflict") return <ShieldAlert size={12} className="text-amber-500" />;
   if (status === "error" || status === "deleted") return <XCircle size={12} className={status === "error" ? "text-red-500" : "text-orange-500"} />;
@@ -208,7 +215,7 @@ function ConfigCard({
             <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
               <span className={cn("rounded-full px-2 py-0.5", config.enabled ? "bg-emerald-500/10 text-emerald-600" : "bg-zinc-500/10 text-zinc-500")}>{config.enabled ? "已启用" : "已停用"}</span>
               <span className="rounded-full bg-app-bg px-2 py-0.5 text-tx-tertiary">{INTERVALS.find((item) => item.value === (config.intervalMinutes ?? null))?.label || "自定义"}</span>
-              <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-600">冲突：{preferences.conflictPolicy === "protect" ? "停止覆盖" : preferences.conflictPolicy === "copy" ? "保留副本" : "源文件覆盖"}</span>
+              <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-600">冲突：{conflictPolicyLabel(preferences.conflictPolicy)}</span>
               <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-sky-600">删除：{preferences.deletionPolicy === "keep" ? "保留笔记" : preferences.deletionPolicy === "trash" ? "移入回收站" : "停止跟踪"}</span>
             </div>
           </div>
@@ -283,6 +290,7 @@ function ConfigCard({
                 <option value="protect">停止覆盖并提示（推荐）</option>
                 <option value="copy">先保留 Nowen 副本，再用源文件更新</option>
                 <option value="overwrite">始终由源文件覆盖</option>
+                <option value="detach">保留 Nowen 编辑，并停止跟踪该文件</option>
               </select>
             </label>
             <label className="block space-y-1.5">
@@ -318,7 +326,7 @@ function ConfigCard({
           <label className="block space-y-1.5">
             <span className="text-xs font-medium text-tx-secondary">排除规则</span>
             <textarea value={excludeText} onChange={(event) => setExcludeText(event.target.value)} rows={4} placeholder={"每行一条，例如：\n**/draft/**\n*.tmp\nprivate-*"} className="w-full resize-y rounded-xl border border-app-border bg-app-surface px-3 py-2 font-mono text-xs text-tx-primary outline-none focus:ring-2 focus:ring-accent-primary/30" />
-            <span className="text-[10px] text-tx-tertiary">支持 *、**、?；也可在同步根目录创建 .nowenignore。最多 10 条自定义规则。</span>
+            <span className="text-[10px] text-tx-tertiary">支持 *、**、?；也可在同步根目录创建 .nowenignore。最多 10 条自定义规则。选择“停止跟踪”后，发生冲突的精确路径会自动加入此列表。</span>
           </label>
 
           <button type="button" onClick={save} disabled={busy || !fileTypes.length} className="flex items-center gap-2 rounded-xl bg-accent-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
@@ -473,7 +481,7 @@ export default function FolderSyncSettings() {
       const result = await runFolderSyncOnce(folderId, { reason: "manual" });
       if (result.scanResult?.ok) setLastScanResults((current) => ({ ...current, [folderId]: result.scanResult! }));
       if (!result.ok) throw new Error(result.error || "同步失败");
-      const message = `同步完成：新增 ${result.imported}，更新 ${result.updated}，删除处理 ${result.deleted}，跳过 ${result.skipped}，冲突 ${result.conflicts}，失败 ${result.failed}`;
+      const message = `同步完成：新增 ${result.imported}，更新 ${result.updated}，删除处理 ${result.deleted}，停止跟踪 ${result.detached}，跳过 ${result.skipped}，冲突 ${result.conflicts}，失败 ${result.failed}`;
       if (result.conflicts || result.failed) toast.warning(message);
       else toast.success(message);
       await loadConfigs();

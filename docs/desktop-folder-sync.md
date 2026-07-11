@@ -1,132 +1,146 @@
-# 桌面端文件夹同步
+# 桌面端本地文件夹同步
 
-> 状态：MVP 已完成（DESKTOP-FOLDER-KB-SYNC-01）
+Nowen Note 桌面端可以把一个或多个本地目录、NAS 挂载目录或同步盘目录，**单向同步**到个人空间或工作区中的指定笔记本。
 
-## 功能范围
+> 同步方向始终是「本地文件夹 → Nowen」。Nowen 不会反向改写、删除或重命名本地文件。
 
-将本地文件夹中的文本文件同步到 Nowen 笔记本，支持手动和自动同步。
+## 支持范围
 
-### 当前支持的文件类型
+- 平台：Electron 桌面端
+- 文本文件：`.md`、`.markdown`、`.txt`、`.html`、`.htm`
+- 附件文件：`.pdf`、`.docx`
+- 多同步根目录
+- 每个目录可独立选择目标笔记本、文件类型、排除规则、扫描周期和安全策略
+- 手动同步与应用运行期间的定时同步
+- PDF / DOCX 文本提取可单独关闭
 
-| 类型 | 导入方式 | 状态 |
-|------|----------|------|
-| `.md` / `.txt` / `.markdown` | 创建/更新笔记正文 | ✅ 已支持 |
-| `.html` / `.htm` | 创建/更新笔记正文 | ✅ 已支持 |
-| `.pdf` | 附件上传 + 索引笔记 + 文本提取（用于搜索） | ✅ 已支持 |
-| `.docx` | 附件上传 + 索引笔记 + 文本提取（用于搜索） | ✅ 已支持 |
-| 图片 | 不扫描 | ⏭️ 后续支持 |
+Web 和移动端不会获得本机文件系统访问权限，因此不展示此功能。
 
-### 当前不支持的能力
+## 增量识别
 
-- Web 端本地文件夹同步（仅 Electron 桌面端）
-- PDF/DOCX OCR（图片型 PDF 无法提取文本）
-- 本地删除自动删除 Nowen 笔记/附件
-- 文件系统实时监听（watcher）
-- 系统后台服务 / 开机自启
-- 向量库 / RAG / AI 知识库
+每个同步根目录都有独立本地索引，记录：
 
-## 安全设计
+- 稳定的来源标识 `sourcePathHash`
+- 相对路径和上一次相对路径
+- 文件名、大小、修改时间
+- SHA-256
+- 关联的 Nowen 笔记和附件
+- 扫描、同步时间
+- `new / changed / renamed / unchanged / synced / deleted / skipped / conflict / error` 状态
 
-| 设计点 | 说明 |
-|--------|------|
-| Token 不落盘 | Electron 主进程不保存登录 token，上传由 renderer 带 token 完成 |
-| 不传绝对路径 | 后端只接收 `relativePath`，`isUnsafePath` 拒绝盘符/`/`/`..` |
-| sourcePathHash 命名空间 | `sha256(folderId + ":" + relativePath)`，不同文件夹同名文件不冲突 |
-| 单文件限制 | 文本内容最大 2MB，超过标记 skipped |
-| 忽略规则 | node_modules/.git/隐藏文件/临时文件/Thumbs.db 等 |
-| 路径安全 | 拒绝扫描系统根目录和用户 home 目录 |
+扫描时优先用“相对路径 + 大小 + 修改时间”复用已有哈希；只有疑似变化的文件才重新读取并计算 SHA-256。
 
-## 数据流
+同一轮扫描中，若旧路径消失、出现唯一一个“SHA-256 + 大小”相同的新路径，会识别为重命名，并继承原有 `sourcePathHash`、笔记绑定和附件绑定，不会创建重复笔记。
 
+未变化文件不会重复调用后端导入接口；后端仍会用来源哈希和 SHA-256 做第二层幂等校验。
+
+## Nowen 内编辑冲突
+
+同步笔记会保存不可见的来源元信息以及同步时内容快照哈希。下一次源文件变化时，后端会先判断 Nowen 内的笔记是否被手动编辑。
+
+可选策略：
+
+1. **停止覆盖并提示（默认）**
+   - 返回 `SYNC_CONFLICT`
+   - 本地索引标记为 `conflict`
+   - 保留 Nowen 内编辑结果和源文件，不做静默覆盖
+
+2. **保留副本后更新**
+   - 先把 Nowen 内编辑内容复制为一篇独立笔记
+   - 移除副本中的同步元信息
+   - 再用最新源文件更新持续跟踪的笔记
+
+3. **始终由源文件覆盖**
+   - 适用于明确把本地目录作为唯一事实来源的场景
+
+该功能不是双向同步。冲突副本也不会被写回本地目录。
+
+## 源文件删除策略
+
+当本地索引确认源文件已删除后，可选择：
+
+- **保留 Nowen 笔记**：删除来源映射，保留现有笔记
+- **移入回收站**：把关联笔记移入 Nowen 回收站并删除来源映射
+- **停止跟踪**：保留笔记正文、移除同步元信息并删除来源映射
+
+达到扫描限制、目录读取失败或扫描未完整结束时，本轮会标记为“不完整”，不会把未扫描到的旧索引批量误判为删除。
+
+## 排除规则
+
+设置页支持每个目录最多 10 条规则，每条最多 64 个字符：
+
+```text
+**/draft/**
+*.tmp
+private-*
+archive/2024/**
 ```
-[用户点击"同步"] 或 [调度器到期]
-    ↓
-Electron: runNow → 扫描文件 → 计算 SHA-256 → 合并索引
-    ↓
-Electron: getPendingUploads → 读取文本文件内容
-    ↓
-Renderer: api.folderSync.importFile (带 token)
-    ↓
-后端: 创建/更新笔记 (contentFormat=markdown)
-    ↓
-Renderer: markUploadResult → 写回 noteId/lastSyncedAt/status
+
+支持 `*`、`**` 和 `?`。同步根目录还可创建 `.nowenignore`，语法与设置页相同。
+
+内置忽略：
+
+- `.git`、`.svn`、`.hg`
+- `node_modules`、`dist`、`build`、`.next`、`.vite`
+- `__pycache__`、`.cache`、`.turbo`
+- 隐藏目录和隐藏文件
+- Office 临时文件 `~$*`
+- `.tmp`、`.temp`、`.swp`、`.swo`
+- `.DS_Store`、`Thumbs.db`、`desktop.ini`
+
+## 安全边界与资源限制
+
+主进程在扫描和读取前都会检查：
+
+- 拒绝磁盘根目录、系统根目录和用户主目录
+- 只处理普通文件和普通目录
+- 拒绝符号链接、目录联接和路径穿越
+- 每次读取前重新执行 `lstat + realpath + path.relative` 边界检查，防止扫描后被替换为链接的 TOCTOU 场景
+- 相对路径不能是绝对路径，也不能包含 `..` 路径段
+- 目标笔记本必须存在、未删除且当前用户具有写入权限
+
+默认预算：
+
+| 限制 | 数值 |
+|---|---:|
+| 单文件 | 50 MB |
+| 文本正文读取 | 2 MB |
+| 单轮候选文件数 | 10,000 |
+| 单轮重新读取总量 | 1 GB |
+| 自定义排除规则 | 10 条 |
+| 本地日志 | 最近 200 条 |
+
+单文件失败只影响该文件，其他文件继续处理。日志仅记录路径、状态、错误摘要和计数，不记录文件正文、Token 或附件字节。
+
+## 本地状态文件
+
+文件保存在 Electron `userData` 目录：
+
+```text
+folder-sync.json
+folder-sync-index-<folderId>.json
+folder-sync-logs.json
 ```
 
-## 本地配置文件
+- 配置和索引采用临时文件写入后原子替换
+- 移除同步目录时会删除对应本地索引
+- 移除配置不会删除本地源文件，也不会自动删除已经导入的 Nowen 笔记
 
-位置：`{userData}/folder-sync.json`
+## 使用流程
 
-```json
-[
-  {
-    "folderId": "abc123",
-    "folderPath": "D:\\知识库",
-    "targetNotebookId": "uuid",
-    "includeSubfolders": true,
-    "fileTypes": [".md", ".txt", ".html", ".pdf", ".docx"],
-    "enabled": true,
-    "intervalMinutes": 30,
-    "lastSyncedAt": "2026-06-24T12:00:00Z",
-    "lastScanAt": "2026-06-24T12:00:00Z",
-    "lastScanStats": { "total": 10, "added": 2, "changed": 1 },
-    "createdAt": "...",
-    "updatedAt": "..."
-  }
-]
-```
+1. 打开「设置 → 本地文件夹同步」
+2. 添加本地文件夹
+3. 选择个人空间或工作区中的目标笔记本
+4. 选择文件类型、排除规则和是否扫描子目录
+5. 确认冲突策略、删除策略和文本提取设置
+6. 先执行一次「立即扫描并同步」
+7. 在扫描报告中检查新增、变更、重命名、删除、冲突、跳过和错误
+8. 验证无误后再启用定时同步
 
-## 本地索引文件
+## 不在当前范围
 
-位置：`{userData}/folder-sync-index-{folderId}.json`
-
-每个文件记录：
-- `relativePath` — 相对路径
-- `sha256` — 文件内容 hash
-- `status` — new/unchanged/changed/deleted/synced/skipped/error
-- `noteId` — 同步后对应的 Nowen 笔记 ID
-- `lastSyncedAt` — 上次同步时间
-
-## 后端导入接口
-
-### `POST /api/folder-sync/import-file`
-
-创建或更新笔记。纯 Markdown 正文，sync 元信息存为 HTML 注释。
-
-### `POST /api/folder-sync/check-dedup`
-
-批量检查 sourcePathHash 是否已存在。
-
-### `folder_sync_files` 表
-
-v32 迁移新增，存储 `sourcePathHash → noteId` 映射，用于去重和增量更新。
-
-## 自动同步策略
-
-| 条件 | 说明 |
-|------|------|
-| Electron 环境 | `window.nowenDesktop?.isDesktop` |
-| 用户已登录 | `localStorage.nowen-token` 存在 |
-| 页面可见 | `document.hidden === false` |
-| 配置启用 | `config.enabled === true` |
-| 有间隔 | `config.intervalMinutes > 0` |
-| 已到期 | `now - lastSyncedAt >= intervalMinutes` |
-| 无并发 | 同一 folderId 不重入，全局最多 1 个 |
-| 失败冷却 | 失败后 5 分钟内不重试 |
-
-自动同步不弹 toast，日志写入 `auto_sync_started/completed/failed`。
-
-## 已知限制
-
-1. 仅 Electron 桌面端，Web 不支持
-2. 本地删除不会删除 Nowen 笔记和附件（标记 deleted）
-3. 自动同步仅在 App 运行且用户已登录时生效
-4. 不做系统后台服务、不做 watcher、不做开机自启
-5. 同步是单向的：本地 → Nowen，不支持反向同步
-6. 不支持 OCR，图片型 PDF 无法提取文本
-7. PDF/DOCX 文本提取最多 200,000 字符，超出截断
-
-## 后续计划
-
-- 可选：双向同步 / 冲突合并
-- 可选：文件系统监听（chokidar）
-- 可选：OCR 支持（图片型 PDF）
+- Nowen → 本地文件夹反向写入
+- 文件系统实时 watcher
+- OCR 图片文字识别
+- `.doc`、Excel、PowerPoint 的二进制导入
+- 后台守护进程在应用完全退出后继续同步

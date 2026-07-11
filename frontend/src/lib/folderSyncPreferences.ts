@@ -1,6 +1,6 @@
 import type { FolderSyncAPI } from "@/lib/desktopBridge";
 
-export type FolderSyncConflictPolicy = "protect" | "copy" | "overwrite";
+export type FolderSyncConflictPolicy = "protect" | "copy" | "overwrite" | "detach";
 export type FolderSyncDeletionPolicy = "keep" | "trash" | "detach";
 
 export interface FolderSyncPreferences {
@@ -24,7 +24,7 @@ export const DEFAULT_FOLDER_SYNC_PREFERENCES: FolderSyncPreferences = {
 };
 
 function isConflictPolicy(value: unknown): value is FolderSyncConflictPolicy {
-  return value === "protect" || value === "copy" || value === "overwrite";
+  return value === "protect" || value === "copy" || value === "overwrite" || value === "detach";
 }
 
 function isDeletionPolicy(value: unknown): value is FolderSyncDeletionPolicy {

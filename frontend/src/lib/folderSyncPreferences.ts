@@ -46,6 +46,50 @@ export function sanitizeFolderSyncExcludePatterns(input: unknown): string[] {
   return result;
 }
 
+function globToRegExp(pattern: string): RegExp {
+  const normalized = pattern.replace(/\\/g, "/").replace(/^\.\//, "");
+  let source = "";
+  for (let index = 0; index < normalized.length; index += 1) {
+    const char = normalized[index];
+    if (char === "*") {
+      if (normalized[index + 1] === "*") {
+        source += ".*";
+        index += 1;
+      } else {
+        source += "[^/]*";
+      }
+    } else if (char === "?") {
+      source += "[^/]";
+    } else {
+      source += char.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+    }
+  }
+  return new RegExp(`^${source}${normalized.endsWith("/") ? ".*" : ""}$`, "i");
+}
+
+export function matchesFolderSyncExcludePattern(relativePath: string, pattern: string): boolean {
+  const normalizedPath = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
+  const normalizedPattern = pattern.replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!normalizedPattern) return false;
+
+  const variants = normalizedPattern.startsWith("**/")
+    ? [normalizedPattern, normalizedPattern.slice(3)]
+    : [normalizedPattern];
+  for (const variant of variants) {
+    const regex = globToRegExp(variant);
+    if (regex.test(normalizedPath)) return true;
+    if (!variant.includes("/")) {
+      const basename = normalizedPath.split("/").pop() || normalizedPath;
+      if (regex.test(basename) || normalizedPath.split("/").some((part) => regex.test(part))) return true;
+    }
+  }
+  return false;
+}
+
+export function isFolderSyncPathExcluded(relativePath: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => matchesFolderSyncExcludePattern(relativePath, pattern));
+}
+
 export function normalizeFolderSyncPreferences(input?: Partial<FolderSyncPreferences> | null): FolderSyncPreferences {
   return {
     conflictPolicy: isConflictPolicy(input?.conflictPolicy)
@@ -99,9 +143,6 @@ function toMainProcessPreferences(preferences: FolderSyncPreferences): FolderSyn
   const expanded: string[] = [];
   for (const pattern of preferences.excludePatterns) {
     if (!expanded.includes(pattern)) expanded.push(pattern);
-    // A conventional **/draft/** rule must also match draft/** at the root.
-    // The local scanner intentionally uses a small, dependency-free glob engine,
-    // so send the root-equivalent rule explicitly instead of relying on hidden magic.
     if (pattern.startsWith("**/")) {
       const rootEquivalent = pattern.slice(3);
       if (rootEquivalent && !expanded.includes(rootEquivalent)) expanded.push(rootEquivalent);

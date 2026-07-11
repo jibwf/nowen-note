@@ -103,7 +103,8 @@ export async function handleAttachmentMediaRange(c: Context, next: Next): Promis
       headers: {
         "Accept-Ranges": "bytes",
         "Content-Range": `bytes */${Math.max(0, totalSize)}`,
-        "Cache-Control": "no-store",
+        "Cache-Control": "no-store, no-transform",
+        "Content-Encoding": "identity",
       },
     });
   }
@@ -120,7 +121,10 @@ export async function handleAttachmentMediaRange(c: Context, next: Next): Promis
       "Content-Length": String(parsed.length),
       "Content-Range": `bytes ${parsed.start}-${parsed.end}/${totalSize}`,
       "Accept-Ranges": "bytes",
-      "Cache-Control": "public, max-age=31536000, immutable",
+      "Cache-Control": "public, max-age=31536000, immutable, no-transform",
+      // /api/* is wrapped by Hono compress(). Marking the representation as identity prevents
+      // gzip from changing byte offsets and invalidating Content-Range / Content-Length.
+      "Content-Encoding": "identity",
       "X-Content-Type-Options": "nosniff",
     },
   });

@@ -1920,6 +1920,24 @@ export const api = {
     a.click();
     document.body.removeChild(a);
   },
+  stageGeneratedExport: async (blob: Blob, filename: string) => {
+    const token = getToken();
+    const res = await fetch(`${getBaseUrl()}/export/download-jobs`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": blob.type || "application/octet-stream",
+        "X-Export-Filename": encodeURIComponent(filename),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: blob,
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new Error(error.error || `HTTP ${res.status}`);
+    }
+    return res.json() as Promise<{ downloadToken: string; filename: string; size: number }>;
+  },
   /** 导出 Nowen 数据包（.nowen.zip） */
   downloadNowenPackage: async (opts?: { notebookId?: string; includeSubNotebooks?: boolean; includeTrashed?: boolean }) => {
     const ws = getCurrentWorkspace();

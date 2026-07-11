@@ -349,20 +349,13 @@ export async function exportNoteAsDocx(
 }
 
 /**
- * 触发浏览器下载一个 .docx Blob。
- * 抽出来是因为下载链路三段（Blob URL → a 标签 → revoke）很容易写错。
+ * 把浏览器生成的 DOCX 暂存到服务端，再从真实 HTTP 地址触发下载。
+ * 避免 Chrono 等下载扩展接管 about:blank Blob 后无法完成。
  */
-export function downloadDocxBlob(blob: Blob, filename: string): void {
+export async function downloadDocxBlob(blob: Blob, filename: string): Promise<void> {
   const safeName = /\.docx$/i.test(filename) ? filename : `${filename}.docx`;
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = safeName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  // 给浏览器一点时间走下载握手再释放（直接 revoke 部分浏览器会取消下载）
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const staged = await api.stageGeneratedExport(blob, safeName);
+  api.downloadMarkdownExport(staged.downloadToken, staged.filename);
 }
 
 // ===== 导入 Word 文档 =====

@@ -3,7 +3,8 @@ import crypto from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { Readable } from "stream";
+import { Readable, Transform } from "stream";
+import { pipeline } from "stream/promises";
 import type { Context } from "hono";
 import { getDb } from "../db/schema";
 import {
@@ -16,6 +17,8 @@ const EXPORT_TMP_PREFIX = "nowen-markdown-export-";
 const EXPORT_TTL_MS = 30 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 const MAX_INLINE_ASSET_BYTES = 128 * 1024 * 1024;
+const MAX_STAGED_EXPORT_BYTES = 512 * 1024 * 1024;
+const MAX_STAGED_EXPORTS_PER_USER = 5;
 
 export interface PreparedMarkdownAsset {
   relPath: string;
@@ -53,7 +56,9 @@ export class MarkdownExportBusyError extends Error {
 }
 
 interface MarkdownExportJob extends MarkdownExportJobSnapshot {
+  kind: "markdown" | "staged";
   userId: string;
+  contentType: string;
   tmpDir: string;
   tmpPath: string;
   createdAt: number;
@@ -357,7 +362,9 @@ export function createMarkdownExportJob(params: {
   const date = new Date().toISOString().slice(0, 10);
   const job: MarkdownExportJob = {
     id,
+    kind: "markdown",
     userId: params.userId,
+    contentType: "application/zip",
     state: "queued",
     current: 0,
     total: params.notes.length,
@@ -383,6 +390,79 @@ export function createMarkdownExportJob(params: {
   return publicSnapshot(job);
 }
 
+export async function stageGeneratedExport(params: {
+  userId: string;
+  filename: string;
+  contentType: string;
+  body: ReadableStream<Uint8Array>;
+  contentLength?: number;
+}): Promise<{ downloadToken: string; filename: string; size: number }> {
+  cleanupExpiredJobs();
+  if (params.contentLength && params.contentLength > MAX_STAGED_EXPORT_BYTES) {
+    throw new Error("导出文件超过 512MB，无法通过临时下载中转");
+  }
+
+  const stagedJobs = Array.from(jobs.values())
+    .filter((job) => job.userId === params.userId && job.kind === "staged")
+    .sort((a, b) => a.createdAt - b.createdAt);
+  while (stagedJobs.length >= MAX_STAGED_EXPORTS_PER_USER) {
+    const old = stagedJobs.shift()!;
+    jobs.delete(old.id);
+    if (old.downloadToken) downloadTokens.delete(old.downloadToken);
+    safeRemove(old.tmpDir);
+  }
+
+  const id = crypto.randomUUID();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), EXPORT_TMP_PREFIX));
+  const tmpPath = path.join(tmpDir, "export.bin");
+  let size = 0;
+  const limiter = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      size += chunk.length;
+      if (size > MAX_STAGED_EXPORT_BYTES) {
+        callback(new Error("导出文件超过 512MB，无法通过临时下载中转"));
+        return;
+      }
+      callback(null, chunk);
+    },
+  });
+
+  try {
+    await pipeline(
+      Readable.fromWeb(params.body as unknown as Parameters<typeof Readable.fromWeb>[0]),
+      limiter,
+      fs.createWriteStream(tmpPath),
+    );
+    if (size === 0) throw new Error("导出文件为空");
+  } catch (error) {
+    safeRemove(tmpDir);
+    throw error;
+  }
+
+  const downloadToken = crypto.randomBytes(32).toString("hex");
+  const filename = sanitizeFilename(params.filename);
+  const job: MarkdownExportJob = {
+    id,
+    kind: "staged",
+    userId: params.userId,
+    contentType: params.contentType,
+    state: "ready",
+    current: 1,
+    total: 1,
+    message: "导出文件已准备完成",
+    filename,
+    downloadToken,
+    warnings: 0,
+    tmpDir,
+    tmpPath,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + EXPORT_TTL_MS,
+  };
+  jobs.set(id, job);
+  downloadTokens.set(downloadToken, id);
+  return { downloadToken, filename, size };
+}
+
 export function getMarkdownExportJob(jobId: string, userId: string): MarkdownExportJobSnapshot | null {
   cleanupExpiredJobs();
   const job = jobs.get(jobId);
@@ -406,7 +486,7 @@ export function handleMarkdownExportDownload(c: Context): Response {
   const stream = fs.createReadStream(job.tmpPath);
   return new Response(Readable.toWeb(stream) as ReadableStream, {
     headers: {
-      "Content-Type": "application/zip",
+      "Content-Type": job.contentType,
       "Content-Length": String(stat.size),
       "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(job.filename || "nowen-note.zip")}`,
       "Cache-Control": "private, no-store",

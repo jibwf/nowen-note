@@ -147,10 +147,46 @@ test("single-note flat export keeps the note and assets at ZIP root", async () =
   assert.equal(zip.file("未分类/资料分析模块.md"), null);
 });
 
+test("generated PDF can be staged and downloaded from a real HTTP response", async () => {
+  const service = await import("../src/services/markdownExportJobs");
+  const source = new TextEncoder().encode("pdf-content");
+  const body = new Response(source).body;
+  assert.ok(body);
+  const staged = await service.stageGeneratedExport({
+    userId: "user-export",
+    filename: "资料分析模块.pdf",
+    contentType: "application/pdf",
+    body,
+    contentLength: source.byteLength,
+  });
+
+  const app = new Hono();
+  app.get("/download/:token", service.handleMarkdownExportDownload);
+  const response = await app.request(`/download/${staged.downloadToken}`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "application/pdf");
+  assert.match(response.headers.get("content-disposition") || "", /\.pdf/i);
+  assert.equal(await response.text(), "pdf-content");
+});
+
 test("markdown export route validates note ownership and exposes asynchronous status", async () => {
   const exportRouter = (await import("../src/routes/export")).default;
   const app = new Hono();
   app.route("/export", exportRouter);
+  const stagedPdf = await app.request("/export/download-jobs", {
+    method: "POST",
+    headers: {
+      "X-User-Id": "user-export",
+      "X-Export-Filename": encodeURIComponent("资料分析模块.pdf"),
+      "Content-Type": "application/pdf",
+    },
+    body: "pdf-route-content",
+  });
+  assert.equal(stagedPdf.status, 201, await stagedPdf.clone().text());
+  const stagedBody = await stagedPdf.json() as { filename: string; downloadToken: string };
+  assert.equal(stagedBody.filename, "资料分析模块.pdf");
+  assert.ok(stagedBody.downloadToken);
+
   const payload = {
     notes: [{
       id: "note-1",

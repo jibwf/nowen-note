@@ -80,7 +80,7 @@ app.use("*", cors({
     return resolveCorsOrigin({ origin, isProd, corsOrigins });
   },
   allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowHeaders: ["Content-Type", "X-User-Id", "Authorization", "X-Sudo-Token", "X-Connection-Id", "X-Requested-With", "X-Request-Id"],
+  allowHeaders: ["Content-Type", "X-User-Id", "Authorization", "X-Sudo-Token", "X-Connection-Id", "X-Requested-With", "X-Request-Id", "X-Export-Filename"],
   credentials: true,
 }));
 

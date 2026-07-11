@@ -1682,7 +1682,8 @@ export async function exportSingleNoteAsPDF(noteId: string): Promise<ExportPdfRe
     // —— Web 直接下载 PDF ——
     const blob = await renderPrintableHtmlToPdfBlob(docHtml);
     const filename = `${sanitizeFilename(note.title) || "note"}.pdf`;
-    saveAs(blob, filename);
+    const staged = await api.stageGeneratedExport(blob, filename);
+    api.downloadMarkdownExport(staged.downloadToken, staged.filename);
     return { ok: true, mode: "web" };
   } catch (error) {
     console.error("导出 PDF 失败:", error);

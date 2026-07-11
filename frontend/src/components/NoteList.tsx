@@ -2467,7 +2467,7 @@ export default function NoteList() {
           const fresh = await api.getNote(targetId);
           const { exportNoteAsDocx, downloadDocxBlob } = await import("@/lib/wordNoteService");
           const blob = await exportNoteAsDocx(fresh.content || "", fresh.title || "未命名笔记");
-          downloadDocxBlob(blob, fresh.title || "未命名笔记");
+          await downloadDocxBlob(blob, fresh.title || "未命名笔记");
           toast.dismiss(toastId);
           toast.success(t('export.exportComplete'));
         } catch (err: any) {

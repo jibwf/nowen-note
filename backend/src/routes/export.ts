@@ -13,6 +13,7 @@ import {
   createMarkdownExportJob,
   getMarkdownExportJob,
   MarkdownExportBusyError,
+  stageGeneratedExport,
   type PreparedMarkdownNote,
 } from "../services/markdownExportJobs";
 
@@ -328,6 +329,45 @@ app.get("/markdown-package/jobs/:id", (c) => {
   const job = getMarkdownExportJob(c.req.param("id"), userId);
   if (!job) return c.json({ error: "导出任务不存在或已过期", code: "EXPORT_JOB_NOT_FOUND" }, 404);
   return c.json({ job });
+});
+
+// PDF / DOCX 依赖浏览器端排版生成，但不能继续用 about:blank Blob 下载，否则
+// Chrono 等下载扩展可能在字节收满后无法完成。这里把生成结果流式落到临时文件，
+// 再复用真实 HTTP 下载地址。
+app.post("/download-jobs", async (c) => {
+  const userId = c.req.header("X-User-Id")!;
+  const encodedFilename = c.req.header("X-Export-Filename") || "export.bin";
+  let filename: string;
+  try {
+    filename = decodeURIComponent(encodedFilename);
+  } catch {
+    return c.json({ error: "导出文件名无效", code: "INVALID_EXPORT_FILENAME" }, 400);
+  }
+  const contentType = (c.req.header("Content-Type") || "application/octet-stream").split(";")[0].trim();
+  const allowedTypes = new Set([
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ]);
+  if (!allowedTypes.has(contentType)) {
+    return c.json({ error: "仅支持 PDF 和 DOCX 导出中转", code: "UNSUPPORTED_EXPORT_TYPE" }, 415);
+  }
+  if (!c.req.raw.body) return c.json({ error: "导出文件为空", code: "EMPTY_EXPORT_FILE" }, 400);
+
+  try {
+    const result = await stageGeneratedExport({
+      userId,
+      filename,
+      contentType,
+      body: c.req.raw.body,
+      contentLength: Number(c.req.header("Content-Length") || "") || undefined,
+    });
+    return c.json(result, 201);
+  } catch (error) {
+    return c.json({
+      error: error instanceof Error ? error.message : "准备导出文件失败",
+      code: "EXPORT_STAGE_FAILED",
+    }, 400);
+  }
 });
 
 // 导入笔记（批量）

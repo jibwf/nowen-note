@@ -80,12 +80,17 @@ test("protect blocks silent overwrite and copy preserves the edited Nowen note",
   assert.equal(created.status, 200);
   assert.equal(created.json.created, true);
   const trackedNoteId = created.json.noteId as string;
+  const initial = db().prepare("SELECT content FROM notes WHERE id = ?").get(trackedNoteId) as { content: string };
+  const manuallyEdited = initial.content.replace(
+    "<!-- nowen-folder-sync:",
+    "manual Nowen edit\n\n<!-- nowen-folder-sync:",
+  );
 
   db().prepare(`
     UPDATE notes
        SET content = ?, contentText = ?, updatedAt = datetime('now')
      WHERE id = ?
-  `).run("source version one\n\nmanual Nowen edit", "manual Nowen edit", trackedNoteId);
+  `).run(manuallyEdited, "source version one\nmanual Nowen edit", trackedNoteId);
 
   const protectedResult = await postJson(
     "/folder-sync/import-file",

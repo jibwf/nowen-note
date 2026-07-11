@@ -82,7 +82,7 @@ function scheduleMissingWarning(): void {
 export function installTaskAttachmentExportFallback(): void {
   if (typeof window === "undefined" || typeof window.fetch !== "function") return;
 
-  const target = window as Window & Record<string, unknown>;
+  const target = window as unknown as Record<string, unknown>;
   if (target[INSTALL_MARKER]) return;
   target[INSTALL_MARKER] = true;
 

@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { emitMediaUploadLifecycle } from "@/lib/mediaUploadLifecycle";
 
 const VIDEO_EXTENSIONS = new Set(["mp4", "webm", "ogg", "ogv", "m4v", "mov"]);
 
@@ -24,7 +25,7 @@ function getFileExtension(filename: string): string {
   return filename.slice(idx + 1).toLowerCase();
 }
 
-export function isVideoFile(file: File): boolean {
+export function isVideoFile(file: Pick<File, "name" | "type">): boolean {
   const mime = (file.type || "").toLowerCase();
   if (mime.startsWith("video/")) return true;
   return VIDEO_EXTENSIONS.has(getFileExtension(file.name || ""));
@@ -46,14 +47,40 @@ export async function uploadMediaAttachment({
   file,
   source = "editor",
 }: MediaUploadOptions): Promise<MediaUploadResult> {
-  const result = await api.attachments.upload(noteId, file);
-  return {
-    attachmentId: result.id,
-    url: result.url,
-    previewUrl: toInlineAttachmentUrl(result.url),
-    filename: result.filename || file.name,
-    mimeType: result.mimeType,
-    size: result.size,
-    source,
-  };
+  emitMediaUploadLifecycle({
+    phase: "start",
+    file,
+    filename: file.name,
+    mediaType: "video",
+  });
+
+  try {
+    const uploaded = await api.attachments.upload(noteId, file);
+    const result: MediaUploadResult = {
+      attachmentId: uploaded.id,
+      url: uploaded.url,
+      previewUrl: toInlineAttachmentUrl(uploaded.url),
+      filename: uploaded.filename || file.name,
+      mimeType: uploaded.mimeType,
+      size: uploaded.size,
+      source,
+    };
+    emitMediaUploadLifecycle({
+      phase: "success",
+      file,
+      filename: file.name,
+      mediaType: "video",
+      result,
+    });
+    return result;
+  } catch (error: any) {
+    emitMediaUploadLifecycle({
+      phase: "error",
+      file,
+      filename: file.name,
+      mediaType: "video",
+      error: error?.message || "视频上传失败",
+    });
+    throw error;
+  }
 }

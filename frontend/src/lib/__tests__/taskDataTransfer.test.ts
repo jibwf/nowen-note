@@ -107,10 +107,21 @@ describe("taskDataTransfer", () => {
     ]);
   });
 
+  it("rejects malformed CSV quotes instead of shifting later columns", () => {
+    expect(() => parseCsvRows('title,description\n任务,"未闭合')).toThrow("未闭合");
+  });
+
   it("rejects duplicate source ids before any import can run", () => {
     const duplicated = fixture();
     duplicated.data.tasks.push({ ...duplicated.data.tasks[0], title: "重复", sourceId: "task-parent" });
     expect(() => normalizeTaskBackup(duplicated)).toThrow("任务 ID 重复");
+  });
+
+  it("rejects cyclic parent relationships before creating any task", () => {
+    const cyclic = fixture();
+    cyclic.data.tasks[0].parentSourceId = "task-child";
+    cyclic.data.tasks[1].parentSourceId = "task-parent";
+    expect(() => normalizeTaskBackup(cyclic)).toThrow("任务层级存在循环引用");
   });
 
   it("normalizes unsafe fields and reports missing parent/project references", () => {
@@ -134,6 +145,15 @@ describe("taskDataTransfer", () => {
     expect(normalized.data.tasks[0].priority).toBe(2);
     expect(normalized.data.tasks[0].status).toBe("done");
     expect(summarizeTaskBackup(normalized).warnings).toHaveLength(2);
+  });
+
+  it("defaults legacy reminders to enabled and warns before detaching source note links", () => {
+    const data = fixture() as unknown as Record<string, any>;
+    delete data.data.reminders[0].enabled;
+    data.data.tasks[0].noteId = "source-note-id";
+    const normalized = normalizeTaskBackup(data);
+    expect(normalized.data.reminders[0].enabled).toBe(1);
+    expect(summarizeTaskBackup(normalized).warnings.some((warning) => warning.includes("解除旧关联"))).toBe(true);
   });
 
   it("uses parent path and project name in duplicate signatures", () => {

@@ -6,6 +6,7 @@ import type {
 import {
   getFolderSyncPreferences,
   pushFolderSyncPreferences,
+  sanitizeFolderSyncExcludePatterns,
 } from "@/lib/folderSyncPreferences";
 import {
   getFolderSyncErrorCode,
@@ -29,6 +30,7 @@ export interface SyncRunResult {
   failed: number;
   conflicts: number;
   deleted: number;
+  detached: number;
   error?: string;
 }
 
@@ -40,7 +42,7 @@ type ExtendedCandidate = FolderSyncUploadCandidate & {
 
 type ExtendedPending = FolderSyncPendingUploads & {
   config: FolderSyncPendingUploads["config"] & {
-    conflictPolicy?: "protect" | "copy" | "overwrite";
+    conflictPolicy?: "protect" | "copy" | "overwrite" | "detach";
     deletionPolicy?: "keep" | "trash" | "detach";
     extractAttachmentText?: boolean;
   };
@@ -73,6 +75,7 @@ function emptyResult(folderId: string, error?: string): SyncRunResult {
     failed: error ? 1 : 0,
     conflicts: 0,
     deleted: 0,
+    detached: 0,
     error,
   };
 }
@@ -101,7 +104,7 @@ export async function runFolderSyncOnce(
   const reason = options.reason || "manual";
   if (!fs) return emptyResult(folderId, "文件夹同步仅桌面端可用");
 
-  const preferences = getFolderSyncPreferences(folderId);
+  let preferences = getFolderSyncPreferences(folderId);
   try {
     // Push before scanning so main-process exclusion and scan policy use the same snapshot.
     await pushFolderSyncPreferences(fs, folderId, preferences);
@@ -132,6 +135,7 @@ export async function runFolderSyncOnce(
   let failed = 0;
   let conflicts = 0;
   let deleted = 0;
+  let detached = 0;
 
   for (const candidate of pendingResult.pending) {
     if (candidate.action === "delete") {
@@ -142,7 +146,10 @@ export async function runFolderSyncOnce(
             policy: preferences.deletionPolicy,
           });
         }
-        await fs.markUploadResult(folderId, candidate.relativePath, { success: true, noteId: candidate.existingNoteId || undefined });
+        await fs.markUploadResult(folderId, candidate.relativePath, {
+          success: true,
+          noteId: candidate.existingNoteId || undefined,
+        });
         deleted += 1;
       } catch (error: any) {
         failed += 1;
@@ -174,6 +181,17 @@ export async function runFolderSyncOnce(
       continue;
     }
 
+    // “停止跟踪”需要把该精确路径加入持久化排除列表。先确认列表仍有容量；
+    // 如果已满，则本次退化为 protect，避免后端解除映射后下一轮又把文件重新导入。
+    const detachedPatterns = preferences.conflictPolicy === "detach"
+      ? sanitizeFolderSyncExcludePatterns([...preferences.excludePatterns, candidate.relativePath])
+      : preferences.excludePatterns;
+    const canPersistDetach = preferences.conflictPolicy !== "detach"
+      || detachedPatterns.includes(candidate.relativePath);
+    const effectiveConflictPolicy = preferences.conflictPolicy === "detach"
+      ? "protect"
+      : preferences.conflictPolicy;
+
     try {
       const extension = candidate.ext.toLowerCase();
       const common = {
@@ -183,7 +201,7 @@ export async function runFolderSyncOnce(
         sourcePathHash: candidate.sourcePathHash,
         targetNotebookId,
         existingNoteId: candidate.existingNoteId || undefined,
-        conflictPolicy: preferences.conflictPolicy,
+        conflictPolicy: effectiveConflictPolicy,
       } as const;
 
       const response = ATTACHMENT_EXTS.has(extension)
@@ -230,7 +248,47 @@ export async function runFolderSyncOnce(
       }
     } catch (error: any) {
       const code = getFolderSyncErrorCode(error);
-      if (code === "SYNC_CONFLICT") {
+      if (code === "SYNC_CONFLICT" && preferences.conflictPolicy === "detach") {
+        if (!canPersistDetach) {
+          conflicts += 1;
+          await fs.markUploadResult(folderId, candidate.relativePath, {
+            success: false,
+            error: "SYNC_CONFLICT:排除规则已达到上限，无法安全停止跟踪；请先删除一条排除规则",
+          });
+          continue;
+        }
+
+        try {
+          await handleFolderSyncSourceDeleted({
+            sourcePathHash: candidate.sourcePathHash,
+            policy: "detach",
+          });
+          preferences = {
+            ...preferences,
+            excludePatterns: detachedPatterns,
+          };
+          await pushFolderSyncPreferences(fs, folderId, preferences);
+          await fs.markUploadResult(folderId, candidate.relativePath, {
+            success: true,
+            skipped: true,
+            noteId: candidate.existingNoteId || undefined,
+            error: "已保留 Nowen 编辑并停止跟踪该源文件",
+          });
+          skipped += 1;
+          detached += 1;
+          await appendSafeLog(
+            folderId,
+            "warn",
+            `${candidate.relativePath}: conflict detected; kept Nowen content and stopped tracking this source path`,
+          );
+        } catch (detachError: any) {
+          failed += 1;
+          await fs.markUploadResult(folderId, candidate.relativePath, {
+            success: false,
+            error: `停止跟踪失败: ${detachError?.message || "unknown error"}`,
+          });
+        }
+      } else if (code === "SYNC_CONFLICT") {
         conflicts += 1;
         await fs.markUploadResult(folderId, candidate.relativePath, {
           success: false,
@@ -249,7 +307,7 @@ export async function runFolderSyncOnce(
   await appendSafeLog(
     folderId,
     failed || conflicts ? "warn" : "sync",
-    `Sync completed: +${imported} ~${updated} -${deleted} skip${skipped} conflict${conflicts} fail${failed}`,
+    `Sync completed: +${imported} ~${updated} -${deleted} detach${detached} skip${skipped} conflict${conflicts} fail${failed}`,
   );
 
   return {
@@ -262,5 +320,6 @@ export async function runFolderSyncOnce(
     failed,
     conflicts,
     deleted,
+    detached,
   };
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inferVideoMime } from "../src/routes/attachments";
+import { inferVideoMime } from "../src/lib/media-mime";
 
 test("infers known mobile video MIME types from filenames", () => {
   assert.equal(inferVideoMime("camera.MP4"), "video/mp4");

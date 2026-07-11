@@ -9,6 +9,7 @@ import NoteIconBridge from "./components/NoteIconBridge";
 import AIProfileSwitcherBridge from "./components/AIProfileSwitcherBridge";
 import MarkdownExperienceBridge from "./components/MarkdownExperienceBridge";
 import ImageExperienceBridge from "./components/ImageExperienceBridge";
+import MediaExperienceBridge from "./components/MediaExperienceBridge";
 import EditorImageTransformBridge from "./components/EditorImageTransformBridge";
 import DesktopUpdateCenter from "./components/DesktopUpdateCenter";
 import TwoFactorLoginChallengeCenter from "./components/TwoFactorLoginChallengeCenter";
@@ -81,6 +82,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <AIProfileSwitcherBridge />
     <MarkdownExperienceBridge />
     <ImageExperienceBridge />
+    <MediaExperienceBridge />
     <EditorImageTransformBridge />
     <DesktopUpdateCenter />
     <TwoFactorLoginChallengeCenter />

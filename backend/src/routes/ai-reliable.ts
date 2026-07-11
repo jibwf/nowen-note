@@ -148,7 +148,7 @@ function restoreActiveProfile(): void {
       restored = true;
     }
   } catch {
-    /* fall back to backup */
+    /* use backups below */
   }
   if (!restored) {
     for (const key of ["ai_provider", "ai_api_url", "ai_api_key", "ai_model"]) {
@@ -162,26 +162,25 @@ function restoreActiveProfile(): void {
 
 function setManualAIEnabled(enabled: boolean): void {
   ensureConfigGuard();
-  const current = isManualAIEnabled();
-  if (current === enabled) return;
+  if (isManualAIEnabled() === enabled) return;
 
   if (!enabled) {
     getDb().transaction(() => {
       for (const key of GUARDED_AI_KEYS) {
         writeSetting(`ai_disabled_backup_${key}`, readSetting(key));
       }
-      // Clear the effective legacy settings before enabling the write guard. All
-      // existing AI routes therefore stop before making an upstream request.
+      // Clear effective settings before the guard becomes active. Every existing
+      // AI endpoint then fails locally instead of calling a disabled provider.
       for (const key of GUARDED_AI_KEYS) writeSetting(key, "");
       writeSetting("ai_manual_enabled", "false");
     })();
-  } else {
-    getDb().transaction(() => {
-      // Lift the guard first, then restore the active profile and embedding config.
-      writeSetting("ai_manual_enabled", "true");
-      restoreActiveProfile();
-    })();
+    return;
   }
+
+  getDb().transaction(() => {
+    writeSetting("ai_manual_enabled", "true");
+    restoreActiveProfile();
+  })();
 }
 
 function getDescendantNotebookIds(rootId: string): string[] {
@@ -210,12 +209,11 @@ function resolveScope(c: any, body: AskBody): Scope | { error: Response } {
     ? null
     : rawWorkspace;
 
-  if (workspaceId) {
-    const role = getUserWorkspaceRole(workspaceId, userId);
-    if (!role) return { error: c.json({ error: "无权访问该工作区知识库" }, 403) as Response };
+  if (workspaceId && !getUserWorkspaceRole(workspaceId, userId)) {
+    return { error: c.json({ error: "无权访问该工作区知识库" }, 403) as Response };
   }
-
   if (!body.notebookId) return { userId, workspaceId, notebookIds: null };
+
   const notebook = getDb().prepare(
     "SELECT id, userId, workspaceId FROM notebooks WHERE id = ? AND isDeleted = 0",
   ).get(body.notebookId) as { id: string; userId: string; workspaceId: string | null } | undefined;
@@ -235,9 +233,9 @@ function resolveScope(c: any, body: AskBody): Scope | { error: Response } {
   };
 }
 
-function scopeSql(scope: Scope, alias = "n"): { sql: string; params: unknown[] } {
-  const clauses: string[] = [`${alias}.isTrashed = 0`];
-  const params: unknown[] = [];
+function scopeSql(scope: Scope, alias = "n"): { sql: string; params: any[] } {
+  const clauses = [`${alias}.isTrashed = 0`];
+  const params: any[] = [];
   if (scope.workspaceId === null) {
     clauses.push(`${alias}.userId = ?`, `${alias}.workspaceId IS NULL`);
     params.push(scope.userId);
@@ -252,15 +250,24 @@ function scopeSql(scope: Scope, alias = "n"): { sql: string; params: unknown[] }
   return { sql: clauses.join(" AND "), params };
 }
 
+function canReadCandidate(candidate: Candidate, userId: string): boolean {
+  try {
+    const { permission } = resolveNotePermission(candidate.noteId, userId);
+    return hasPermission(permission, "read");
+  } catch {
+    return false;
+  }
+}
+
 function extractKeywords(question: string): string[] {
   const stop = new Set(["什么", "怎么", "如何", "为什么", "请", "帮我", "告诉", "总结", "一下", "the", "what", "how", "why"]);
   const output: string[] = [];
   const seen = new Set<string>();
-  const add = (value: string) => {
-    const text = value.toLowerCase().trim();
-    if (text.length < 2 || stop.has(text) || seen.has(text)) return;
-    seen.add(text);
-    output.push(text);
+  const add = (raw: string) => {
+    const value = raw.toLowerCase().trim();
+    if (value.length < 2 || stop.has(value) || seen.has(value)) return;
+    seen.add(value);
+    output.push(value);
   };
   for (const token of question.match(/[\u3400-\u9fff]+|[a-zA-Z][a-zA-Z0-9_-]*|\d+/g) || []) {
     if (/^[\u3400-\u9fff]+$/.test(token)) {
@@ -273,14 +280,15 @@ function extractKeywords(question: string): string[] {
 
 function addCandidate(map: Map<string, Candidate>, candidate: Candidate): void {
   const existing = map.get(candidate.key);
-  if (!existing) {
+  if (!existing || (candidate.reason === "vector" && existing.reason !== "vector")) {
     map.set(candidate.key, candidate);
-    return;
   }
-  if (candidate.reason === "vector" && existing.reason !== "vector") map.set(candidate.key, candidate);
 }
 
-async function retrieveCandidates(scope: Scope, question: string): Promise<{ candidates: Candidate[]; retrieval: string[] }> {
+async function retrieveCandidates(scope: Scope, question: string): Promise<{
+  candidates: Candidate[];
+  retrieval: string[];
+}> {
   const db = getDb();
   const map = new Map<string, Candidate>();
   const retrieval: string[] = [];
@@ -289,7 +297,14 @@ async function retrieveCandidates(scope: Scope, question: string): Promise<{ can
     try {
       const vector = await embedQuery(question);
       if (vector) {
-        const hits = knnSearch(vector, scope.userId, scope.workspaceId, scope.notebookIds ? 300 : 80, 12, scope.notebookIds);
+        const hits = knnSearch(
+          vector,
+          scope.userId,
+          scope.workspaceId,
+          scope.notebookIds ? 300 : 80,
+          14,
+          scope.notebookIds,
+        );
         for (const hit of hits) {
           const indexed = db.prepare("SELECT createdAt FROM note_embeddings WHERE id = ?").get(hit.rowid) as
             | { createdAt: string }
@@ -320,6 +335,8 @@ async function retrieveCandidates(scope: Scope, question: string): Promise<{ can
     }
   }
 
+  // Always merge lexical retrieval with vectors. This avoids losing a recently
+  // edited tail paragraph merely because its embedding job has not completed yet.
   const keywords = extractKeywords(question);
   const scoped = scopeSql(scope);
   if (keywords.length > 0) {
@@ -335,7 +352,7 @@ async function retrieveCandidates(scope: Scope, question: string): Promise<{ can
           SELECT n.id, n.title, n.contentText, n.rowid
           FROM notes n
           WHERE n.rowid IN (${placeholders}) AND ${scoped.sql}
-          LIMIT 12
+          LIMIT 14
         `).all(...rowids, ...scoped.params) as Array<{ id: string; title: string; contentText: string; rowid: number }>;
         const rankMap = new Map(ftsRows.map((row) => [row.rowid, row.rank]));
         for (const row of rows) {
@@ -366,7 +383,7 @@ async function retrieveCandidates(scope: Scope, question: string): Promise<{ can
         FROM notes n
         WHERE ${scoped.sql} AND (${conditions})
         ORDER BY n.updatedAt DESC
-        LIMIT 12
+        LIMIT 14
       `).all(...scoped.params, ...likeParams) as Array<{ id: string; title: string; contentText: string }>;
       for (const row of rows) {
         addCandidate(map, {
@@ -407,12 +424,18 @@ async function retrieveCandidates(scope: Scope, question: string): Promise<{ can
     if (rows.length) retrieval.push("recent");
   }
 
-  const candidates = Array.from(map.values()).sort((a, b) => {
-    const priority = { vector: 0, fts: 1, like: 2, recent: 3, direct: 0, selection: 0 };
-    const p = priority[a.reason] - priority[b.reason];
-    if (p !== 0) return p;
-    return (b.score || 0) - (a.score || 0);
-  }).slice(0, 10);
+  const priority: Record<Candidate["reason"], number> = {
+    vector: 0,
+    fts: 1,
+    like: 2,
+    recent: 3,
+    direct: 0,
+    selection: 0,
+  };
+  const candidates = Array.from(map.values())
+    .filter((candidate) => canReadCandidate(candidate, scope.userId))
+    .sort((a, b) => priority[a.reason] - priority[b.reason] || (b.score || 0) - (a.score || 0))
+    .slice(0, 10);
   return { candidates, retrieval: Array.from(new Set(retrieval)) };
 }
 
@@ -422,9 +445,8 @@ function getIndexStatus(scope: Scope) {
     ? { userId: scope.userId, workspaceId: null as string | null }
     : { workspaceId: scope.workspaceId };
   const stats = getEmbeddingStats(opts);
-
   const clauses: string[] = [];
-  const params: unknown[] = [];
+  const params: any[] = [];
   if (scope.workspaceId === null) {
     clauses.push("userId = ?", "workspaceId IS NULL");
     params.push(scope.userId);
@@ -436,15 +458,18 @@ function getIndexStatus(scope: Scope) {
   const lastIndexed = db.prepare(`SELECT MAX(createdAt) AS at FROM note_embeddings ${where}`).get(...params) as { at: string | null };
   const noteScope = scopeSql({ ...scope, notebookIds: null });
   const newest = db.prepare(`SELECT MAX(n.updatedAt) AS at FROM notes n WHERE ${noteScope.sql}`).get(...noteScope.params) as { at: string | null };
-  const stale = stats.pending > 0 || stats.processing > 0 || (
+  const pending = stats.pending + stats.attachmentPending;
+  const processing = stats.processing + stats.attachmentProcessing;
+  const failed = stats.failed + stats.attachmentFailed;
+  const stale = pending > 0 || processing > 0 || (
     !!newest.at && (!lastIndexed.at || Date.parse(newest.at) > Date.parse(lastIndexed.at))
   );
   return {
     lastIndexedAt: lastIndexed.at,
     newestSourceUpdatedAt: newest.at,
-    pending: stats.pending,
-    processing: stats.processing,
-    failed: stats.failed,
+    pending,
+    processing,
+    failed,
     totalNotes: stats.totalNotes,
     indexedNotes: stats.indexedNotes,
     totalAttachments: stats.totalAttachments,
@@ -494,8 +519,7 @@ function buildKnowledgeContext(candidates: Candidate[]): {
       ).get(candidate.noteId) as { content: string; contentText: string; contentFormat: string } | undefined;
       if (note) sourceText = noteToPlainText(note);
     }
-    const sourceBudget = Math.min(10_000, remaining);
-    const fitted = fitContextBudget(sourceText, sourceBudget);
+    const fitted = fitContextBudget(sourceText, Math.min(10_000, remaining));
     if (!fitted.text) continue;
     const label = candidate.kind === "attachment" ? "附件" : "笔记";
     blocks.push(`【${label}：${candidate.title}】\n${fitted.text}`);
@@ -520,15 +544,17 @@ function buildKnowledgeContext(candidates: Candidate[]): {
     });
   }
 
+  const omittedCandidates = Math.max(0, candidates.length - hits.length);
+  const block = blocks.join("\n\n---\n\n");
   return {
-    block: blocks.join("\n\n---\n\n"),
+    block,
     hits,
     budget: {
-      text: blocks.join("\n\n---\n\n"),
+      text: block,
       originalChars,
       includedChars,
       omittedChars: Math.max(0, originalChars - includedChars),
-      truncated: anyTruncated || remaining < 1_000,
+      truncated: anyTruncated || omittedCandidates > 0 || remaining < 1_000,
       strategy: anyTruncated ? "head-middle-tail" : "full",
       segments: [],
     },
@@ -546,13 +572,18 @@ async function currentNoteContext(userId: string, noteId: string): Promise<{
     SELECT id, title, content, contentText, contentFormat
     FROM notes WHERE id = ? AND isTrashed = 0
   `).get(noteId) as {
-    id: string; title: string; content: string; contentText: string; contentFormat: string;
+    id: string;
+    title: string;
+    content: string;
+    contentText: string;
+    contentFormat: string;
   } | undefined;
   if (!note) throw new Error("当前笔记不存在或已进入回收站");
 
-  let text = noteToPlainText(note);
+  const noteText = noteToPlainText(note);
+  let attachmentText = "";
   try {
-    const attachments = getDb().prepare(`
+    const rows = getDb().prepare(`
       SELECT a.filename, GROUP_CONCAT(ac.chunkText, '\n') AS text
       FROM attachments a
       JOIN attachment_chunks ac ON ac.attachmentId = a.id
@@ -561,24 +592,42 @@ async function currentNoteContext(userId: string, noteId: string): Promise<{
       ORDER BY a.createdAt ASC
       LIMIT 20
     `).all(noteId) as Array<{ filename: string; text: string }>;
-    if (attachments.length) {
-      text += "\n\n【附件提取文本】\n" + attachments
-        .map((attachment) => `【${attachment.filename}】\n${attachment.text}`)
-        .join("\n\n");
-    }
+    attachmentText = rows
+      .map((row) => `【${row.filename}】\n${row.text || ""}`)
+      .filter(Boolean)
+      .join("\n\n");
   } catch {
-    /* Attachment chunks may not exist on an older schema. */
+    /* Older schema: direct note content still works. */
   }
-  const budget = fitContextBudget(text, CONTEXT_BUDGET);
+
+  // Reserve a bounded attachment slice without stealing the note's ending. The
+  // note body itself always uses head+middle+tail when oversized.
+  const attachmentBudget = attachmentText ? 6_000 : 0;
+  const noteBudget = fitContextBudget(noteText, CONTEXT_BUDGET - attachmentBudget);
+  const attachmentFit = attachmentText ? fitContextBudget(attachmentText, attachmentBudget) : null;
+  const blockParts = [`【当前整篇笔记：${note.title}】\n${noteBudget.text}`];
+  if (attachmentFit?.text) blockParts.push(`【附件提取文本】\n${attachmentFit.text}`);
+
+  const originalChars = noteBudget.originalChars + (attachmentFit?.originalChars || 0);
+  const includedChars = noteBudget.includedChars + (attachmentFit?.includedChars || 0);
+  const budget: BudgetedContext = {
+    text: blockParts.join("\n\n---\n\n"),
+    originalChars,
+    includedChars,
+    omittedChars: Math.max(0, originalChars - includedChars),
+    truncated: noteBudget.truncated || !!attachmentFit?.truncated,
+    strategy: noteBudget.truncated || attachmentFit?.truncated ? "head-middle-tail" : "full",
+    segments: noteBudget.segments,
+  };
   return {
-    block: `【当前整篇笔记：${note.title}】\n${budget.text}`,
+    block: budget.text,
     candidate: {
       key: `note:${note.id}`,
       id: note.id,
       noteId: note.id,
       title: note.title,
       kind: "note",
-      snippet: text,
+      snippet: noteText,
       reason: "direct",
     },
     budget,
@@ -705,12 +754,11 @@ app.post("/ask", async (c) => {
     },
     index: status.index,
     hits: diagnosticHits,
-    // API keys, tokens, raw request headers and complete source bodies are deliberately absent.
     redacted: ["apiKey", "embeddingKey", "authorization", "fullSourceText"],
   };
 
   const truncationNotice = contextBudget.truncated
-    ? `\n\n注意：上下文超过 ${CONTEXT_BUDGET} 字预算，系统已明确采用“开头 + 中部 + 结尾”分段，省略 ${contextBudget.omittedChars} 字。回答中不要声称已读取未包含的部分。`
+    ? `\n\n注意：上下文超过 ${CONTEXT_BUDGET} 字预算，系统已明确采用分段或裁剪策略，省略 ${contextBudget.omittedChars} 字。回答中不要声称已读取未包含的部分。`
     : "";
   const systemPrompt = contextBlock
     ? `你是 Nowen Note 的知识库助手。仅把下面提供的上下文视为用户知识库证据。请优先依据证据回答，并用来源标题说明依据；证据不足时明确说“不足以从当前范围确认”，不要虚构。${truncationNotice}\n\n${contextBlock}`

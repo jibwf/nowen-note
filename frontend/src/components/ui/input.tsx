@@ -2,6 +2,7 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import {
   emitSidebarSearchChange,
+  getCurrentSidebarSearchValue,
   normalizeSidebarSearchValue,
   SIDEBAR_SEARCH_SYNC_EVENT,
 } from "@/lib/sidebarSearchBridge"
@@ -45,7 +46,9 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
     const awaitingCompositionCommitRef = React.useRef(false)
     const suppressTrustedDuplicateRef = React.useRef<string | null>(null)
     const [sidebarValue, setSidebarValue] = React.useState(() =>
-      normalizeInputValue(value ?? defaultValue),
+      isSidebarSearch
+        ? getCurrentSidebarSearchValue()
+        : normalizeInputValue(value ?? defaultValue),
     )
 
     React.useEffect(() => {

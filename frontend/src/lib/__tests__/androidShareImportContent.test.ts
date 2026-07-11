@@ -63,6 +63,16 @@ describe("Android share note content", () => {
     expect(result.content.match(/https:\/\/example\.com\/article/g)).toHaveLength(1);
   });
 
+  it("neutralizes raw HTML received from an untrusted share sender", () => {
+    const result = appendAndroidShareToNote(
+      { content: "", contentText: "", contentFormat: "markdown" },
+      payload({ subject: "", text: "<img src=x onerror=alert(1)>", url: "" }),
+      [],
+    );
+    expect(result.content).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    expect(result.content).not.toContain("<img");
+  });
+
   it("preserves existing Tiptap JSON nodes and appends image/link nodes", () => {
     const existing = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "保留我" }] }] };
     const result = appendAndroidShareToNote(
@@ -74,6 +84,25 @@ describe("Android share note content", () => {
     expect(document.content[0].content[0].text).toBe("保留我");
     expect(document.content.some((node: any) => node.type === "image" && node.attrs.src === "/api/attachments/image-1")).toBe(true);
     expect(JSON.stringify(document)).toContain("/api/attachments/file-1");
+  });
+
+  it("detects legacy Tiptap and HTML rows when contentFormat is missing", () => {
+    const legacyDoc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "旧富文本" }] }] };
+    const tiptap = appendAndroidShareToNote(
+      { content: JSON.stringify(legacyDoc), contentText: "旧富文本", contentFormat: undefined },
+      payload(),
+      [],
+    );
+    expect(tiptap.contentFormat).toBe("tiptap-json");
+    expect(JSON.parse(tiptap.content).content[0].content[0].text).toBe("旧富文本");
+
+    const html = appendAndroidShareToNote(
+      { content: "<p>旧 HTML</p>", contentText: "旧 HTML", contentFormat: undefined },
+      payload(),
+      [],
+    );
+    expect(html.contentFormat).toBe("html");
+    expect(html.content).toContain("<p>旧 HTML</p>");
   });
 
   it("refuses malformed rich-text data rather than replacing it", () => {

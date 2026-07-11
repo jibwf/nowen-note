@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isFolderSyncPathExcluded,
   normalizeFolderSyncPreferences,
   sanitizeFolderSyncExcludePatterns,
 } from "@/lib/folderSyncPreferences";
@@ -31,5 +32,12 @@ describe("folder sync advanced preferences", () => {
     expect(patterns[1]).toBe("private/**");
     expect(patterns).toHaveLength(10);
     expect(new Set(patterns).size).toBe(patterns.length);
+  });
+
+  it("matches root and nested double-star rules before applying deletion policy", () => {
+    expect(isFolderSyncPathExcluded("draft/a.md", ["**/draft/**"])).toBe(true);
+    expect(isFolderSyncPathExcluded("team/draft/a.md", ["**/draft/**"])).toBe(true);
+    expect(isFolderSyncPathExcluded("team/final/a.md", ["**/draft/**"])).toBe(false);
+    expect(isFolderSyncPathExcluded("notes/cache.tmp", ["*.tmp"])).toBe(true);
   });
 });

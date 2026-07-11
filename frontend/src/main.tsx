@@ -11,6 +11,7 @@ import MarkdownExperienceBridge from "./components/MarkdownExperienceBridge";
 import ImageExperienceBridge from "./components/ImageExperienceBridge";
 import EditorImageTransformBridge from "./components/EditorImageTransformBridge";
 import DesktopUpdateCenter from "./components/DesktopUpdateCenter";
+import TwoFactorLoginChallengeCenter from "./components/TwoFactorLoginChallengeCenter";
 import "./index.css";
 import "./overlay-layers.css";
 import { initCodeBlockTheme } from "./lib/codeBlockTheme";
@@ -19,6 +20,7 @@ import { installShareLightboxRotationGuard } from "./lib/shareLightboxRotationGu
 import { installMobileImageFocusGuard } from "./lib/mobileImageFocusGuard";
 import { installNoteSyncSafety } from "./lib/noteSyncSafety";
 import { installNoteUpdateResponseGuard } from "./lib/noteUpdateResponseGuard";
+import { installTwoFactorLoginChallengeBridge } from "./lib/twoFactorLoginChallenge";
 
 function removeBootSplash() {
   try {
@@ -40,6 +42,9 @@ function BootSplashRemover() {
 }
 
 installAndroidNativeHttpBridge();
+// Observe auth responses after the Android transport bridge is installed so Web, Electron and
+// Capacitor all persist the same short-lived 2FA challenge before LoginPage can be remounted.
+installTwoFactorLoginChallengeBridge();
 // Install the revision guard first, then reject any partial optimistic response left by
 // metadata-only writes before it can replace activeNote in React state.
 installNoteSyncSafety();
@@ -72,6 +77,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <ImageExperienceBridge />
     <EditorImageTransformBridge />
     <DesktopUpdateCenter />
+    <TwoFactorLoginChallengeCenter />
     <App />
   </React.StrictMode>
 );

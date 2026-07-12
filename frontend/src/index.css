@@ -2451,9 +2451,18 @@ html[data-electron="darwin"] .vibrancy-sidebar > :first-child {
   padding-left: 72px;
 }
 
+/* 原生窗口按钮覆盖 Rail 顶部区域；仅下移 Rail，保持主侧栏与 Web 端顶对齐。 */
+html[data-electron="darwin"] .nav-rail {
+  padding-top: 56px !important;
+}
+
 /* 鍏ㄥ睆锛歍raffic Light 鑷姩闅愯棌锛屽洖鏀?72px 宸?padding 閬垮厤椤堕儴绌虹櫧 */
 html[data-electron="darwin"][data-fullscreen="1"] .vibrancy-sidebar > :first-child {
   padding-left: 0;
+}
+
+html[data-electron="darwin"][data-fullscreen="1"] .nav-rail {
+  padding-top: 4px !important;
 }
 
 /* ----------------------------------------------------------------------------

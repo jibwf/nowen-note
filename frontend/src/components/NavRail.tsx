@@ -429,7 +429,7 @@ export default function NavRail({ variant = "desktop" }: { variant?: "desktop" |
         isMobile
           ? "flex md:hidden h-full"
           : "hidden md:flex h-full",
-        "vibrancy-sidebar bg-app-sidebar border-r border-app-border flex-col items-center shrink-0 transition-[width] duration-150",
+        "nav-rail vibrancy-sidebar bg-app-sidebar border-r border-app-border flex-col items-center shrink-0 transition-[width] duration-150",
         railWidthClass,
       )}
       style={{ paddingTop: 'calc(var(--safe-area-top) + 4px)', paddingBottom: '8px' }}

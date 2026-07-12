@@ -175,7 +175,7 @@ function getFrontendDist() {
   return path.join(__dirname, "..", "frontend", "dist");
 }
 
-// 查找 Node 可执行文件：打包后优先内嵌 node，其次 Electron 自带 node 模式，最后系统 PATH
+// 查找 Node 可执行文件：开发模式和打包后回退均用 Electron 自带 node 模式，确保原生模块 ABI 一致。
 function findNodeExecutable() {
   if (app.isPackaged) {
     const platformDir = {
@@ -210,7 +210,7 @@ function findNodeExecutable() {
     );
     return { cmd: process.execPath, useElectron: true };
   }
-  return { cmd: "node", useElectron: false };
+  return { cmd: process.execPath, useElectron: true };
 }
 
 // ---------- 动态获取空闲端口 ----------
@@ -778,13 +778,12 @@ function createWindow() {
   //   - hiddenInset 把 Traffic Light 嵌入工具栏，不占独立标题栏；
   //   - vibrancy: 'sidebar' 启用系统级毛玻璃（配合前端 macOS 皮肤效果最佳）；
   //   - visualEffectState: 'active' 避免窗口失焦后毛玻璃褪色导致"发灰"。
-  //   - trafficLightPosition: { x: 12, y: 52 } 避免与 NavRail 顶部按钮重叠
-  //     NavRail 顶部有 40px 高的按钮 + 4px paddingTop，所以 y 设为 52 更安全。
+  //   - trafficLightPosition: { x: 12, y: 14 } 保持在窗口左上角的标准位置。
   // 注：仅 macOS 生效；Windows/Linux 保持原有无边框策略（默认），避免踩 Mica/Acrylic 的坑。
   const macWindowOpts = isMac
     ? {
         titleBarStyle: "hiddenInset",
-        trafficLightPosition: { x: 12, y: 52 },
+        trafficLightPosition: { x: 12, y: 14 },
         vibrancy: "sidebar",
         visualEffectState: "active",
         transparent: false, // 开启 vibrancy 时 backgroundColor 可设半透明或不设

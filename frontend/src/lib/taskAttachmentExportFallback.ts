@@ -10,11 +10,11 @@ const MISSING_TASK_IMAGE_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAeAAAAEOCAIAAADe+
 let pendingMissingCount = 0;
 let warningTimer: number | null = null;
 
-function decodeBase64(base64: string): Uint8Array<ArrayBuffer> {
+function decodeBase64(base64: string): Uint8Array {
   const binary = window.atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return bytes as Uint8Array<ArrayBuffer>;
+  return bytes;
 }
 
 function getRequestUrl(input: RequestInfo | URL): string {

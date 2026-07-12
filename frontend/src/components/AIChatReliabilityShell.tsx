@@ -9,6 +9,7 @@ import {
   Scissors,
   ShieldCheck,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import OriginalAIChatPanel from "./AIChatPanel";
 import { api } from "@/lib/api";
 import { useApp } from "@/store/AppContext";
@@ -32,7 +33,7 @@ const MODE_OPTIONS: Array<{
   id: ReliableAskMode;
   label: string;
   description: string;
-  icon: React.ComponentType<{ size?: number }>;
+  icon: LucideIcon;
 }> = [
   { id: "knowledge", label: "知识库检索", description: "沿用面板内的全部知识库或笔记本范围", icon: Database },
   { id: "current-note", label: "当前整篇笔记", description: "直接读取当前笔记正文，不依赖向量召回", icon: FileText },

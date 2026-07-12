@@ -432,7 +432,7 @@ export default function NavRail({ variant = "desktop" }: { variant?: "desktop" |
         "vibrancy-sidebar bg-app-sidebar border-r border-app-border flex-col items-center shrink-0 transition-[width] duration-150",
         railWidthClass,
       )}
-      style={{ paddingTop: 'var(--safe-area-top)', paddingBottom: '8px' }}
+      style={{ paddingTop: 'calc(var(--safe-area-top) + 4px)', paddingBottom: '8px' }}
     >
       {/* 顶部按钮区：
           - desktop：折叠/展开主侧栏（合并 Sidebar 原 Header 折叠按钮的功能）。

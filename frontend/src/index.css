@@ -2451,11 +2451,6 @@ html[data-electron="darwin"] .vibrancy-sidebar > :first-child {
   padding-left: 72px;
 }
 
-/* Traffic Light position: (12, 52), leave space at top of sidebar */
-html[data-electron="darwin"] .vibrancy-sidebar {
-  padding-top: 56px;
-}
-
 /* 鍏ㄥ睆锛歍raffic Light 鑷姩闅愯棌锛屽洖鏀?72px 宸?padding 閬垮厤椤堕儴绌虹櫧 */
 html[data-electron="darwin"][data-fullscreen="1"] .vibrancy-sidebar > :first-child {
   padding-left: 0;

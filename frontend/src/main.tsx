@@ -25,6 +25,7 @@ import { installAndroidNativeHttpBridge } from "./lib/androidNativeHttpBridge";
 import { installMobileStartupBridge } from "./lib/mobileStartupBridge";
 import { installMobileWebStartupBridge } from "./lib/mobileWebStartupBridge";
 import { installNoteAttachmentAccessBridge } from "./lib/noteAttachmentAccessBridge";
+import { installReliableExportDownloadBridge } from "./lib/reliableExportDownloadBridge";
 import { installShareLightboxRotationGuard } from "./lib/shareLightboxRotationGuard";
 import { installMobileImageFocusGuard } from "./lib/mobileImageFocusGuard";
 import { installNoteSyncSafety } from "./lib/noteSyncSafety";
@@ -73,6 +74,9 @@ installShareLightboxRotationGuard();
 installMobileImageFocusGuard();
 // Keep one stale task-image reference from aborting an otherwise valid full task backup.
 installTaskAttachmentExportFallback();
+// Route Markdown/ZIP/PDF/DOCX Blob downloads through the reliable HTTP transport. New clients
+// connected to an older NAS automatically fall back to the original local Blob download.
+installReliableExportDownloadBridge();
 
 initCodeBlockTheme();
 

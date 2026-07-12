@@ -6,6 +6,7 @@ import {
   MAX_MARKDOWN_EXPORT_REQUEST_BYTES,
   ReliableExportBusyError,
   ReliableExportPayloadTooLargeError,
+  reliableExportTestUtils,
   ReliableExportValidationError,
   stageReliableGeneratedExport,
   validatePreparedMarkdownNotes,
@@ -16,6 +17,7 @@ import {
 
 export type { PreparedMarkdownAsset, PreparedMarkdownNote };
 export type MarkdownExportJobSnapshot = ReliableExportJobSnapshot;
+export const markdownExportTestUtils = reliableExportTestUtils;
 
 const REQUEST_JSON_PATCH_FLAG = Symbol.for("nowen.reliableExport.requestJsonPatched");
 const globalFlags = globalThis as typeof globalThis & Record<symbol, boolean>;

@@ -999,21 +999,21 @@ export async function exportAllNotes(
     }
 
     const total = notes.length;
-    const zip = new JSZip();
     const td = createTurndown();
 
-    // 2. 转换并打包
-    const folderCounts = new Map<string, number>();
+    // 2. 只在前端做依赖 DOM/Tiptap 的格式转换；ZIP 和附件均交给后端流式处理。
     // 每个笔记本目录独立的 hash->相对路径 注册表，保证 md 中 ./assets/xxx 一定存在于同级目录
     const perFolderRegistry = new Map<string, Map<string, string>>();
-    // 已写入 zip 的图片相对路径，避免重复写
-    const writtenImages = new Set<string>();
-    // 远程图片下载计数（成功 / 失败），最终给用户做个汇总
-    // P0-2：同时收集失败明细（src + noteId + error），供 zip 根目录写出 export-warnings.json
-    const imgStats: ImgStats = { ok: 0, failed: 0, failures: [] };
-
-    // 格式统计
-    const formatStats = { markdown: 0, richText: 0, html: 0 };
+    const preparedNotes: Array<{
+      id: string;
+      title: string;
+      notebookName: string | null;
+      createdAt: string;
+      updatedAt: string;
+      contentFormat?: string;
+      markdown: string;
+      inlineAssets: ExtractedImage[];
+    }> = [];
 
     for (let i = 0; i < notes.length; i++) {
       const note = notes[i];
@@ -1025,29 +1025,9 @@ export async function exportAllNotes(
       let markdown: string;
       let extractedImages: ExtractedImage[] = [];
 
-      // 统计格式
-      if (note.contentFormat === "markdown") formatStats.markdown++;
-      else if (note.contentFormat === "html") formatStats.html++;
-      else formatStats.richText++;
-
       // P0: Markdown 原生笔记直接导出 content 原文，不走 HTML → Markdown 转换
       if (note.contentFormat === "markdown") {
         markdown = note.content || note.contentText || "";
-
-        // Markdown 笔记中的附件引用需要处理
-        if (!inlineImages && markdown) {
-          let registry = perFolderRegistry.get(folder);
-          if (!registry) {
-            registry = new Map();
-            perFolderRegistry.set(folder, registry);
-          }
-          // 处理 Markdown 语法中的 ![alt](/api/attachments/<id>) 和 [text](/api/attachments/<id>)
-          const r = await processMarkdownAttachments(markdown, registry, imgStats, { noteId: note.id, noteTitle: note.title });
-          markdown = r.content;
-          extractedImages = r.images;
-        } else if (inlineImages && markdown) {
-          markdown = await inlineRemoteImages(markdown, imgStats, { noteId: note.id, noteTitle: note.title });
-        }
       } else {
         // 富文本笔记：Tiptap JSON → HTML → Markdown
         let html = noteContentToHtml(note.content, note.contentText);
@@ -1061,117 +1041,47 @@ export async function exportAllNotes(
           const r = await extractDataImages(html, registry);
           html = r.html;
           extractedImages = r.images;
-
-          const r2 = await fetchRemoteImages(html, registry, imgStats, { noteId: note.id, noteTitle: note.title });
-          html = r2.html;
-          extractedImages = extractedImages.concat(r2.images);
-
-          const r3 = await fetchRemoteAttachments(html, registry, imgStats, { noteId: note.id, noteTitle: note.title });
-          html = r3.html;
-          extractedImages = extractedImages.concat(r3.assets);
-        } else if (inlineImages && html) {
-          html = await inlineRemoteImages(html, imgStats, { noteId: note.id, noteTitle: note.title });
         }
 
         markdown = html ? postProcessMarkdown(td.turndown(html)) : "";
       }
 
-      // 添加 YAML frontmatter
-      const frontmatter = [
-        "---",
-        `title: "${note.title.replace(/"/g, '\\"')}"`,
-        `contentFormat: "${note.contentFormat || 'tiptap-json'}"`,
-        `created: ${note.createdAt}`,
-        `updated: ${note.updatedAt}`,
-        "---",
-        "",
-      ].join("\n");
-
-      const fullContent = frontmatter + markdown;
-
-      // 确定文件路径（folder 在抽图前已计算）
-      const count = folderCounts.get(folder) || 0;
-      folderCounts.set(folder, count + 1);
-
-      let fileName = sanitizeFilename(note.title);
-      // 避免同名文件冲突
-      const testPath = `${folder}/${fileName}.md`;
-      if (zip.file(testPath)) {
-        fileName = `${fileName}_${count + 1}`;
-      }
-
-      zip.file(`${folder}/${fileName}.md`, fullContent);
-
-      // 把本笔记抽出的图片写入 zip（同一 hash 在同目录只写一次）
-      for (const img of extractedImages) {
-        const fullPath = `${folder}/${img.relPath}`;
-        if (writtenImages.has(fullPath)) continue;
-        writtenImages.add(fullPath);
-        zip.file(fullPath, img.base64, { base64: true });
-      }
-    }
-
-    // 3. 添加元数据
-    zip.file(
-      "metadata.json",
-      JSON.stringify({
-        version: "1.0",
-        app: "nowen-note",
-        exportedAt: new Date().toISOString(),
-        totalNotes: total,
-        notebooks: Array.from(folderCounts.entries()).map(([name, count]) => ({ name, count })),
-        // P0-2：汇总在 metadata 里，快速看总体；明细看 export-warnings.json
-        imageStats: { ok: imgStats.ok, failed: imgStats.failed },
-        formatStats,
-      }, null, 2)
-    );
-
-    // 3.1 如果有图片处理失败，写明细信息到 export-warnings.json，让用户能看到
-    // “哪些笔记的哪些图”失败了，而不是只看到一个“失败 N 张”的总数。
-    if (imgStats.failures.length > 0) {
-      zip.file(
-        "export-warnings.json",
-        JSON.stringify({
-          version: "1.0",
-          app: "nowen-note",
-          generatedAt: new Date().toISOString(),
-          summary: { ok: imgStats.ok, failed: imgStats.failed },
-          failures: imgStats.failures,
-          hint: "请检查：原始附件是否仍在（/api/attachments/<id>）、网络是否可用。导入到其它实例时可能出现这些图加载失败。",
-        }, null, 2)
-      );
-    }
-
-    // 4. 生成 ZIP
-    onProgress?.({ phase: "packing", current: total, total, message: i18n.t('export.generatingZip') });
-    const blob = await zip.generateAsync(
-      {
-        type: "blob",
-        compression: "DEFLATE",
-        compressionOptions: { level: 6 },
-      },
-      (meta) => {
-        onProgress?.({
-          phase: "packing",
-          current: Math.round(meta.percent),
-          total: 100,
-          message: i18n.t('export.compressing', { percent: Math.round(meta.percent) }),
-        });
-      }
-    );
-
-    // 5. 触发下载
-    const date = new Date().toISOString().slice(0, 10);
-    saveAs(blob, `nowen-note_backup_${date}.zip`);
-
-    // 若有图片下载失败，给用户一个非阻塞警告（done 前多 emit 一条 error 消息）
-    if (imgStats.failed > 0) {
-      onProgress?.({
-        phase: "error",
-        current: imgStats.failed,
-        total: imgStats.ok + imgStats.failed,
-        message: i18n.t('export.someImagesFailed', { count: imgStats.failed }),
+      preparedNotes.push({
+        id: note.id,
+        title: note.title,
+        notebookName: note.notebookName,
+        createdAt: note.createdAt,
+        updatedAt: note.updatedAt,
+        contentFormat: note.contentFormat,
+        markdown,
+        inlineAssets: extractedImages,
       });
+    }
+
+    // 3. 后端异步流式打包。轮询任务状态不会占用一个长连接，也不会触发 NAS 代理超时。
+    onProgress?.({ phase: "packing", current: 0, total: 100, message: i18n.t('export.generatingZip') });
+    const created = await api.createMarkdownExportJob(preparedNotes, {
+      inlineImages,
+      workspaceId: options?.workspaceId,
+    });
+    // 服务端已接收任务后立即释放转换结果和原始列表，避免轮询期间继续占用浏览器内存。
+    preparedNotes.length = 0;
+    notes.length = 0;
+    let job = created.job;
+    const deadline = Date.now() + 30 * 60 * 1000;
+    while (job.state === "queued" || job.state === "building") {
+      if (Date.now() > deadline) throw new Error("导出任务超时，请缩小导出范围后重试");
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      job = (await api.getMarkdownExportJob(job.id)).job;
+      const percent = job.total > 0 ? Math.min(99, Math.round((job.current / job.total) * 95)) : 0;
+      onProgress?.({ phase: "packing", current: percent, total: 100, message: job.message });
+    }
+    if (job.state === "error") throw new Error(job.message || "生成 ZIP 失败");
+    if (!job.downloadToken) throw new Error("导出任务完成但没有生成下载链接");
+    api.downloadMarkdownExport(job.downloadToken, job.filename);
+
+    if (job.warnings > 0) {
+      onProgress?.({ phase: "error", current: job.warnings, total: job.warnings, message: job.message });
     }
     onProgress?.({ phase: "done", current: total, total, message: i18n.t('export.exportComplete') });
     return true;
@@ -1434,15 +1344,6 @@ export async function exportSingleNote(
       const r = await extractDataImages(html, registry);
       html = r.html;
       extractedImages = r.images;
-
-      // 同样把 /api/attachments/<id> 的图片一起拉下来
-      const stats: ImgStats = { ok: 0, failed: 0, failures: [] };
-      const r2 = await fetchRemoteImages(html, registry, stats, { noteId: note.id, noteTitle: note.title });
-      html = r2.html;
-      extractedImages = extractedImages.concat(r2.images);
-      if (stats.failed > 0) {
-        console.warn(`[exportSingleNote] ${stats.failed} image(s) failed to download; keeping original <img src>.`);
-      }
     } else if (inlineImages && html) {
       // inline 模式：把附件内嵌成 data URI，让二次导入时后端自动重建附件
       const stats: ImgStats = { ok: 0, failed: 0, failures: [] };
@@ -1465,20 +1366,35 @@ export async function exportSingleNote(
 
     const fullContent = frontmatter + markdown;
     const safeTitle = sanitizeFilename(note.title);
+    const hasServerAssets = extractedImages.length > 0 || /\/api\/attachments\//i.test(markdown);
 
-    if (extractedImages.length > 0) {
-      // 打成 zip：根目录放 md + assets/
-      const zip = new JSZip();
-      zip.file(`${safeTitle}.md`, fullContent);
-      for (const img of extractedImages) {
-        zip.file(img.relPath, img.base64, { base64: true });
-      }
-      const blob = await zip.generateAsync({
-        type: "blob",
-        compression: "DEFLATE",
-        compressionOptions: { level: 6 },
+    if (!inlineImages && hasServerAssets) {
+      // 单篇含附件时也交给后端流式打包，避免 Blob 下载被 Chrono 等扩展卡在完成状态。
+      const created = await api.createMarkdownExportJob([{
+        id: note.id,
+        title: note.title,
+        notebookName: null,
+        createdAt: note.createdAt,
+        updatedAt: note.updatedAt,
+        contentFormat: note.contentFormat,
+        markdown,
+        inlineAssets: extractedImages,
+      }], {
+        inlineImages: false,
+        layout: "flat",
+        filenameBase: safeTitle,
       });
-      saveAs(blob, `${safeTitle}.zip`);
+      let job = created.job;
+      const deadline = Date.now() + 30 * 60 * 1000;
+      while (job.state === "queued" || job.state === "building") {
+        if (Date.now() > deadline) throw new Error("导出任务超时，请稍后重试");
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        job = (await api.getMarkdownExportJob(job.id)).job;
+      }
+      if (job.state === "error") throw new Error(job.message || "生成 ZIP 失败");
+      if (!job.downloadToken) throw new Error("导出任务完成但没有生成下载链接");
+      api.downloadMarkdownExport(job.downloadToken, job.filename);
+      if (job.warnings > 0) console.warn(`[exportSingleNote] ${job.message}`);
     } else {
       const blob = new Blob([fullContent], { type: "text/markdown;charset=utf-8" });
       saveAs(blob, `${safeTitle}.md`);
@@ -1766,7 +1682,8 @@ export async function exportSingleNoteAsPDF(noteId: string): Promise<ExportPdfRe
     // —— Web 直接下载 PDF ——
     const blob = await renderPrintableHtmlToPdfBlob(docHtml);
     const filename = `${sanitizeFilename(note.title) || "note"}.pdf`;
-    saveAs(blob, filename);
+    const staged = await api.stageGeneratedExport(blob, filename);
+    api.downloadMarkdownExport(staged.downloadToken, staged.filename);
     return { ok: true, mode: "web" };
   } catch (error) {
     console.error("导出 PDF 失败:", error);

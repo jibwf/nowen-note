@@ -12,6 +12,7 @@ import tagsRouter from "./routes/tags";
 import searchRouter from "./routes/search";
 import tasksRouter from "./routes/tasks";
 import exportRouter from "./routes/export";
+import { handleMarkdownExportDownload } from "./services/markdownExportJobs";
 import dataFileRouter from "./routes/data-file";
 import settingsRouter from "./routes/settings";
 import fontsRouter from "./routes/fonts";
@@ -79,7 +80,7 @@ app.use("*", cors({
     return resolveCorsOrigin({ origin, isProd, corsOrigins });
   },
   allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowHeaders: ["Content-Type", "X-User-Id", "Authorization", "X-Sudo-Token", "X-Connection-Id", "X-Requested-With", "X-Request-Id"],
+  allowHeaders: ["Content-Type", "X-User-Id", "Authorization", "X-Sudo-Token", "X-Connection-Id", "X-Requested-With", "X-Request-Id", "X-Export-Filename"],
   credentials: true,
 }));
 
@@ -303,6 +304,11 @@ app.get("/api/fonts/file/:id", (c) => {
 //     走 JWT 中间件必然 401。和字体一样把下载 handler 注册在 JWT 中间件之前。
 //   - 授权靠附件 id 不可枚举（uuid）保护；详细权衡见 routes/attachments.ts 顶部注释。
 app.get("/api/attachments/:id", handleDownloadAttachment);
+
+// 导出任务生成的 ZIP 使用随机 256-bit capability token 下载。
+// 浏览器原生下载请求无法携带 localStorage 中的 Authorization header，因此必须在
+// JWT 中间件之前注册；token 不可枚举、30 分钟过期，且响应禁止缓存。
+app.get("/api/export/download/:token", handleMarkdownExportDownload);
 
 // 任务附件下载（无需 JWT），与 attachments 同款"id 不可枚举"授权模型。
 // 任务列表里的图片缩略图通过 <img src="/api/task-attachments/<id>"> 拉取。

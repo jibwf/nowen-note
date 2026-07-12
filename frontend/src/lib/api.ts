@@ -1859,6 +1859,90 @@ export const api = {
     const qs = ws && ws !== "personal" ? `?workspaceId=${encodeURIComponent(ws)}` : "";
     return request<any[]>(`/export/notes${qs}`);
   },
+  createMarkdownExportJob: (
+    notes: Array<{
+      id: string;
+      title: string;
+      notebookName: string | null;
+      createdAt: string;
+      updatedAt: string;
+      contentFormat?: string;
+      markdown: string;
+      inlineAssets?: Array<{ relPath: string; base64: string }>;
+    }>,
+    options?: {
+      inlineImages?: boolean;
+      workspaceId?: string;
+      layout?: "notebooks" | "flat";
+      filenameBase?: string;
+    },
+  ) => {
+    const params = new URLSearchParams();
+    if (options?.workspaceId && options.workspaceId !== "personal") {
+      params.set("workspaceId", options.workspaceId);
+    }
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    return request<{
+      job: {
+        id: string;
+        state: "queued" | "building" | "ready" | "error";
+        current: number;
+        total: number;
+        message: string;
+        filename?: string;
+        downloadToken?: string;
+        warnings: number;
+      };
+    }>(`/export/markdown-package/jobs${qs}`, {
+      method: "POST",
+      body: JSON.stringify({
+        notes,
+        inlineImages: options?.inlineImages === true,
+        layout: options?.layout,
+        filenameBase: options?.filenameBase,
+      }),
+    });
+  },
+  getMarkdownExportJob: (jobId: string) =>
+    request<{
+      job: {
+        id: string;
+        state: "queued" | "building" | "ready" | "error";
+        current: number;
+        total: number;
+        message: string;
+        filename?: string;
+        downloadToken?: string;
+        warnings: number;
+      };
+    }>(`/export/markdown-package/jobs/${encodeURIComponent(jobId)}`),
+  downloadMarkdownExport: (downloadToken: string, filename?: string) => {
+    const a = document.createElement("a");
+    a.href = `${getBaseUrl()}/export/download/${encodeURIComponent(downloadToken)}`;
+    a.download = filename || "nowen-note.zip";
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  },
+  stageGeneratedExport: async (blob: Blob, filename: string) => {
+    const token = getToken();
+    const res = await fetch(`${getBaseUrl()}/export/download-jobs`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": blob.type || "application/octet-stream",
+        "X-Export-Filename": encodeURIComponent(filename),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: blob,
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new Error(error.error || `HTTP ${res.status}`);
+    }
+    return res.json() as Promise<{ downloadToken: string; filename: string; size: number }>;
+  },
   /** 导出 Nowen 数据包（.nowen.zip） */
   downloadNowenPackage: async (opts?: { notebookId?: string; includeSubNotebooks?: boolean; includeTrashed?: boolean }) => {
     const ws = getCurrentWorkspace();

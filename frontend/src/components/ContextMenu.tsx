@@ -496,7 +496,7 @@ export default function ContextMenu({
         const { exportNoteAsDocx, downloadDocxBlob } = await import("@/lib/wordNoteService");
         const title = fresh.title || t("common.untitledNote") || "未命名笔记";
         const blob = await exportNoteAsDocx(fresh.content || "", title);
-        downloadDocxBlob(blob, title);
+        await downloadDocxBlob(blob, title);
         toast.dismiss(toastId);
         toast.success(t("export.exportComplete"));
       } catch (err: any) {

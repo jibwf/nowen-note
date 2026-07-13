@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
-import { Editor, Extension } from "@tiptap/react";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Editor } from "@tiptap/react";
+import {
+  deactivateSlashCommands,
+  getSlashEditorId,
+} from "@/components/extensions/SlashCommandExtension";
+export { createSlashExtension } from "@/components/extensions/SlashCommandExtension";
 import {
   Heading1, Heading2, Heading3, Heading4, Heading5, Heading6, List, ListOrdered, CheckSquare,
   Quote, FileCode, Minus, ImagePlus, Sparkles,
@@ -63,22 +67,31 @@ function SlashMenu({ editor, items, query, position, onSelect, onClose }: SlashM
     }
   }, [selectedIndex]);
 
-  // 键盘事件
+  // 键盘事件。捕获后停止继续传到 ProseMirror，避免 Enter/Escape 同时
+  // 被菜单和编辑器处理，造成命令执行两次或额外插入段落。
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setSelectedIndex((prev) => (prev + 1) % filteredItems.length);
+        e.stopPropagation();
+        if (filteredItems.length > 0) {
+          setSelectedIndex((prev) => (prev + 1) % filteredItems.length);
+        }
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        setSelectedIndex((prev) => (prev - 1 + filteredItems.length) % filteredItems.length);
+        e.stopPropagation();
+        if (filteredItems.length > 0) {
+          setSelectedIndex((prev) => (prev - 1 + filteredItems.length) % filteredItems.length);
+        }
       } else if (e.key === "Enter") {
         e.preventDefault();
+        e.stopPropagation();
         if (filteredItems[selectedIndex]) {
           onSelect(filteredItems[selectedIndex]);
         }
       } else if (e.key === "Escape") {
         e.preventDefault();
+        e.stopPropagation();
         onClose();
       }
     };
@@ -87,15 +100,15 @@ function SlashMenu({ editor, items, query, position, onSelect, onClose }: SlashM
     return () => document.removeEventListener("keydown", handleKeyDown, true);
   }, [filteredItems, selectedIndex, onSelect, onClose]);
 
-  // 点击外部关闭
+  // 点击外部关闭。使用 pointerdown capture，让鼠标、触控笔和触屏路径一致。
   useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
+    const handlePointerDown = (e: PointerEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         onClose();
       }
     };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    return () => document.removeEventListener("pointerdown", handlePointerDown, true);
   }, [onClose]);
 
   if (filteredItems.length === 0) {
@@ -131,6 +144,7 @@ function SlashMenu({ editor, items, query, position, onSelect, onClose }: SlashM
                 <button
                   key={item.id}
                   ref={(el) => { itemRefs.current[idx] = el; }}
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => onSelect(item)}
                   onMouseEnter={() => setSelectedIndex(idx)}
                   className={cn(
@@ -520,105 +534,6 @@ export function getDefaultSlashCommands(t: (key: string) => string, onImageUploa
   ];
 }
 
-// Tiptap 扩展：监听 "/" 输入
-const slashPluginKey = new PluginKey("slashCommands");
-
-export function createSlashExtension(
-  onActivate: (query: string, pos: { top: number; left: number; from: number }) => void,
-  onDeactivate: () => void,
-  onQueryChange: (query: string) => void,
-) {
-  return Extension.create({
-    name: "slashCommands",
-
-    addProseMirrorPlugins() {
-      const editor = this.editor;
-      return [
-        new Plugin({
-          key: slashPluginKey,
-          state: {
-            init() {
-              return { active: false, from: 0, query: "" };
-            },
-            apply(tr, prev) {
-              const meta = tr.getMeta(slashPluginKey);
-              if (meta) return meta;
-              // 如果文档变化了，检查是否还在斜杠命令模式
-              if (tr.docChanged && prev.active) {
-                const { from } = prev;
-                const $pos = tr.doc.resolve(Math.min(from, tr.doc.content.size));
-                const textBefore = $pos.parent.textBetween(
-                  0,
-                  Math.min($pos.parentOffset, $pos.parent.content.size),
-                  undefined,
-                  "\ufffc"
-                );
-                // 查找最后一个 "/"
-                const slashIdx = textBefore.lastIndexOf("/");
-                if (slashIdx === -1) {
-                  return { active: false, from: 0, query: "" };
-                }
-                const query = textBefore.slice(slashIdx + 1);
-                // 如果查询中包含空格，关闭菜单
-                if (query.includes(" ") || query.includes("\n")) {
-                  return { active: false, from: 0, query: "" };
-                }
-                return { ...prev, query };
-              }
-              return prev;
-            },
-          },
-          props: {
-            handleKeyDown(view, event) {
-              const state = slashPluginKey.getState(view.state);
-              if (event.key === "/" && !state?.active) {
-                // 检查光标前是否是行首或空格
-                const { $from } = view.state.selection;
-                const textBefore = $from.parent.textBetween(0, $from.parentOffset, undefined, "\ufffc");
-                const trimmed = textBefore.trim();
-                // 只在行首或空内容时触发
-                if (trimmed === "" || textBefore.endsWith(" ")) {
-                  // 延迟激活，等 "/" 字符插入后
-                  setTimeout(() => {
-                    const { state: newState } = view;
-                    const { from } = newState.selection;
-                    const coords = view.coordsAtPos(from);
-                    const editorRect = view.dom.getBoundingClientRect();
-                    
-                    const tr = newState.tr.setMeta(slashPluginKey, {
-                      active: true,
-                      from: from,
-                      query: "",
-                    });
-                    view.dispatch(tr);
-
-                    onActivate("", {
-                      top: Math.min(coords.bottom + 4, window.innerHeight - 340),
-                      left: Math.min(coords.left, window.innerWidth - 300),
-                      from: from - 1, // "/" 字符的位置
-                    });
-                  }, 10);
-                }
-              }
-              return false;
-            },
-          },
-          view() {
-            return {
-              update(view) {
-                const state = slashPluginKey.getState(view.state);
-                if (state?.active) {
-                  onQueryChange(state.query);
-                }
-              },
-            };
-          },
-        }),
-      ];
-    },
-  });
-}
-
 export interface SlashCommandsRef {
   isActive: boolean;
 }
@@ -628,68 +543,99 @@ interface SlashCommandsProps {
   items: SlashCommandItem[];
 }
 
+interface SlashActivateDetail {
+  query: string;
+  top: number;
+  left: number;
+  from: number;
+  sourceId?: string;
+}
+
+interface SlashScopedDetail {
+  sourceId?: string;
+}
+
+interface SlashQueryDetail extends SlashScopedDetail {
+  query: string;
+}
+
 export const SlashCommandsMenu = forwardRef<SlashCommandsRef, SlashCommandsProps>(
   function SlashCommandsMenu({ editor, items }, ref) {
     const [isActive, setIsActive] = useState(false);
     const [query, setQuery] = useState("");
     const [position, setPosition] = useState({ top: 0, left: 0 });
     const slashFrom = useRef(0);
+    const editorId = editor ? getSlashEditorId(editor) : null;
 
     useImperativeHandle(ref, () => ({
       get isActive() { return isActive; },
     }));
 
+    const resetLocalState = useCallback(() => {
+      setIsActive(false);
+      setQuery("");
+      slashFrom.current = 0;
+    }, []);
+
     const handleSelect = useCallback((item: SlashCommandItem) => {
       if (!editor) return;
-      // 删除 "/" 和查询文本
-      const { state } = editor;
       const from = slashFrom.current;
-      const to = state.selection.from;
-      editor.chain().focus().deleteRange({ from, to }).run();
-      // 执行命令
+      const to = editor.state.selection.from;
+
+      // Reset the authoritative plugin state before any document mutation.
+      // This prevents a delete/action transaction from racing a delayed or
+      // stale activation, which was the single-use failure seen in Opera.
+      resetLocalState();
+      deactivateSlashCommands(editor);
+
+      if (from > 0 && from <= to && to <= editor.state.doc.content.size) {
+        editor.chain().focus().deleteRange({ from, to }).run();
+      } else {
+        editor.commands.focus();
+      }
       item.action(editor);
-      // 关闭菜单
-      setIsActive(false);
-      // 重置 plugin state
-      const tr = editor.state.tr.setMeta(slashPluginKey, { active: false, from: 0, query: "" });
-      editor.view.dispatch(tr);
-    }, [editor]);
+    }, [editor, resetLocalState]);
 
     const handleClose = useCallback(() => {
-      setIsActive(false);
-      if (editor) {
-        const tr = editor.state.tr.setMeta(slashPluginKey, { active: false, from: 0, query: "" });
-        editor.view.dispatch(tr);
-      }
-    }, [editor]);
+      resetLocalState();
+      deactivateSlashCommands(editor);
+    }, [editor, resetLocalState]);
 
-    // 暴露激活/关闭方法给外部
+    // 事件按 editor id 隔离，分屏或多编辑器同时挂载时，只有来源编辑器
+    // 对应的菜单会响应，避免重复菜单和重复命令执行。
     useEffect(() => {
-      if (!editor) return;
-      // 通过自定义事件通信
-      const handleActivate = (e: CustomEvent) => {
+      if (!editor || !editorId) return;
+      const isOwnEvent = (sourceId?: string) => !sourceId || sourceId === editorId;
+
+      const handleActivate = (event: Event) => {
+        const detail = (event as CustomEvent<SlashActivateDetail>).detail;
+        if (!detail || !isOwnEvent(detail.sourceId)) return;
         setIsActive(true);
-        setQuery(e.detail.query);
-        setPosition({ top: e.detail.top, left: e.detail.left });
-        slashFrom.current = e.detail.from;
+        setQuery(detail.query);
+        setPosition({ top: detail.top, left: detail.left });
+        slashFrom.current = detail.from;
       };
-      const handleDeactivate = () => {
-        setIsActive(false);
+      const handleDeactivate = (event: Event) => {
+        const detail = (event as CustomEvent<SlashScopedDetail>).detail;
+        if (!isOwnEvent(detail?.sourceId)) return;
+        resetLocalState();
       };
-      const handleQueryChange = (e: CustomEvent) => {
-        setQuery(e.detail.query);
+      const handleQueryChange = (event: Event) => {
+        const detail = (event as CustomEvent<SlashQueryDetail>).detail;
+        if (!detail || !isOwnEvent(detail.sourceId)) return;
+        setQuery(detail.query);
       };
 
-      window.addEventListener("slash-activate" as any, handleActivate as any);
-      window.addEventListener("slash-deactivate" as any, handleDeactivate as any);
-      window.addEventListener("slash-query" as any, handleQueryChange as any);
+      window.addEventListener("slash-activate", handleActivate);
+      window.addEventListener("slash-deactivate", handleDeactivate);
+      window.addEventListener("slash-query", handleQueryChange);
 
       return () => {
-        window.removeEventListener("slash-activate" as any, handleActivate as any);
-        window.removeEventListener("slash-deactivate" as any, handleDeactivate as any);
-        window.removeEventListener("slash-query" as any, handleQueryChange as any);
+        window.removeEventListener("slash-activate", handleActivate);
+        window.removeEventListener("slash-deactivate", handleDeactivate);
+        window.removeEventListener("slash-query", handleQueryChange);
       };
-    }, [editor]);
+    }, [editor, editorId, resetLocalState]);
 
     if (!isActive || !editor) return null;
 
@@ -706,17 +652,28 @@ export const SlashCommandsMenu = forwardRef<SlashCommandsRef, SlashCommandsProps
   }
 );
 
-// 辅助函数：创建事件分发器
+// 辅助函数：创建事件分发器。sourceId 由 ProseMirror 扩展传入，用于
+// 多编辑器实例隔离；保持参数可选以兼容历史调用方。
 export function createSlashEventHandlers() {
   return {
-    onActivate: (query: string, pos: { top: number; left: number; from: number }) => {
-      window.dispatchEvent(new CustomEvent("slash-activate", { detail: { query, ...pos } }));
+    onActivate: (
+      query: string,
+      pos: { top: number; left: number; from: number },
+      sourceId?: string,
+    ) => {
+      window.dispatchEvent(new CustomEvent<SlashActivateDetail>("slash-activate", {
+        detail: { query, ...pos, sourceId },
+      }));
     },
-    onDeactivate: () => {
-      window.dispatchEvent(new CustomEvent("slash-deactivate"));
+    onDeactivate: (sourceId?: string) => {
+      window.dispatchEvent(new CustomEvent<SlashScopedDetail>("slash-deactivate", {
+        detail: { sourceId },
+      }));
     },
-    onQueryChange: (query: string) => {
-      window.dispatchEvent(new CustomEvent("slash-query", { detail: { query } }));
+    onQueryChange: (query: string, sourceId?: string) => {
+      window.dispatchEvent(new CustomEvent<SlashQueryDetail>("slash-query", {
+        detail: { query, sourceId },
+      }));
     },
   };
 }

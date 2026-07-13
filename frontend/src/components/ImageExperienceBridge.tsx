@@ -401,12 +401,12 @@ export default function ImageExperienceBridge() {
           </button>
         </div>
 
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-5 gap-1.5">
           {[
             { index: 0, icon: ExternalLink, fallback: isEnglishUi() ? "View" : "查看大图" },
+            { index: 1, icon: Download, fallback: isEnglishUi() ? "Download" : "下载图片" },
             { index: 2, icon: Upload, fallback: isEnglishUi() ? "Replace" : "替换图片" },
             { index: 5, icon: Palette, fallback: isEnglishUi() ? "Edit" : "编辑图片" },
-            { index: 1, icon: Download, fallback: isEnglishUi() ? "Download" : "下载图片" },
           ].map((item) => {
             const Icon = item.icon;
             const original = mobileSheet.actionButtons[item.index];
@@ -416,60 +416,69 @@ export default function ImageExperienceBridge() {
                 type="button"
                 disabled={original?.disabled}
                 onClick={() => runOriginalImageAction(item.index)}
-                className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl border border-app-border bg-app-surface px-1 py-2 text-[11px] leading-tight text-tx-secondary active:bg-app-hover disabled:opacity-40"
+                data-nowen-image-primary-action="true"
+                className="flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl border border-app-border bg-app-surface px-1 py-2 text-[10px] leading-tight text-tx-secondary active:bg-app-hover disabled:opacity-40"
               >
                 <Icon size={17} />
-                <span>{buttonLabel(original, item.fallback)}</span>
+                <span className="max-w-full truncate">{buttonLabel(original, item.fallback)}</span>
               </button>
             );
           })}
+          <button
+            type="button"
+            onClick={() => setMoreOpen((open) => !open)}
+            data-nowen-image-primary-action="true"
+            data-nowen-image-more-trigger="true"
+            className={`flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl border px-1 py-2 text-[10px] leading-tight active:bg-app-hover ${moreOpen ? "border-accent-primary bg-accent-primary/10 text-accent-primary" : "border-app-border bg-app-surface text-tx-secondary"}`}
+            aria-expanded={moreOpen}
+          >
+            <MoreHorizontal size={17} />
+            {isEnglishUi() ? "More" : "更多"}
+          </button>
         </div>
 
-        <div className="mt-3 flex items-center gap-2">
-          <div className="min-w-0 flex-1 overflow-x-auto pb-1 hide-scrollbar">
-            <div className="flex min-w-max gap-2">
+        {moreOpen && (
+          <div
+            className="mt-3 rounded-xl border border-app-border bg-app-hover/40 p-2.5"
+            data-nowen-image-more-panel="true"
+          >
+            <div className="mb-1.5 text-xs font-medium text-tx-tertiary">
+              {isEnglishUi() ? "Image size" : "图片尺寸"}
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1 hide-scrollbar">
               {mobileSheet.sizeButtons.map((button, index) => (
                 <button
                   key={index}
                   type="button"
                   disabled={button.disabled}
                   onClick={() => runOriginalSizeAction(index)}
-                  className="h-9 shrink-0 rounded-lg border border-app-border bg-app-surface px-3 text-xs text-tx-secondary active:bg-app-hover disabled:opacity-40"
+                  className="h-10 shrink-0 rounded-lg border border-app-border bg-app-surface px-3 text-xs text-tx-secondary active:bg-app-hover disabled:opacity-40"
                 >
                   {buttonLabel(button, index === 4 ? (isEnglishUi() ? "Original" : "原始") : `${(index + 1) * 25}%`)}
                 </button>
               ))}
             </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setMoreOpen((open) => !open)}
-            className="flex h-9 shrink-0 items-center gap-1 rounded-lg border border-app-border bg-app-surface px-3 text-xs text-tx-secondary active:bg-app-hover"
-            aria-expanded={moreOpen}
-          >
-            <MoreHorizontal size={16} />
-            {isEnglishUi() ? "More" : "更多"}
-          </button>
-        </div>
 
-        {moreOpen && (
-          <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl bg-app-hover/50 p-2">
-            <button
-              type="button"
-              onClick={() => runOriginalImageAction(3)}
-              className="flex h-10 items-center justify-center gap-2 rounded-lg bg-app-surface text-xs text-tx-secondary active:bg-app-hover"
-            >
-              <Copy size={15} />
-              {buttonLabel(mobileSheet.actionButtons[3], isEnglishUi() ? "Copy address" : "复制图片地址")}
-            </button>
-            <button
-              type="button"
-              onClick={() => runOriginalImageAction(4)}
-              className="flex h-10 items-center justify-center gap-2 rounded-lg bg-red-500/10 text-xs text-red-500 active:bg-red-500/20"
-            >
-              <Trash2 size={15} />
-              {buttonLabel(mobileSheet.actionButtons[4], isEnglishUi() ? "Delete" : "删除图片")}
-            </button>
+            <div data-nowen-image-transform-slot="true" />
+
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => runOriginalImageAction(3)}
+                className="flex h-11 items-center justify-center gap-2 rounded-lg border border-app-border bg-app-surface text-xs text-tx-secondary active:bg-app-hover"
+              >
+                <Copy size={15} />
+                {buttonLabel(mobileSheet.actionButtons[3], isEnglishUi() ? "Copy address" : "复制图片地址")}
+              </button>
+              <button
+                type="button"
+                onClick={() => runOriginalImageAction(4)}
+                className="flex h-11 items-center justify-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 text-xs text-red-500 active:bg-red-500/20"
+              >
+                <Trash2 size={15} />
+                {buttonLabel(mobileSheet.actionButtons[4], isEnglishUi() ? "Delete" : "删除图片")}
+              </button>
+            </div>
           </div>
         )}
       </section>

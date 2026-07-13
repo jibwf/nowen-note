@@ -48,9 +48,7 @@ function findDesktopImageToolbar(): HTMLElement | null {
 }
 
 function findCompactMobileSheet(): HTMLElement | null {
-  return document.querySelector<HTMLElement>(
-    'section[role="dialog"][aria-label="图片操作"], section[role="dialog"][aria-label="Image actions"]',
-  );
+  return document.querySelector<HTMLElement>('[data-nowen-image-transform-slot="true"]');
 }
 
 export function findImageTransformWrapper(dom: HTMLElement | null): HTMLElement | null {

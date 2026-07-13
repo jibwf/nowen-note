@@ -181,6 +181,25 @@ describe("StatsCenter", () => {
     expect(host.textContent).not.toContain("已归类项目");
   });
 
+  it("renders a completion summary and project progress bars on the dashboard", async () => {
+    await renderStats(root, {
+      tasks: [
+        makeTask({ id: "task-done", isCompleted: 1, status: "done" }),
+        makeTask({ id: "task-pending", projectId: "project-1" }),
+      ],
+      projects: [
+        { id: "project-1", userId: "u1", workspaceId: null, name: "Alpha", icon: "briefcase", color: "#1d4ed8", sortOrder: 0, createdAt: "2026-01-01T00:00:00", updatedAt: "2026-01-01T00:00:00" },
+      ],
+      taskStats: { total: 2, completed: 1, pending: 1, today: 0, overdue: 0, week: 0 },
+    });
+
+    expect(host.querySelector('[data-testid="stats-completion-summary"]')).not.toBeNull();
+
+    await clickButton(host, "stats.tabs.tasks");
+
+    expect(host.querySelector('[data-testid="stats-project-progress"]')).not.toBeNull();
+  });
+
   it("renders archived habit logs, active-only week view, and month/year summaries", async () => {
     await renderStats(root, {
       habits: [

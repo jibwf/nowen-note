@@ -44,7 +44,7 @@ const external = [
 
 const start = Date.now();
 await build({
-  entryPoints: [join(__dirname, "src", "index.ts")],
+  entryPoints: [join(__dirname, "src", "index.hardened.ts")],
   bundle: true,
   platform: "node",
   format: "cjs",

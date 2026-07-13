@@ -436,6 +436,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     "userId" TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     "isCompleted" BOOLEAN DEFAULT false,
+    "completedAt" TIMESTAMPTZ,
     priority INTEGER DEFAULT 2,
     "dueDate" TEXT,
     "noteId" TEXT REFERENCES notes(id) ON DELETE SET NULL,
@@ -466,6 +467,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks("dueDate");
 CREATE INDEX IF NOT EXISTS idx_tasks_dueAt ON tasks("dueAt");
 CREATE INDEX IF NOT EXISTS idx_tasks_workspace ON tasks("workspaceId");
 CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks("isCompleted");
+CREATE INDEX IF NOT EXISTS idx_tasks_completed_at ON tasks("completedAt");
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks("projectId");
 
 CREATE TABLE IF NOT EXISTS task_templates (

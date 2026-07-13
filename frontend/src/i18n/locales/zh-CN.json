@@ -1644,18 +1644,112 @@
     "status": {
       "success": "成功",
       "partial": "部分",
-      "failure": "失败"
+      "failure": "失败",
+      "archived": "已归档"
     },
     "actions": {
       "success": "成功",
       "partial": "部分",
       "failure": "失败",
-      "archive": "归档"
+      "archive": "归档",
+      "unarchive": "取消归档",
+      "delete": "删除"
+    },
+    "filters": {
+      "active": "活跃",
+      "archived": "已归档",
+      "all": "全部"
     },
     "toast": {
       "createFailed": "创建习惯失败",
       "checkinUpdated": "打卡已更新",
-      "archived": "习惯已归档"
+      "archived": "习惯已归档",
+      "unarchived": "习惯已恢复",
+      "deleted": "习惯已删除"
+    }
+  },
+  "stats": {
+    "title": "统计",
+    "subtitle": "概览任务执行与习惯打卡表现",
+    "summaryHint": "统计页包含总览、任务统计和习惯统计。",
+    "refresh": "刷新",
+    "loading": "正在加载统计...",
+    "loadFailed": "加载统计失败",
+    "tabs": {
+      "overview": "概览",
+      "tasks": "任务统计",
+      "habits": "习惯统计"
+    },
+    "overview": {
+      "totalTasks": "任务总数",
+      "taskCompletion": "完成率 {{percent}}%",
+      "pendingTasks": "待完成任务",
+      "overdueTasks": "逾期 {{count}} 项",
+      "activeHabits": "活跃习惯",
+      "archivedHabits": "归档 {{count}} 个",
+      "currentHabitStreak": "当前连续打卡",
+      "totalCheckins": "累计打卡 {{count}} 次",
+      "recentTaskActivity": "最近任务动态",
+      "recentTaskActivityDesc": "按创建 / 完成时间追踪任务活动",
+      "recentHabitActivity": "最近打卡动态",
+      "recentHabitActivityDesc": "查看最近一次次打卡的日期与备注"
+    },
+    "task": {
+      "total": "全部任务",
+      "completed": "已完成 {{count}} 项",
+      "completionRate": "完成率",
+      "pending": "待完成 {{count}} 项",
+      "overdue": "逾期任务",
+      "today": "今天到期 {{count}} 项",
+      "projectCoverage": "项目归类率",
+      "projectCoverageHint": "{{count}} 项已归类到项目",
+      "statusBreakdown": "状态分布",
+      "projectBreakdown": "项目分布",
+      "projectAssigned": "已归类项目",
+      "completedAt": "完成时间",
+      "recordCreated": "任务创建",
+      "recordCompleted": "任务完成",
+      "trendTitle": "近 12 周任务趋势",
+      "trendDesc": "左侧为创建数，右侧为完成数",
+      "trendLegend": "创建 {{created}} · 完成 {{completed}}",
+      "heatmapTitle": "年度完成热力图",
+      "heatmapDesc": "按天查看任务完成密度",
+      "empty": "暂无可统计的任务",
+      "noRecords": "暂无任务记录",
+      "tabs": {
+        "overview": "概览",
+        "details": "任务详情",
+        "records": "任务记录",
+        "trends": "任务趋势",
+        "heatmap": "年度热力图"
+      }
+    },
+    "habit": {
+      "habitCount": "习惯总数",
+      "activeArchived": "活跃 {{active}} · 归档 {{archived}}",
+      "currentStreak": "连续打卡",
+      "checkinDays": "累计打卡 {{count}} 天",
+      "successRate": "有效打卡率",
+      "totalCheckins": "累计打卡 {{count}} 次",
+      "todayCheckins": "今日打卡",
+      "todayCheckinsHint": "已有 {{count}} 个活跃习惯打卡",
+      "statusBreakdown": "打卡状态分布",
+      "archivedVisibility": "归档与历史",
+      "archivedHint1": "活跃、已归档、全部三种列表可随时切换。",
+      "archivedHint2": "归档后的习惯仍保留打卡记录，可在统计页继续查看。",
+      "archivedHint3": "确认不再需要的习惯可直接删除。",
+      "emptyNote": "无备注",
+      "noLogs": "暂无打卡日志",
+      "noActiveHabits": "暂无活跃习惯",
+      "noCheckin": "未打卡",
+      "monthTitle": "本月打卡分布",
+      "tabs": {
+        "overview": "概览",
+        "log": "打卡日志",
+        "week": "周视图",
+        "month": "月视图",
+        "year": "年视图"
+      }
     }
   },
   "tags": {

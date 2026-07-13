@@ -1485,18 +1485,112 @@
     "status": {
       "success": "Success",
       "partial": "Partial",
-      "failure": "Failure"
+      "failure": "Failure",
+      "archived": "Archived"
     },
     "actions": {
       "success": "Success",
       "partial": "Partial",
       "failure": "Failure",
-      "archive": "Archive"
+      "archive": "Archive",
+      "unarchive": "Restore",
+      "delete": "Delete"
+    },
+    "filters": {
+      "active": "Active",
+      "archived": "Archived",
+      "all": "All"
     },
     "toast": {
       "createFailed": "Failed to create habit",
       "checkinUpdated": "Check-in updated",
-      "archived": "Habit archived"
+      "archived": "Habit archived",
+      "unarchived": "Habit restored",
+      "deleted": "Habit deleted"
+    }
+  },
+  "stats": {
+    "title": "Statistics",
+    "subtitle": "Review task execution and habit check-in performance",
+    "summaryHint": "The stats view contains overview, task analytics, and habit analytics.",
+    "refresh": "Refresh",
+    "loading": "Loading statistics...",
+    "loadFailed": "Failed to load statistics",
+    "tabs": {
+      "overview": "Overview",
+      "tasks": "Task Stats",
+      "habits": "Habit Stats"
+    },
+    "overview": {
+      "totalTasks": "Total Tasks",
+      "taskCompletion": "Completion {{percent}}%",
+      "pendingTasks": "Pending Tasks",
+      "overdueTasks": "{{count}} overdue",
+      "activeHabits": "Active Habits",
+      "archivedHabits": "{{count}} archived",
+      "currentHabitStreak": "Current Streak",
+      "totalCheckins": "{{count}} total check-ins",
+      "recentTaskActivity": "Recent Task Activity",
+      "recentTaskActivityDesc": "Track task creation and completion over time",
+      "recentHabitActivity": "Recent Habit Activity",
+      "recentHabitActivityDesc": "See recent check-ins with dates and notes"
+    },
+    "task": {
+      "total": "All Tasks",
+      "completed": "{{count}} completed",
+      "completionRate": "Completion Rate",
+      "pending": "{{count}} pending",
+      "overdue": "Overdue Tasks",
+      "today": "{{count}} due today",
+      "projectCoverage": "Project Coverage",
+      "projectCoverageHint": "{{count}} task(s) assigned to projects",
+      "statusBreakdown": "Status Breakdown",
+      "projectBreakdown": "Project Breakdown",
+      "projectAssigned": "Assigned Projects",
+      "completedAt": "Completed At",
+      "recordCreated": "Task Created",
+      "recordCompleted": "Task Completed",
+      "trendTitle": "12-Week Task Trend",
+      "trendDesc": "Left bar is created, right bar is completed",
+      "trendLegend": "Created {{created}} · Completed {{completed}}",
+      "heatmapTitle": "Yearly Completion Heatmap",
+      "heatmapDesc": "Review completion density by day",
+      "empty": "No tasks available for analytics",
+      "noRecords": "No task records yet",
+      "tabs": {
+        "overview": "Overview",
+        "details": "Task Details",
+        "records": "Task Records",
+        "trends": "Task Trend",
+        "heatmap": "Year Heatmap"
+      }
+    },
+    "habit": {
+      "habitCount": "Habit Count",
+      "activeArchived": "{{active}} active · {{archived}} archived",
+      "currentStreak": "Current Streak",
+      "checkinDays": "{{count}} check-in days",
+      "successRate": "Effective Check-in Rate",
+      "totalCheckins": "{{count}} total check-ins",
+      "todayCheckins": "Today's Check-ins",
+      "todayCheckinsHint": "{{count}} active habit(s) checked in today",
+      "statusBreakdown": "Status Breakdown",
+      "archivedVisibility": "Archive and History",
+      "archivedHint1": "Switch between active, archived, and all habits at any time.",
+      "archivedHint2": "Archived habits keep their historical check-ins and remain visible in stats.",
+      "archivedHint3": "Delete a habit only when you no longer need it.",
+      "emptyNote": "No note",
+      "noLogs": "No check-in logs yet",
+      "noActiveHabits": "No active habits",
+      "noCheckin": "No check-in",
+      "monthTitle": "Current Month Distribution",
+      "tabs": {
+        "overview": "Overview",
+        "log": "Check-in Log",
+        "week": "Week View",
+        "month": "Month View",
+        "year": "Year View"
+      }
     }
   },
   "tags": {

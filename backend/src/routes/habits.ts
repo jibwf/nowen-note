@@ -34,6 +34,23 @@ type HabitListRecord = HabitRecord & {
     todayCheckinDate?: string | null;
 };
 
+type HabitCheckinListRecord = {
+    id: string;
+    habitId: string;
+    userId: string;
+    workspaceId: string | null;
+    checkinDate: string;
+    status: HabitStatus;
+    note: string;
+    createdAt: string;
+    updatedAt: string;
+    habitTitle: string;
+    habitColor: string;
+    habitIcon: string;
+    habitArchivedAt: string | null;
+    creatorName?: string | null;
+};
+
 const STATUS_SET = new Set<HabitStatus>(["success", "partial", "failure"]);
 const ROLE_RANK: Record<string, number> = { viewer: 1, commenter: 2, editor: 3, admin: 4, owner: 5 };
 
@@ -219,6 +236,60 @@ habits.get("/stats", requireWorkspaceFeature("tasks"), (c) => {
     });
 });
 
+habits.get("/checkins", requireWorkspaceFeature("tasks"), (c) => {
+    const db = getDb();
+    const userId = c.req.header("X-User-Id")!;
+    const scope = resolveHabitScope(c, userId);
+    if (scope.error) return c.json({ error: scope.error, code: "FORBIDDEN" }, 403);
+
+    const from = c.req.query("from");
+    const to = c.req.query("to");
+    const includeArchived = c.req.query("includeArchived") !== "0";
+    if ((from && !isValidDateKey(from)) || (to && !isValidDateKey(to))) return invalidDate(c);
+    if (from && to && from > to) {
+        return c.json({ error: "from must not be later than to", code: "INVALID_DATE_RANGE" }, 400);
+    }
+
+    const params: unknown[] = [];
+    const whereParts: string[] = [];
+    if (scope.scope === "workspace") {
+        whereParts.push("h.workspaceId = ?");
+        params.push(scope.workspaceId);
+    } else {
+        whereParts.push("h.userId = ?", "h.workspaceId IS NULL");
+        params.push(userId);
+    }
+    if (!includeArchived) whereParts.push("h.archivedAt IS NULL");
+    if (from) {
+        whereParts.push("hc.checkinDate >= ?");
+        params.push(from);
+    }
+    if (to) {
+        whereParts.push("hc.checkinDate <= ?");
+        params.push(to);
+    }
+
+    const rows = db.prepare(`
+      SELECT
+        hc.*,
+        h.title AS habitTitle,
+        h.color AS habitColor,
+        h.icon AS habitIcon,
+        h.archivedAt AS habitArchivedAt,
+        users.username AS creatorName
+      FROM habit_checkins hc
+      INNER JOIN habits h ON h.id = hc.habitId
+      LEFT JOIN users ON users.id = h.userId
+      WHERE ${whereParts.join(" AND ")}
+      ORDER BY hc.checkinDate DESC, h.sortOrder ASC, hc.createdAt DESC
+    `).all(...params) as HabitCheckinListRecord[];
+
+    return c.json(rows.map((row) => ({
+        ...row,
+        canManage: canManageResource(row.userId, row.workspaceId, userId),
+    })));
+});
+
 habits.post("/", requireWorkspaceFeature("tasks"), async (c) => {
     const db = getDb();
     const userId = c.req.header("X-User-Id")!;
@@ -373,6 +444,22 @@ habits.patch("/:id/archive", async (c) => {
     db.prepare("UPDATE habits SET archivedAt = ?, updatedAt = datetime('now') WHERE id = ?").run(archivedAt, id);
     const updated = db.prepare("SELECT * FROM habits WHERE id = ?").get(id);
     return c.json(updated);
+});
+
+habits.delete("/:id", async (c) => {
+    const db = getDb();
+    const userId = c.req.header("X-User-Id")!;
+    const id = c.req.param("id");
+    const habit = getHabitOr404(id);
+    if (!habit) return c.json({ error: "Habit not found", code: "NOT_FOUND" }, 404);
+    const disabled = rejectDisabledHabitFeature(c, habit.workspaceId);
+    if (disabled) return disabled;
+    if (!canManageResource(habit.userId, habit.workspaceId, userId)) {
+        return c.json({ error: "无权删除该习惯", code: "FORBIDDEN" }, 403);
+    }
+
+    db.prepare("DELETE FROM habits WHERE id = ?").run(id);
+    return c.json({ success: true });
 });
 
 export default habits;

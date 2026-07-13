@@ -396,6 +396,7 @@ export interface Task {
   title: string;
   description: string;
   isCompleted: number;
+  completedAt?: string | null;
   priority: TaskPriority;
   dueDate: string | null;
   /** Phase 2: 精确到分钟的截止时间，ISO 8601 格式（如 2026-06-12T18:00）。兼容旧 dueDate */
@@ -451,6 +452,7 @@ export interface Habit {
   todayStatus?: HabitCheckinStatus | null;
   todayNote?: string | null;
   todayCheckinDate?: string | null;
+  canManage?: boolean;
 }
 
 export interface HabitCheckin {
@@ -463,6 +465,15 @@ export interface HabitCheckin {
   note: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface HabitCheckinListItem extends HabitCheckin {
+  habitTitle: string;
+  habitColor: string;
+  habitIcon: string;
+  habitArchivedAt: string | null;
+  creatorName?: string | null;
+  canManage?: boolean;
 }
 
 export interface HabitStats {

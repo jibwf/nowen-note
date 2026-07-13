@@ -363,14 +363,15 @@ tasks.post("/", requireWorkspaceFeature("tasks"), async (c) => {
   }
 
   const effectiveIsCompleted = status === "done" ? 1 : 0;
+  const effectiveCompletedAt = effectiveIsCompleted ? new Date().toISOString() : null;
 
   const effectiveRepeatEndDate = repeatRule === "none" ? null : repeatEndDate;
   const repeatSequenceIndex = repeatRule === "none" ? null : 1;
 
   db.prepare(`
-    INSERT INTO tasks (id, userId, workspaceId, title, description, isCompleted, priority, dueDate, dueAt, startDate, noteId, parentId, projectId, status, repeatRule, repeatInterval, repeatEndDate, repeatGroupId, repeatGeneratedFromId, repeatEndCount, repeatSequenceIndex, repeatRuleJson)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, userId, effectiveWorkspaceId, title.trim(), description, effectiveIsCompleted, priority, dueDate, dueAt, startDate, noteId, parentId, projectId, status, repeatRule, repeatInterval, effectiveRepeatEndDate, repeatGroupId, repeatGeneratedFromId, repeatEndCount, repeatSequenceIndex, repeatRuleJson);
+    INSERT INTO tasks (id, userId, workspaceId, title, description, isCompleted, completedAt, priority, dueDate, dueAt, startDate, noteId, parentId, projectId, status, repeatRule, repeatInterval, repeatEndDate, repeatGroupId, repeatGeneratedFromId, repeatEndCount, repeatSequenceIndex, repeatRuleJson)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, userId, effectiveWorkspaceId, title.trim(), description, effectiveIsCompleted, effectiveCompletedAt, priority, dueDate, dueAt, startDate, noteId, parentId, projectId, status, repeatRule, repeatInterval, effectiveRepeatEndDate, repeatGroupId, repeatGeneratedFromId, repeatEndCount, repeatSequenceIndex, repeatRuleJson);
 
   const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
   return c.json(task, 201);
@@ -472,6 +473,10 @@ tasks.put("/:id", (c) => {
       status = isCompleted ? "done" : (existing.status === "done" ? "todo" : existing.status);
     }
 
+    const completedAt = isCompleted
+      ? (existing.isCompleted ? (existing.completedAt ?? new Date().toISOString()) : new Date().toISOString())
+      : null;
+
     // Fix 2: validate projectId scope
     if (body.projectId !== undefined && projectId !== null && projectId !== existing.projectId) {
       const project = db.prepare("SELECT userId, workspaceId FROM task_projects WHERE id = ?").get(projectId) as any;
@@ -530,9 +535,9 @@ tasks.put("/:id", (c) => {
 
     db.prepare(`
       UPDATE tasks SET title = ?, isCompleted = ?, priority = ?, dueDate = ?, dueAt = ?, startDate = ?,
-        description = ?, noteId = ?, parentId = ?, sortOrder = ?, projectId = ?, status = ?, repeatRule = ?, repeatInterval = ?, repeatEndDate = ?, repeatEndCount = ?, repeatSequenceIndex = ?, repeatRuleJson = ?, updatedAt = datetime('now')
+        description = ?, noteId = ?, parentId = ?, sortOrder = ?, projectId = ?, status = ?, completedAt = ?, repeatRule = ?, repeatInterval = ?, repeatEndDate = ?, repeatEndCount = ?, repeatSequenceIndex = ?, repeatRuleJson = ?, updatedAt = datetime('now')
       WHERE id = ?
-    `).run(title, isCompleted, priority, dueDate, dueAt, startDate, description, noteId, parentId, sortOrder, projectId, status, repeatRule, repeatInterval, effectiveRepeatEndDate, repeatEndCount, repeatSequenceIndex, repeatRuleJson, id);
+    `).run(title, isCompleted, priority, dueDate, dueAt, startDate, description, noteId, parentId, sortOrder, projectId, status, completedAt, repeatRule, repeatInterval, effectiveRepeatEndDate, repeatEndCount, repeatSequenceIndex, repeatRuleJson, id);
 
     let generatedTask = null;
     // Generate next repeated task when marking as done via PUT
@@ -721,8 +726,8 @@ function generateNextRepeatedTask(db: any, task: any): any {
 
   const newId = crypto.randomUUID();
   db.prepare(`
-    INSERT INTO tasks (id, userId, workspaceId, title, description, isCompleted, priority, dueDate, dueAt, startDate, noteId, parentId, projectId, status, repeatRule, repeatInterval, repeatEndDate, repeatGroupId, repeatGeneratedFromId, repeatEndCount, repeatSequenceIndex, repeatRuleJson)
-    VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (id, userId, workspaceId, title, description, isCompleted, completedAt, priority, dueDate, dueAt, startDate, noteId, parentId, projectId, status, repeatRule, repeatInterval, repeatEndDate, repeatGroupId, repeatGeneratedFromId, repeatEndCount, repeatSequenceIndex, repeatRuleJson)
+    VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(newId, task.userId, task.workspaceId, task.title, task.description || "", task.priority, nextDueDate, nextDueAt, null, task.noteId, task.parentId, task.projectId, 'todo', task.repeatRule, task.repeatInterval, task.repeatEndDate, groupId, task.id, task.repeatEndCount ?? null, nextSequenceIndex, task.repeatRuleJson);
 
   db.prepare("UPDATE tasks SET repeatNextGeneratedId = ? WHERE id = ?").run(newId, task.id);
@@ -750,7 +755,8 @@ tasks.patch("/:id/toggle", (c) => {
 
   const newStatus = task.isCompleted ? 0 : 1;
   const newTaskStatus = newStatus === 1 ? "done" : "todo";
-  db.prepare("UPDATE tasks SET isCompleted = ?, status = ?, updatedAt = datetime('now') WHERE id = ?").run(newStatus, newTaskStatus, id);
+  const completedAt = newStatus === 1 ? new Date().toISOString() : null;
+  db.prepare("UPDATE tasks SET isCompleted = ?, status = ?, completedAt = ?, updatedAt = datetime('now') WHERE id = ?").run(newStatus, newTaskStatus, completedAt, id);
 
   const generatedTask = newStatus === 1 ? generateNextRepeatedTask(db, task) : null;
 
@@ -847,8 +853,9 @@ tasks.post("/batch", async (c) => {
 
       const completeIds = toComplete.map((t) => t.id);
       const cph = completeIds.map(() => "?").join(",");
-      db.prepare("UPDATE tasks SET isCompleted = 1, status = 'done', updatedAt = datetime('now') WHERE id IN (" + cph + ")")
-        .run(...completeIds);
+      const completedAt = new Date().toISOString();
+      db.prepare("UPDATE tasks SET isCompleted = 1, status = 'done', completedAt = ?, updatedAt = datetime('now') WHERE id IN (" + cph + ")")
+        .run(completedAt, ...completeIds);
 
       let generatedCount = 0;
       for (const task of toComplete) {

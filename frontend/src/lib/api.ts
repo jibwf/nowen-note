@@ -1593,12 +1593,24 @@ export const api = {
     request<import("@/types").Habit>(`/habits/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   archiveHabit: (id: string, archived = true) =>
     request<import("@/types").Habit>(`/habits/${id}/archive`, { method: "PATCH", body: JSON.stringify({ archived }) }),
+  deleteHabit: (id: string) =>
+    request<{ success: boolean }>(`/habits/${id}`, { method: "DELETE" }),
   getHabitCheckins: (id: string, params?: { from?: string; to?: string }) => {
     const search = new URLSearchParams();
     if (params?.from) search.set("from", params.from);
     if (params?.to) search.set("to", params.to);
     const qs = search.toString() ? `?${search.toString()}` : "";
     return request<import("@/types").HabitCheckin[]>(`/habits/${id}/checkins${qs}`);
+  },
+  getHabitCheckinLog: (params?: { from?: string; to?: string; includeArchived?: boolean }) => {
+    const search = new URLSearchParams();
+    const ws = getCurrentWorkspace();
+    if (ws && ws !== "personal") search.set("workspaceId", ws);
+    if (params?.from) search.set("from", params.from);
+    if (params?.to) search.set("to", params.to);
+    if (params?.includeArchived === false) search.set("includeArchived", "0");
+    const qs = search.toString() ? `?${search.toString()}` : "";
+    return request<import("@/types").HabitCheckinListItem[]>(`/habits/checkins${qs}`);
   },
   checkInHabit: (id: string, data: { status: import("@/types").HabitCheckinStatus; note?: string; checkinDate?: string }) =>
     request<import("@/types").HabitCheckin>(`/habits/${id}/checkins`, { method: "POST", body: JSON.stringify(data) }),

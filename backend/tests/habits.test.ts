@@ -238,6 +238,129 @@ test("archive hides habit from active list but keeps history", async () => {
     assert.equal(history.json[0].status, "failure");
 });
 
+test("unarchive restores habit to active list", async () => {
+    const created = await requestJson("POST", "/habits", { title: "Stretch" });
+    await requestJson("PATCH", `/habits/${created.json.id}/archive`, { archived: true });
+
+    const restored = await requestJson("PATCH", `/habits/${created.json.id}/archive`, { archived: false });
+    assert.equal(restored.status, 200);
+    assert.equal(restored.json.archivedAt, null);
+
+    const activeList = await requestJson("GET", "/habits");
+    assert.equal(activeList.status, 200);
+    assert.equal(activeList.json.length, 1);
+    assert.equal(activeList.json[0].title, "Stretch");
+});
+
+test("delete habit removes habit and its checkins", async () => {
+    const created = await requestJson("POST", "/habits", { title: "Delete me" });
+    await requestJson("POST", `/habits/${created.json.id}/checkins`, {
+        checkinDate: "2026-07-09",
+        status: "success",
+        note: "done",
+    });
+
+    const deleted = await requestJson("DELETE", `/habits/${created.json.id}`);
+    assert.equal(deleted.status, 200);
+    assert.equal(deleted.json.success, true);
+
+    const habitsCount = db()
+        .prepare("SELECT COUNT(*) AS count FROM habits WHERE id = ?")
+        .get(created.json.id) as { count: number };
+    const checkinsCount = db()
+        .prepare("SELECT COUNT(*) AS count FROM habit_checkins WHERE habitId = ?")
+        .get(created.json.id) as { count: number };
+    assert.equal(habitsCount.count, 0);
+    assert.equal(checkinsCount.count, 0);
+});
+
+test("collection checkin log includes archived habits for statistics view", async () => {
+    const first = await requestJson("POST", "/habits", { title: "Read" });
+    const second = await requestJson("POST", "/habits", { title: "Run" });
+
+    await requestJson("POST", `/habits/${first.json.id}/checkins`, {
+        checkinDate: "2026-07-08",
+        status: "success",
+        note: "chapter 1",
+    });
+    await requestJson("POST", `/habits/${second.json.id}/checkins`, {
+        checkinDate: "2026-07-09",
+        status: "partial",
+        note: "20 min",
+    });
+    await requestJson("PATCH", `/habits/${second.json.id}/archive`, { archived: true });
+
+    const log = await requestJson("GET", "/habits/checkins?includeArchived=1&from=2026-07-08&to=2026-07-09");
+    assert.equal(log.status, 200);
+    assert.equal(log.json.length, 2);
+    assert.equal(log.json[0].habitTitle, "Run");
+    assert.equal(log.json[0].status, "partial");
+    assert.ok(log.json[0].habitArchivedAt);
+    assert.equal(log.json[1].habitTitle, "Read");
+    assert.equal(log.json[1].note, "chapter 1");
+
+    const activeOnly = await requestJson("GET", "/habits/checkins?includeArchived=0");
+    assert.equal(activeOnly.status, 200);
+    assert.equal(activeOnly.json.length, 1);
+    assert.equal(activeOnly.json[0].habitTitle, "Read");
+});
+
+test("workspace feature flag tasks=false blocks collection checkin log endpoint", async () => {
+    const workspaceId = seedWorkspace({ id: "ws-disabled-checkins" });
+    const created = await requestJson("POST", `/habits?workspaceId=${workspaceId}`, { title: "Blocked log" });
+    assert.equal(created.status, 201);
+
+    db().prepare("UPDATE workspaces SET enabledFeatures = ? WHERE id = ?")
+        .run(JSON.stringify({ tasks: false }), workspaceId);
+
+    const log = await requestJson("GET", `/habits/checkins?workspaceId=${workspaceId}`);
+    assert.equal(log.status, 403);
+    assert.equal(log.json.code, "FEATURE_DISABLED");
+});
+
+test("workspace checkin log rejects non-members", async () => {
+    const workspaceId = seedWorkspace({ id: "ws-checkins-private" });
+    const created = await requestJson("POST", `/habits?workspaceId=${workspaceId}`, { title: "Team habit" });
+    assert.equal(created.status, 201);
+    await requestJson("POST", `/habits/${created.json.id}/checkins`, {
+        checkinDate: "2026-07-09",
+        status: "success",
+    });
+
+    const forbidden = await requestJsonAsUser(OTHER_USER_ID, "GET", `/habits/checkins?workspaceId=${workspaceId}`);
+    assert.equal(forbidden.status, 403);
+    assert.equal(forbidden.json.code, "FORBIDDEN");
+});
+
+test("collection checkin log isolates personal and workspace scopes", async () => {
+    const personal = await requestJson("POST", "/habits", { title: "Personal habit" });
+    await requestJson("POST", `/habits/${personal.json.id}/checkins`, {
+        checkinDate: "2026-07-08",
+        status: "success",
+        note: "personal",
+    });
+
+    const workspaceId = seedWorkspace({ id: "ws-checkins-scope" });
+    const shared = await requestJson("POST", `/habits?workspaceId=${workspaceId}`, { title: "Workspace habit" });
+    await requestJson("POST", `/habits/${shared.json.id}/checkins`, {
+        checkinDate: "2026-07-08",
+        status: "partial",
+        note: "workspace",
+    });
+
+    const personalLog = await requestJson("GET", "/habits/checkins");
+    assert.equal(personalLog.status, 200);
+    assert.equal(personalLog.json.length, 1);
+    assert.equal(personalLog.json[0].habitTitle, "Personal habit");
+    assert.equal(personalLog.json[0].workspaceId, null);
+
+    const workspaceLog = await requestJson("GET", `/habits/checkins?workspaceId=${workspaceId}`);
+    assert.equal(workspaceLog.status, 200);
+    assert.equal(workspaceLog.json.length, 1);
+    assert.equal(workspaceLog.json[0].habitTitle, "Workspace habit");
+    assert.equal(workspaceLog.json[0].workspaceId, workspaceId);
+});
+
 test("stats summary counts totals and current streak from success partial only", async () => {
     const first = await requestJson("POST", "/habits", { title: "Read" });
     const second = await requestJson("POST", "/habits", { title: "Run" });

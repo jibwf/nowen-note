@@ -10,6 +10,9 @@ const apiMocks = vi.hoisted(() => ({
     getTaskStats: vi.fn(),
     getTaskDependencies: vi.fn(),
     getReminderOverview: vi.fn(),
+    getHabits: vi.fn(),
+    getHabitStats: vi.fn(),
+    getHabitCheckinLog: vi.fn(),
     createTask: vi.fn(),
     createTaskReminder: vi.fn(),
     toggleTask: vi.fn(),
@@ -23,12 +26,21 @@ const apiMocks = vi.hoisted(() => ({
     createTaskProject: vi.fn(),
     updateTaskProject: vi.fn(),
     deleteTaskProject: vi.fn(),
+    archiveHabit: vi.fn(),
+    deleteHabit: vi.fn(),
+    checkInHabit: vi.fn(),
+    createHabit: vi.fn(),
     taskAttachmentsBind: vi.fn(),
     childQuickAddTitle: "今天下午3点 子任务 提前3小时",
+    statsCenterProps: [] as any[],
+}));
+
+const i18nMocks = vi.hoisted(() => ({
+    t: (key: string) => key,
 }));
 
 vi.mock("react-i18next", () => ({
-    useTranslation: () => ({ t: (key: string) => key }),
+    useTranslation: () => ({ t: i18nMocks.t, i18n: { language: "zh-CN" } }),
 }));
 
 vi.mock("@/lib/toast", () => ({
@@ -44,6 +56,9 @@ vi.mock("@/lib/api", () => ({
         getTaskStats: apiMocks.getTaskStats,
         getTaskDependencies: apiMocks.getTaskDependencies,
         getReminderOverview: apiMocks.getReminderOverview,
+        getHabits: apiMocks.getHabits,
+        getHabitStats: apiMocks.getHabitStats,
+        getHabitCheckinLog: apiMocks.getHabitCheckinLog,
         createTask: apiMocks.createTask,
         createTaskReminder: apiMocks.createTaskReminder,
         toggleTask: apiMocks.toggleTask,
@@ -57,6 +72,10 @@ vi.mock("@/lib/api", () => ({
         createTaskProject: apiMocks.createTaskProject,
         updateTaskProject: apiMocks.updateTaskProject,
         deleteTaskProject: apiMocks.deleteTaskProject,
+        archiveHabit: apiMocks.archiveHabit,
+        deleteHabit: apiMocks.deleteHabit,
+        checkInHabit: apiMocks.checkInHabit,
+        createHabit: apiMocks.createHabit,
         taskAttachments: {
             bind: apiMocks.taskAttachmentsBind,
         },
@@ -118,6 +137,26 @@ vi.mock("../tasks/MobileProjectPicker", () => ({
     MobileProjectTrigger: () => null,
     MobileProjectPicker: () => null,
 }));
+vi.mock("../tasks/HabitStatsOverview", () => ({ HabitStatsOverview: () => null }));
+vi.mock("../tasks/HabitRow", () => ({
+    HabitRow: ({ habit, onArchiveToggle, onDelete }: any) => (
+        <div>
+            <span>{habit.title}</span>
+            <button data-testid={`archive-toggle-${habit.id}`} onClick={() => void onArchiveToggle(habit, !habit.archivedAt)}>
+                archive toggle
+            </button>
+            <button data-testid={`delete-habit-${habit.id}`} onClick={() => void onDelete(habit)}>
+                delete habit
+            </button>
+        </div>
+    ),
+}));
+vi.mock("../tasks/StatsCenter", () => ({
+    StatsCenter: (props: any) => {
+        apiMocks.statsCenterProps.push(props);
+        return <div data-testid="stats-center">stats center</div>;
+    },
+}));
 
 vi.mock("../tasks/TaskQuickAdd", () => ({
     TaskQuickAdd: ({ value, onChange, onSubmit, inputRef }: any) => (
@@ -157,6 +196,57 @@ function makeTask(overrides: Record<string, any> = {}) {
     };
 }
 
+function makeHabit(overrides: Record<string, any> = {}) {
+    return {
+        id: "habit-1",
+        userId: "u1",
+        workspaceId: null,
+        title: "habit",
+        icon: "check-circle",
+        color: "#10b981",
+        sortOrder: 0,
+        archivedAt: null,
+        createdAt: "2026-01-01T00:00:00",
+        updatedAt: "2026-01-01T00:00:00",
+        todayStatus: null,
+        todayNote: null,
+        todayCheckinDate: null,
+        canManage: true,
+        ...overrides,
+    };
+}
+
+function makeHabitStats() {
+    return {
+        totalCheckins: 0,
+        checkinDays: 0,
+        currentStreak: 0,
+        successCount: 0,
+        partialCount: 0,
+        failureCount: 0,
+    };
+}
+
+function makeHabitCheckinLogItem(overrides: Record<string, any> = {}) {
+    return {
+        id: "checkin-1",
+        habitId: "habit-1",
+        userId: "u1",
+        workspaceId: null,
+        checkinDate: "2026-07-08",
+        status: "success",
+        note: "done",
+        createdAt: "2026-07-08T08:00:00",
+        updatedAt: "2026-07-08T08:00:00",
+        habitTitle: "habit",
+        habitColor: "#10b981",
+        habitIcon: "check-circle",
+        habitArchivedAt: null,
+        canManage: true,
+        ...overrides,
+    };
+}
+
 function makeStats() {
     return { total: 0, completed: 0, pending: 0, today: 0, overdue: 0, week: 0 };
 }
@@ -185,9 +275,17 @@ describe("TaskCenter quick-add integration", () => {
         apiMocks.getTaskStats.mockResolvedValue(makeStats());
         apiMocks.getTaskDependencies.mockResolvedValue([]);
         apiMocks.getReminderOverview.mockResolvedValue({ missed: [], today: [], upcoming: [], disabled: [] });
+        apiMocks.getHabits.mockResolvedValue([]);
+        apiMocks.getHabitStats.mockResolvedValue(makeHabitStats());
+        apiMocks.getHabitCheckinLog.mockResolvedValue([]);
         apiMocks.createTask.mockResolvedValue(makeTask({ id: "new-task" }));
         apiMocks.createTaskReminder.mockResolvedValue({ id: "r1" });
+        apiMocks.archiveHabit.mockImplementation(async (id: string, archived: boolean) => makeHabit({ id, archivedAt: archived ? "2026-07-08T00:00:00" : null }));
+        apiMocks.deleteHabit.mockResolvedValue({ success: true });
+        apiMocks.checkInHabit.mockResolvedValue({ id: "check-1", habitId: "habit-1", status: "success", note: "", checkinDate: "2026-07-08" });
+        apiMocks.createHabit.mockResolvedValue(makeHabit({ id: "habit-new" }));
         apiMocks.childQuickAddTitle = "今天下午3点 子任务 提前3小时";
+        apiMocks.statsCenterProps.length = 0;
 
         host = document.createElement("div");
         document.body.appendChild(host);
@@ -347,5 +445,181 @@ describe("TaskCenter quick-add integration", () => {
         expect(payload).not.toHaveProperty("repeatInterval");
         expect(payload).not.toHaveProperty("repeatRuleJson");
         expect(apiMocks.createTaskReminder).not.toHaveBeenCalled();
+    });
+
+    it("unarchives habit and keeps it visible in active list", async () => {
+        apiMocks.getHabits.mockResolvedValueOnce([
+            makeHabit({ id: "habit-archived", title: "已归档习惯", archivedAt: "2026-07-07T00:00:00" }),
+        ]);
+        apiMocks.archiveHabit.mockResolvedValueOnce(
+            makeHabit({ id: "habit-archived", title: "已归档习惯", archivedAt: null }),
+        );
+
+        await renderTaskCenter(root);
+
+        const habitsTab = Array.from(host.querySelectorAll("button")).find((button) => button.textContent?.includes("habits.title"));
+        expect(habitsTab).not.toBeUndefined();
+
+        await act(async () => {
+            habitsTab!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            await flush();
+        });
+
+        const archivedFilter = Array.from(host.querySelectorAll("button")).find((button) => button.textContent === "habits.filters.archived");
+        expect(archivedFilter).not.toBeUndefined();
+
+        await act(async () => {
+            archivedFilter!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            await flush();
+        });
+
+        const toggle = host.querySelector<HTMLButtonElement>("[data-testid='archive-toggle-habit-archived']");
+        expect(toggle).not.toBeNull();
+
+        await act(async () => {
+            toggle!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            await flush();
+        });
+
+        const activeFilter = Array.from(host.querySelectorAll("button")).find((button) => button.textContent === "habits.filters.active");
+        expect(activeFilter).not.toBeUndefined();
+
+        await act(async () => {
+            activeFilter!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            await flush();
+        });
+
+        expect(apiMocks.archiveHabit).toHaveBeenCalledWith("habit-archived", false);
+        expect(host.textContent).toContain("已归档习惯");
+    });
+
+    it("deletes habit from archived list", async () => {
+        apiMocks.getHabits.mockResolvedValueOnce([
+            makeHabit({ id: "habit-delete", title: "待删除习惯", archivedAt: "2026-07-07T00:00:00" }),
+        ]);
+
+        await renderTaskCenter(root);
+
+        const habitsTab = Array.from(host.querySelectorAll("button")).find((button) => button.textContent?.includes("habits.title"));
+        await act(async () => {
+            habitsTab!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            await flush();
+        });
+
+        const archivedFilter = Array.from(host.querySelectorAll("button")).find((button) => button.textContent === "habits.filters.archived");
+        await act(async () => {
+            archivedFilter!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            await flush();
+        });
+
+        const del = host.querySelector<HTMLButtonElement>("[data-testid='delete-habit-habit-delete']");
+        expect(del).not.toBeNull();
+
+        await act(async () => {
+            del!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            await flush();
+        });
+
+        expect(apiMocks.deleteHabit).toHaveBeenCalledWith("habit-delete");
+        expect(host.textContent).not.toContain("待删除习惯");
+    });
+
+    it("loads statistics data and passes it to stats center", async () => {
+        vi.useRealTimers();
+        apiMocks.getTasks.mockResolvedValue([makeTask({ id: "task-stats", title: "统计任务", completedAt: "2026-07-08T09:00:00" })]);
+        apiMocks.getTaskStats.mockResolvedValue({ total: 1, completed: 1, pending: 0, today: 0, overdue: 0, week: 1 });
+        apiMocks.getHabits.mockResolvedValue([makeHabit({ id: "habit-stats", title: "统计习惯" })]);
+        apiMocks.getHabitStats.mockResolvedValue({ totalCheckins: 2, checkinDays: 2, currentStreak: 2, successCount: 2, partialCount: 0, failureCount: 0 });
+        apiMocks.getHabitCheckinLog.mockResolvedValue([makeHabitCheckinLogItem({ habitId: "habit-stats", habitTitle: "统计习惯" })]);
+
+        await renderTaskCenter(root);
+
+        const statsTab = Array.from(host.querySelectorAll("button")).find((button) => button.textContent?.includes("stats.title"));
+        expect(statsTab).not.toBeUndefined();
+
+        await act(async () => {
+            statsTab!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            await flush();
+        });
+
+        await vi.waitFor(() => {
+            expect(apiMocks.getHabitCheckinLog).toHaveBeenCalledTimes(1);
+            expect(apiMocks.statsCenterProps.at(-1)).toMatchObject({
+                tasks: [expect.objectContaining({ id: "task-stats" })],
+                habits: [expect.objectContaining({ id: "habit-stats" })],
+                checkins: [expect.objectContaining({ habitId: "habit-stats" })],
+                loading: false,
+            });
+        });
+
+        expect(host.querySelector("[data-testid='stats-center']")).not.toBeNull();
+    });
+
+    it("reloads statistics data after workspace change while staying on stats tab", async () => {
+        vi.useRealTimers();
+        let workspacePhase = 0;
+
+        apiMocks.getTasks.mockImplementation(async (filter?: string) => {
+            if (filter === "all") {
+                return workspacePhase === 0
+                    ? [makeTask({ id: "task-old", title: "旧工作区任务", completedAt: "2026-07-08T09:00:00" })]
+                    : [makeTask({ id: "task-new", title: "新工作区任务", completedAt: "2026-07-09T09:00:00" })];
+            }
+            return [];
+        });
+        apiMocks.getTaskStats.mockImplementation(async () => (
+            workspacePhase === 0
+                ? { total: 1, completed: 1, pending: 0, today: 0, overdue: 0, week: 1 }
+                : { total: 1, completed: 0, pending: 1, today: 0, overdue: 0, week: 0 }
+        ));
+        apiMocks.getHabits.mockImplementation(async () => (
+            workspacePhase === 0
+                ? [makeHabit({ id: "habit-old", title: "旧工作区习惯" })]
+                : [makeHabit({ id: "habit-new", title: "新工作区习惯" })]
+        ));
+        apiMocks.getHabitStats.mockImplementation(async () => (
+            workspacePhase === 0
+                ? { totalCheckins: 1, checkinDays: 1, currentStreak: 1, successCount: 1, partialCount: 0, failureCount: 0 }
+                : { totalCheckins: 2, checkinDays: 2, currentStreak: 2, successCount: 2, partialCount: 0, failureCount: 0 }
+        ));
+        apiMocks.getHabitCheckinLog.mockImplementation(async () => (
+            workspacePhase === 0
+                ? [makeHabitCheckinLogItem({ id: "check-old", habitId: "habit-old", habitTitle: "旧工作区习惯" })]
+                : [makeHabitCheckinLogItem({ id: "check-new", habitId: "habit-new", habitTitle: "新工作区习惯", checkinDate: "2026-07-09" })]
+        ));
+
+        await renderTaskCenter(root);
+
+        const statsTab = Array.from(host.querySelectorAll("button")).find((button) => button.textContent?.includes("stats.title"));
+        expect(statsTab).not.toBeUndefined();
+
+        await act(async () => {
+            statsTab!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            await flush();
+        });
+
+        await vi.waitFor(() => {
+            expect(apiMocks.statsCenterProps.at(-1)).toMatchObject({
+                tasks: [expect.objectContaining({ id: "task-old" })],
+                habits: [expect.objectContaining({ id: "habit-old" })],
+                checkins: [expect.objectContaining({ id: "check-old" })],
+            });
+        });
+
+        workspacePhase = 1;
+
+        await act(async () => {
+            window.dispatchEvent(new Event("nowen:workspace-changed"));
+            await flush();
+        });
+
+        await vi.waitFor(() => {
+            expect(apiMocks.getHabitCheckinLog).toHaveBeenCalledTimes(2);
+            expect(apiMocks.statsCenterProps.at(-1)).toMatchObject({
+                tasks: [expect.objectContaining({ id: "task-new" })],
+                habits: [expect.objectContaining({ id: "habit-new" })],
+                checkins: [expect.objectContaining({ id: "check-new" })],
+            });
+        });
     });
 });

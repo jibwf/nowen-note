@@ -1952,6 +1952,19 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  // v44: 任务完成时间持久化，供记录/趋势/热力图统计使用。
+  {
+    version: 44,
+    name: "tasks-completed-at",
+    up: (db) => {
+      const cols = db.prepare("PRAGMA table_info(tasks)").all() as { name: string }[];
+      if (!cols.some((c) => c.name === "completedAt")) {
+        db.prepare("ALTER TABLE tasks ADD COLUMN completedAt TEXT").run();
+      }
+      db.prepare("UPDATE tasks SET completedAt = COALESCE(completedAt, updatedAt) WHERE isCompleted = 1 AND completedAt IS NULL").run();
+      db.prepare("UPDATE tasks SET completedAt = NULL WHERE isCompleted = 0 AND completedAt IS NOT NULL").run();
+    },
+  },
 ];
 
 /** 当前代码已知的最高 schema 版本（== MIGRATIONS 里 max(version)）。 */

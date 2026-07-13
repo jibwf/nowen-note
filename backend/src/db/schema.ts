@@ -256,6 +256,7 @@ function initSchema(db: Database.Database) {
       userId TEXT NOT NULL,
       title TEXT NOT NULL,
       isCompleted INTEGER DEFAULT 0,
+      completedAt TEXT,
       priority INTEGER DEFAULT 2,
       dueDate TEXT,
       noteId TEXT,

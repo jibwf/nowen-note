@@ -11,7 +11,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api";
 import { toast } from "@/lib/toast";
-import { Task, TaskFilter, TaskStats, TaskStatus, TaskProject, TaskDependency, Habit, HabitStats, HabitCheckinStatus } from "@/types";
+import { Task, TaskFilter, TaskStats, TaskStatus, TaskProject, TaskDependency, Habit, HabitStats, HabitCheckinStatus, HabitCheckinListItem } from "@/types";
 import { cn } from "@/lib/utils";
 import { isTaskBlockedByDependency } from "./tasks/taskDependencyUtils";
 import {
@@ -45,6 +45,7 @@ import { taskMatchesSearch } from "./tasks/taskSearch";
 import { parseTaskQuickAdd, type TaskQuickAddParseResult } from "./tasks/taskSmartRecognition";
 import { HabitStatsOverview } from "./tasks/HabitStatsOverview";
 import { HabitRow } from "./tasks/HabitRow";
+import { StatsCenter } from "./tasks/StatsCenter";
 
 export function formatLocalDateKey(date = new Date()): string {
   const y = date.getFullYear();
@@ -76,7 +77,8 @@ function getQuickAddCreatePatch(parsed: TaskQuickAddParseResult): Partial<Task> 
 export default function TaskCenter() {
   const { t } = useTranslation();
 
-  type CenterMode = "tasks" | "habits";
+  type CenterMode = "tasks" | "habits" | "stats";
+  type HabitListMode = "active" | "archived" | "all";
 
   const FILTERS: { key: TaskFilter; label: string; icon: React.ReactNode }[] = [
     { key: "all", label: t("tasks.allTasks"), icon: <Inbox size={16} /> },
@@ -99,6 +101,7 @@ export default function TaskCenter() {
   const [centerMode, setCenterMode] = useState<CenterMode>("tasks");
   const [habits, setHabits] = useState<Habit[]>([]);
   const [habitStats, setHabitStats] = useState<HabitStats | null>(null);
+  const [habitListMode, setHabitListMode] = useState<HabitListMode>("active");
   const [newHabitTitle, setNewHabitTitle] = useState("");
   const [filter, setFilter] = useState<TaskFilter>("all");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -112,9 +115,30 @@ export default function TaskCenter() {
   const [searchQuery, setSearchQuery] = useState("");
   const [workspaceVersion, setWorkspaceVersion] = useState(0);
 
-  const pendingHabitCount = useMemo(
-    () => habits.filter((habit) => !habit.todayStatus).length,
+  const [statsTasks, setStatsTasks] = useState<Task[]>([]);
+  const [statsHabits, setStatsHabits] = useState<Habit[]>([]);
+  const [statsHabitCheckins, setStatsHabitCheckins] = useState<HabitCheckinListItem[]>([]);
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  const activeHabits = useMemo(
+    () => habits.filter((habit) => !habit.archivedAt),
     [habits],
+  );
+
+  const archivedHabits = useMemo(
+    () => habits.filter((habit) => !!habit.archivedAt),
+    [habits],
+  );
+
+  const visibleHabits = useMemo(() => {
+    if (habitListMode === "archived") return archivedHabits;
+    if (habitListMode === "all") return habits;
+    return activeHabits;
+  }, [activeHabits, archivedHabits, habitListMode, habits]);
+
+  const pendingHabitCount = useMemo(
+    () => activeHabits.filter((habit) => !habit.todayStatus).length,
+    [activeHabits],
   );
 
   // Phase 5.2: dependencies
@@ -239,8 +263,8 @@ export default function TaskCenter() {
     try {
       const checkinDate = formatLocalDateKey();
       const [list, statsData] = await Promise.all([
-        api.getHabits(false, checkinDate),
-        api.getHabitStats(false, checkinDate),
+        api.getHabits(true, checkinDate),
+        api.getHabitStats(true, checkinDate),
       ]);
       setHabits(list);
       setHabitStats(statsData);
@@ -248,6 +272,30 @@ export default function TaskCenter() {
       console.error("Failed to load habits:", err);
     }
   }, []);
+
+  const loadStatsCenter = useCallback(async () => {
+    try {
+      setStatsLoading(true);
+      const checkinDate = formatLocalDateKey();
+      const [taskList, taskStatsData, habitList, habitStatsData, habitCheckins] = await Promise.all([
+        api.getTasks("all"),
+        api.getTaskStats(),
+        api.getHabits(true, checkinDate),
+        api.getHabitStats(true, checkinDate),
+        api.getHabitCheckinLog({ includeArchived: true }),
+      ]);
+      setStatsTasks(taskList);
+      setStats(taskStatsData);
+      setStatsHabits(habitList);
+      setHabitStats(habitStatsData);
+      setStatsHabitCheckins(habitCheckins);
+    } catch (err) {
+      console.error("Failed to load stats center:", err);
+      toast.error(t("stats.loadFailed"));
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [t, workspaceVersion]);
 
   const loadDependencies = useCallback(async () => {
     try {
@@ -278,6 +326,12 @@ export default function TaskCenter() {
     return () => window.removeEventListener("nowen:workspace-changed", onWs);
   }, [loadTasks, loadHabits]);
 
+  useEffect(() => {
+    if (centerMode === "stats") {
+      loadStatsCenter();
+    }
+  }, [centerMode, loadStatsCenter]);
+
   const handleCreateHabit = async (): Promise<boolean> => {
     const title = newHabitTitle.trim();
     if (!title) return false;
@@ -286,7 +340,7 @@ export default function TaskCenter() {
       const habit = await api.createHabit({ title });
       setHabits((prev) => [habit, ...prev]);
       setNewHabitTitle("");
-      const statsData = await api.getHabitStats(false, checkinDate);
+      const statsData = await api.getHabitStats(true, checkinDate);
       setHabitStats(statsData);
       return true;
     } catch (err) {
@@ -304,18 +358,26 @@ export default function TaskCenter() {
         ? { ...item, todayStatus: updated.status, todayNote: updated.note, todayCheckinDate: updated.checkinDate }
         : item
     )));
-    const statsData = await api.getHabitStats(false, checkinDate);
+    const statsData = await api.getHabitStats(true, checkinDate);
     setHabitStats(statsData);
     toast.success(t("habits.toast.checkinUpdated"));
   };
 
-  const handleArchiveHabit = async (habit: Habit) => {
+  const handleArchiveHabitToggle = async (habit: Habit, archived: boolean) => {
     const checkinDate = formatLocalDateKey();
-    await api.archiveHabit(habit.id, true);
-    setHabits((prev) => prev.filter((item) => item.id !== habit.id));
-    const statsData = await api.getHabitStats(false, checkinDate);
+    const updated = await api.archiveHabit(habit.id, archived);
+    setHabits((prev) => prev.map((item) => (item.id === habit.id ? { ...item, ...updated } : item)));
+    const statsData = await api.getHabitStats(true, checkinDate);
     setHabitStats(statsData);
-    toast.success(t("habits.toast.archived"));
+    toast.success(archived ? t("habits.toast.archived") : t("habits.toast.unarchived"));
+  };
+
+  const handleDeleteHabit = async (habit: Habit) => {
+    await api.deleteHabit(habit.id);
+    setHabits((prev) => prev.filter((item) => item.id !== habit.id));
+    const statsData = await api.getHabitStats(true, formatLocalDateKey());
+    setHabitStats(statsData);
+    toast.success(t("habits.toast.deleted"));
   };
 
   // === Keyboard shortcuts ===
@@ -736,6 +798,17 @@ export default function TaskCenter() {
             </span>
           </button>
 
+          <button
+            onClick={() => { setCenterMode("stats"); setSelectedTaskId(null); setSearchQuery(""); setSelectedProjectId(null); }}
+            className={cn(
+              "flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm transition-colors",
+              centerMode === "stats" ? "bg-accent-primary/10 text-accent-primary font-medium" : "text-tx-secondary hover:bg-app-hover"
+            )}
+          >
+            <BarChart3 size={16} />
+            <span className="flex-1 text-left">{t("stats.title")}</span>
+          </button>
+
           {/* Projects section */}
           <div className="mt-3 mb-0.5 px-3">
             <div className="flex items-center justify-between">
@@ -843,6 +916,16 @@ export default function TaskCenter() {
             )}>
               {pendingHabitCount}
             </span>
+          </button>
+          <button
+            onClick={() => { setCenterMode("stats"); setSelectedTaskId(null); setSearchQuery(""); setSelectedProjectId(null); }}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0",
+              centerMode === "stats" ? "bg-accent-primary/15 text-accent-primary" : "text-tx-secondary bg-app-hover/50 active:bg-app-active"
+            )}
+          >
+            <BarChart3 size={14} />
+            {t("stats.title")}
           </button>
           {centerMode === "tasks" && (
             <>
@@ -976,12 +1059,19 @@ export default function TaskCenter() {
               )}
             </div>
           </div>
-        ) : (
+        ) : centerMode === "habits" ? (
           <div className="hidden md:flex items-center justify-between px-5 py-3 border-b border-app-border">
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold text-tx-primary">{t("habits.title")}</h1>
             </div>
             <div className="text-xs text-tx-tertiary">{t("habits.summary")}</div>
+          </div>
+        ) : (
+          <div className="hidden md:flex items-center justify-between px-5 py-3 border-b border-app-border">
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-bold text-tx-primary">{t("stats.title")}</h1>
+            </div>
+            <div className="text-xs text-tx-tertiary">{t("stats.subtitle")}</div>
           </div>
         )}
 
@@ -1003,22 +1093,42 @@ export default function TaskCenter() {
               </button>
             )}
           </div>
-        ) : (
+        ) : centerMode === "habits" ? (
           <div className="flex items-center gap-2 px-4 md:px-5 py-2 border-b border-app-border">
-            <input
-              type="text"
-              value={newHabitTitle}
-              onChange={(e) => setNewHabitTitle(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleCreateHabit(); }}
-              placeholder={t("habits.createPlaceholder")}
-              className="flex-1 rounded-md border border-app-border bg-app-bg px-3 py-2 text-sm text-tx-primary placeholder:text-tx-tertiary focus:outline-none focus:border-accent-primary"
-            />
-            <button
-              onClick={handleCreateHabit}
-              className="rounded-md bg-accent-primary px-3 py-2 text-sm text-white transition-opacity hover:opacity-90"
-            >
-              {t("habits.add")}
-            </button>
+            <div className="flex flex-1 items-center gap-2">
+              <input
+                type="text"
+                value={newHabitTitle}
+                onChange={(e) => setNewHabitTitle(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleCreateHabit(); }}
+                placeholder={t("habits.createPlaceholder")}
+                className="flex-1 rounded-md border border-app-border bg-app-bg px-3 py-2 text-sm text-tx-primary placeholder:text-tx-tertiary focus:outline-none focus:border-accent-primary"
+              />
+              <button
+                onClick={handleCreateHabit}
+                className="rounded-md bg-accent-primary px-3 py-2 text-sm text-white transition-opacity hover:opacity-90"
+              >
+                {t("habits.add")}
+              </button>
+            </div>
+            <div className="flex items-center gap-1 rounded-lg bg-app-bg p-1">
+              {(["active", "archived", "all"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setHabitListMode(mode)}
+                  className={cn(
+                    "rounded-md px-2.5 py-1.5 text-xs transition-colors",
+                    habitListMode === mode ? "bg-accent-primary text-white" : "text-tx-secondary hover:bg-app-hover"
+                  )}
+                >
+                  {mode === "active" ? t("habits.filters.active") : mode === "archived" ? t("habits.filters.archived") : t("habits.filters.all")}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="border-b border-app-border px-4 md:px-5 py-2 text-xs text-tx-tertiary">
+            {t("stats.summaryHint")}
           </div>
         )}
 
@@ -1060,20 +1170,32 @@ export default function TaskCenter() {
         )}
 
         {/* Task List / Board / Calendar View */}
-        {centerMode === "habits" ? (
+        {centerMode === "stats" ? (
+          <StatsCenter
+            tasks={statsTasks}
+            projects={projects}
+            taskStats={stats}
+            habits={statsHabits}
+            habitStats={habitStats}
+            checkins={statsHabitCheckins}
+            loading={statsLoading}
+            onRefresh={loadStatsCenter}
+          />
+        ) : centerMode === "habits" ? (
           <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-5 py-3">
-            {habits.length === 0 ? (
+            {visibleHabits.length === 0 ? (
               <div className="flex h-40 items-center justify-center text-sm text-tx-tertiary">
                 {t("habits.empty")}
               </div>
             ) : (
               <div className="space-y-2.5">
-                {habits.map((habit) => (
+                {visibleHabits.map((habit) => (
                   <HabitRow
                     key={habit.id}
                     habit={habit}
                     onCheckin={handleHabitCheckin}
-                    onArchive={handleArchiveHabit}
+                    onArchiveToggle={handleArchiveHabitToggle}
+                    onDelete={handleDeleteHabit}
                   />
                 ))}
               </div>

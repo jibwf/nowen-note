@@ -169,7 +169,7 @@ taskTemplates.post('/:id/apply', async (c) => {
   const createdTasks: any[] = [];
 
   const insertStmt = db.prepare(
-    'INSERT INTO tasks (id, userId, workspaceId, title, description, priority, isCompleted, status, sortOrder, projectId, parentId, dueDate, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, 0, \'todo\', ?, ?, ?, ?, datetime(\'now\'), datetime(\'now\'))'
+    'INSERT INTO tasks (id, userId, workspaceId, title, description, priority, isCompleted, completedAt, status, sortOrder, projectId, parentId, dueDate, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, 0, NULL, \'todo\', ?, ?, ?, ?, datetime(\'now\'), datetime(\'now\'))'
   );
 
   const createAll = db.transaction(() => {

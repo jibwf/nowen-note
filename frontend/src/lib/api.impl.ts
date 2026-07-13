@@ -583,7 +583,18 @@ function getToken(): string | null {
  *   - 只清 token，不动主题、服务器地址、草稿等用户偏好；
  *   - 调用方可选地传 reason，便于埋点/调试。
  */
-export function broadcastLogout(reason?: string) {
+async function clearDesktopLocalAuthCache(): Promise<void> {
+  if (typeof window === "undefined") return;
+  const desktopApi = (window as any).nowenDesktop;
+  if (!desktopApi?.isDesktop || typeof desktopApi.clearLocalAuth !== "function") return;
+  try {
+    await desktopApi.clearLocalAuth();
+  } catch {
+    // 旧版 preload 或主进程退出期间 IPC 可能失败；不能因此阻塞正常登出。
+  }
+}
+
+export function broadcastLogout(reason?: string): Promise<void> {
   // Phase 6: 登出时顺便告诉后端吊销当前 session（不等待结果，失败忽略）。
   //   注意必须在 removeItem 前拿到 token；使用 keepalive 以让浏览器关闭时也尽量发出去。
   try {
@@ -626,6 +637,9 @@ export function broadcastLogout(reason?: string) {
   void import("./quickLogin")
     .then((m) => m.disableQuickLogin())
     .catch(() => { });
+  // 桌面 full 模式会在页面启动时从主进程重新注入本地 token。
+  // 会话失效后必须先清掉这份内存缓存，否则刷新会再次注入同一个失效 token。
+  return clearDesktopLocalAuthCache();
 }
 
 /**
@@ -833,7 +847,8 @@ async function request<T>(url: string, options?: RequestOptions): Promise<T> {
       code === "UNAUTHENTICATED";
     if (sessionRevoked && !isSharePage) {
       // L10: session 被后端吊销 → 广播给其他 tab 一起下线
-      broadcastLogout("session_revoked");
+      // 桌面端必须等主进程清除本地认证缓存后再刷新，避免旧 token 被重新注入形成循环。
+      await broadcastLogout("session_revoked");
       window.location.reload();
       throw new Error(errBody?.error || "未授权");
     }

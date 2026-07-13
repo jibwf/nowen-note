@@ -51,6 +51,25 @@ describe("MindMapEditor UX guardrails", () => {
     expect(source).toContain("onMouseDown={(e) => e.stopPropagation()}");
   });
 
+  it("keeps collapse controls out of canvas pointer handling", () => {
+    const collapseControl = source.slice(
+      source.indexOf("{/* 折叠/展开按钮 */}"),
+      source.indexOf("/* ===== 列表项组件 ===== */"),
+    );
+
+    expect(collapseControl).toContain("onPointerDown={(e) => e.stopPropagation()}");
+  });
+
+  it("shows the hidden descendant count on collapsed nodes", () => {
+    const collapseControl = source.slice(
+      source.indexOf("{/* 折叠/展开按钮 */}"),
+      source.indexOf("/* ===== 列表项组件 ===== */"),
+    );
+
+    expect(source).toContain("countMindMapDescendants(nodeData)");
+    expect(collapseControl).toContain("+{collapsedDescendantCount}");
+  });
+
   it("supports dragging selected mind map nodes to resize their width", () => {
     expect(typesSource).toContain("width?: number");
     expect(source).toContain("function clampNodeWidth");

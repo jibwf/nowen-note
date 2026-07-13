@@ -11,4 +11,9 @@ describe("index.html CSP", () => {
     const csp = html.match(/Content-Security-Policy"\s+content="([\s\S]*?)"/)?.[1] || "";
     expect(csp).toMatch(/connect-src[^;]*\bhttp:\s+https:/);
   });
+
+  it("does not put frame-ancestors in the meta CSP", () => {
+    const csp = html.match(/Content-Security-Policy"\s+content="([\s\S]*?)"/)?.[1] || "";
+    expect(csp).not.toContain("frame-ancestors");
+  });
 });

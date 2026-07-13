@@ -90,6 +90,13 @@ function buildLayout(node: MindMapNode, depth: number, parent: LayoutNode | null
   return ln;
 }
 
+export function countMindMapDescendants(node: Pick<MindMapNode, "children">): number {
+  return node.children.reduce(
+    (count, child) => count + 1 + countMindMapDescendants(child),
+    0,
+  );
+}
+
 function isEditableTarget(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && !!target.closest("input, textarea, [contenteditable='true']");
 }
@@ -520,6 +527,9 @@ const NodeBox = React.memo(function NodeBox({
   const color = getNodeColor(node.depth);
   const isRoot = node.depth === 0;
   const hasChildren = node.children.length > 0 || node.collapsed;
+  const collapsedDescendantCount = node.collapsed && nodeData
+    ? countMindMapDescendants(nodeData)
+    : 0;
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
@@ -621,10 +631,11 @@ const NodeBox = React.memo(function NodeBox({
         >
           <div
             className="w-5 h-5 rounded-full bg-white dark:bg-zinc-800 border border-black/[0.08] dark:border-white/[0.08] flex items-center justify-center cursor-pointer hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors duration-150 ease-out"
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => { e.stopPropagation(); onToggleCollapse(); }}
           >
             {node.collapsed ? (
-              <Plus size={10} className="text-tx-secondary" />
+              <span className="text-tx-secondary text-[9px] font-bold">+{collapsedDescendantCount}</span>
             ) : (
               <span className="text-tx-secondary text-[10px] font-bold">−</span>
             )}

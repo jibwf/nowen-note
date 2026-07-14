@@ -23,14 +23,27 @@ function doc(id: string, title: string, icon: string, children: any[] = []) {
   };
 }
 
+function decodeSvgIcon(icon: string): string {
+  assert.match(icon, /^data:image\/svg\+xml;base64,/);
+  return Buffer.from(icon.slice(icon.indexOf(",") + 1), "base64").toString("utf8");
+}
+
 async function writeFixture(): Promise<string> {
   const zip = new JSZip();
   zip.file("data/box-a/.siyuan/conf.json", JSON.stringify({ name: "后排笔记本", sort: 20, icon: "1f4d5" }));
   zip.file("data/box-a/.siyuan/sort.json", JSON.stringify({ "doc-b": 10, "doc-a": 20 }));
-  zip.file("data/box-b/.siyuan/conf.json", JSON.stringify({ name: "前排笔记本", sort: 10, icon: "1f4d8" }));
+  zip.file("data/box-b/.siyuan/conf.json", JSON.stringify({ name: "前排笔记本", sort: 10, icon: "iconfont/custom.svg" }));
   zip.file("data/box-b/.siyuan/sort.json", JSON.stringify({ "doc-html": 1 }));
+  zip.file("data/emojis/iconfont/custom.svg", `
+    <?xml version="1.0" encoding="UTF-8"?>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" onload="alert('xss')">
+      <script>alert('xss')</script>
+      <a href="https://example.com/track"><path fill="#2563eb" d="M2 2h20v20H2z" /></a>
+      <use href="#local-shape" />
+    </svg>
+  `);
 
-  zip.file("data/box-a/doc-a.sy", JSON.stringify(doc("doc-a", "第二篇", "1f680", [
+  zip.file("data/box-a/doc-a.sy", JSON.stringify(doc("doc-a", "第二篇", "iconfont/custom.svg", [
     { Type: "NodeParagraph", Children: [{ Type: "NodeText", Data: "second" }] },
   ])));
   zip.file("data/box-a/doc-b.sy", JSON.stringify(doc("doc-b", "第一篇", "1f3af", [
@@ -62,7 +75,7 @@ test.after(async () => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-test("preserves SiYuan notebook/document order, icons and HTML iframe fidelity", async () => {
+test("preserves SiYuan notebook/document order, custom icons and HTML iframe fidelity", async () => {
   const zipPath = await writeFixture();
   const result = await importPackage(zipPath, {
     userId: USER_ID,
@@ -80,8 +93,16 @@ test("preserves SiYuan notebook/document order, icons and HTML iframe fidelity",
     "SELECT name, icon, sortOrder FROM notebooks WHERE userId = ? AND parentId IS NULL ORDER BY sortOrder ASC",
   ).all(USER_ID) as Array<{ name: string; icon: string; sortOrder: number }>;
   assert.deepEqual(notebooks.map((item) => item.name), ["前排笔记本", "后排笔记本"]);
-  assert.deepEqual(notebooks.map((item) => item.icon), ["📘", "📕"]);
+  assert.equal(notebooks[1].icon, "📕");
   assert.deepEqual(notebooks.map((item) => item.sortOrder), [0, 1024]);
+
+  const notebookSvg = decodeSvgIcon(notebooks[0].icon);
+  assert.match(notebookSvg, /<svg\b/);
+  assert.match(notebookSvg, /fill="#2563eb"/);
+  assert.match(notebookSvg, /href="#local-shape"/);
+  assert.doesNotMatch(notebookSvg, /<script\b/i);
+  assert.doesNotMatch(notebookSvg, /\sonload=/i);
+  assert.doesNotMatch(notebookSvg, /https:\/\/example\.com/);
 
   const orderedNotes = getDb().prepare(`
     SELECT n.id, n.title, n.sortOrder, n.content, n.contentFormat, nb.name AS notebookName
@@ -113,9 +134,8 @@ test("preserves SiYuan notebook/document order, icons and HTML iframe fidelity",
     WHERE n.userId = ?
     ORDER BY n.title
   `).all(USER_ID) as Array<{ title: string; icon: string }>;
-  assert.deepEqual(Object.fromEntries(icons.map((item) => [item.title, item.icon])), {
-    "HTML 与嵌入": "🧩",
-    "第一篇": "🎯",
-    "第二篇": "🚀",
-  });
+  const iconMap = Object.fromEntries(icons.map((item) => [item.title, item.icon]));
+  assert.equal(iconMap["第一篇"], "🎯");
+  assert.equal(iconMap["HTML 与嵌入"], "🧩");
+  assert.equal(decodeSvgIcon(iconMap["第二篇"]), notebookSvg);
 });

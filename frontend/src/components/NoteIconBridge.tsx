@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { getLatestContextMenuState } from "@/hooks/useContextMenu";
 import { realtime } from "@/lib/realtime";
 import { toast } from "@/lib/toast";
+import { isImageIcon, splitImageIconText } from "@/lib/iconValue";
 import {
   getCachedNoteIcon,
   primeNoteIcon,
@@ -15,6 +16,19 @@ import {
 import NoteIconPickerModal from "@/components/NoteIconPickerModal";
 
 const SNAPSHOT_LIMIT = 12;
+const IMAGE_ICON_SKIP_SELECTOR = [
+  "script",
+  "style",
+  "textarea",
+  "input",
+  "pre",
+  "code",
+  "[contenteditable='true']",
+  ".ProseMirror",
+  ".cm-editor",
+  ".markdown-body",
+  "[data-nowen-imported-image-icon]",
+].join(",");
 
 type SnapshotNote = {
   id: string;
@@ -86,6 +100,79 @@ if (!apiWithBridge.__noteIconBridgeInstalled) {
       return rows;
     };
   }
+}
+
+function createImageIconElement(src: string): HTMLImageElement {
+  const image = document.createElement("img");
+  image.src = src;
+  image.alt = "";
+  image.draggable = false;
+  image.setAttribute("aria-hidden", "true");
+  image.setAttribute("data-nowen-imported-image-icon", "1");
+  image.className = "inline-block h-[1em] w-[1em] shrink-0 object-contain align-[-0.125em]";
+  return image;
+}
+
+function renderIconBadge(badge: HTMLElement, icon: string): void {
+  if (isImageIcon(icon)) {
+    const existingImage = badge.querySelector<HTMLImageElement>(":scope > img[data-nowen-imported-image-icon]");
+    if (existingImage && badge.childNodes.length === 1 && existingImage.src === icon) return;
+    badge.replaceChildren(createImageIconElement(icon));
+    return;
+  }
+  if (badge.childNodes.length === 1 && badge.firstChild?.nodeType === Node.TEXT_NODE && badge.textContent === icon) return;
+  badge.textContent = icon;
+}
+
+function reconcileImportedImageIconText(root: HTMLElement = document.body): void {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const targets: Text[] = [];
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const text = node.nodeValue || "";
+    if (!text.includes("data:image/")) continue;
+    const parent = node.parentElement;
+    if (!parent || parent.closest(IMAGE_ICON_SKIP_SELECTOR)) continue;
+    if (!splitImageIconText(text).some((part) => part.type === "image")) continue;
+    targets.push(node as Text);
+  }
+
+  for (const target of targets) {
+    if (!target.isConnected) continue;
+    const parts = splitImageIconText(target.nodeValue || "");
+    if (!parts.some((part) => part.type === "image")) continue;
+    const fragment = document.createDocumentFragment();
+    for (const part of parts) {
+      fragment.append(part.type === "image"
+        ? createImageIconElement(part.value)
+        : document.createTextNode(part.value));
+    }
+    target.replaceWith(fragment);
+  }
+}
+
+function reconcileImportedImageIconMutations(records: MutationRecord[]): void {
+  const roots = new Set<HTMLElement>();
+  for (const record of records) {
+    if (record.type === "characterData") {
+      if ((record.target.nodeValue || "").includes("data:image/") && record.target.parentElement) {
+        roots.add(record.target.parentElement);
+      }
+      continue;
+    }
+    for (const addedNode of Array.from(record.addedNodes)) {
+      if (addedNode.nodeType === Node.TEXT_NODE) {
+        if ((addedNode.nodeValue || "").includes("data:image/") && addedNode.parentElement) {
+          roots.add(addedNode.parentElement);
+        }
+        continue;
+      }
+      if (addedNode instanceof HTMLElement && (addedNode.textContent || "").includes("data:image/")) {
+        roots.add(addedNode);
+      }
+    }
+  }
+  for (const root of roots) reconcileImportedImageIconText(root);
 }
 
 function normalizeTitle(value: unknown): string {
@@ -176,7 +263,7 @@ export default function NoteIconBridge() {
         }
 
         if (existingBadge) {
-          if (existingBadge.textContent !== icon) existingBadge.textContent = icon;
+          renderIconBadge(existingBadge, icon);
           return;
         }
 
@@ -185,7 +272,7 @@ export default function NoteIconBridge() {
         badge.setAttribute("role", "img");
         badge.setAttribute("aria-label", copy.menu);
         badge.className = "shrink-0 text-base leading-none select-none";
-        badge.textContent = icon;
+        renderIconBadge(badge, icon);
         row.insertBefore(badge, titleElement);
       });
 
@@ -217,8 +304,12 @@ export default function NoteIconBridge() {
   }, [copy.menu]);
 
   useEffect(() => {
+    reconcileImportedImageIconText();
     reconcileDom();
-    const observer = new MutationObserver(reconcileDom);
+    const observer = new MutationObserver((records) => {
+      reconcileImportedImageIconMutations(records);
+      reconcileDom();
+    });
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
     const unsubscribeSnapshots = subscribeSnapshots(reconcileDom);
     const unsubscribeIcons = subscribeNoteIcons(reconcileDom);

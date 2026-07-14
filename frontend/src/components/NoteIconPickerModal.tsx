@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { SmilePlus, Trash2, X } from "lucide-react";
+import { ImageIcon, SmilePlus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/lib/toast";
+import { isImageIcon } from "@/lib/iconValue";
 import { getCachedNoteIcon, refreshNoteIcons, setNoteIcon } from "@/lib/noteIcons";
 
 const PRESET_ICONS = [
@@ -25,6 +26,8 @@ function getCopy() {
     title: "设置笔记图标",
     subtitle: "选择 emoji，或粘贴一个自定义短图标。",
     custom: "自定义图标",
+    importedImage: "从思源笔记导入的图片图标",
+    importedImageHint: "可直接保留，也可以选择 emoji 或输入新图标进行替换。",
     placeholder: "例如：📝",
     remove: "移除图标",
     cancel: "取消",
@@ -38,6 +41,8 @@ function getCopy() {
     title: "Set note icon",
     subtitle: "Choose an emoji or paste a short custom icon.",
     custom: "Custom icon",
+    importedImage: "Image icon imported from SiYuan",
+    importedImageHint: "Keep it as-is, or replace it with an emoji or another short icon.",
     placeholder: "For example: 📝",
     remove: "Remove icon",
     cancel: "Cancel",
@@ -97,14 +102,16 @@ export default function NoteIconPickerModal({
   if (!noteId) return null;
 
   const normalizedIcon = icon.trim();
-  const invalid = /[\r\n\t]/.test(normalizedIcon)
-    || Array.from(normalizedIcon).length > MAX_ICON_CODE_POINTS;
+  const imageIcon = isImageIcon(normalizedIcon);
+  const invalid = !imageIcon && (/\r|\n|\t/.test(normalizedIcon)
+    || Array.from(normalizedIcon).length > MAX_ICON_CODE_POINTS);
   const unchanged = normalizedIcon === originalIcon.trim();
 
   const persist = async (value: string) => {
     if (saving || locked) return;
     const normalized = value.trim();
-    if (/[\r\n\t]/.test(normalized) || Array.from(normalized).length > MAX_ICON_CODE_POINTS) {
+    if (!isImageIcon(normalized)
+      && (/\r|\n|\t/.test(normalized) || Array.from(normalized).length > MAX_ICON_CODE_POINTS)) {
       setError(copy.invalid);
       inputRef.current?.focus();
       return;
@@ -160,6 +167,21 @@ export default function NoteIconPickerModal({
         </div>
 
         <div className="space-y-4 px-4 py-4">
+          {imageIcon && (
+            <div className="flex items-center gap-3 rounded-xl border border-accent-primary/20 bg-accent-primary/[0.06] p-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-app-border bg-app-bg">
+                <img src={normalizedIcon} alt="" className="h-8 w-8 object-contain" draggable={false} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-tx-primary">
+                  <ImageIcon size={13} className="shrink-0 text-accent-primary" />
+                  {copy.importedImage}
+                </div>
+                <p className="mt-1 text-[11px] leading-relaxed text-tx-tertiary">{copy.importedImageHint}</p>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-8 gap-2 sm:grid-cols-10">
             {PRESET_ICONS.map((preset) => {
               const selected = normalizedIcon === preset;
@@ -188,7 +210,7 @@ export default function NoteIconPickerModal({
             <input
               ref={inputRef}
               type="text"
-              value={icon}
+              value={imageIcon ? "" : icon}
               disabled={loading || saving || locked}
               onChange={(event) => {
                 setIcon(event.target.value);

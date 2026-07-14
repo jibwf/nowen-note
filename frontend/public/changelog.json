@@ -1,6 +1,11 @@
 {
-  "generatedAt": "2026-07-14T03:04:16.675Z",
+  "generatedAt": "2026-07-14T10:10:27.567Z",
   "entries": [
+    {
+      "version": "1.3.7",
+      "date": "2026-07-14",
+      "body": "### ✨ 新增\n\n- **标签栏**: 添加全部标签快速切换 (88ec3ac)\n- **笔记体验**: 添加打印与紧凑侧栏布局 (e414baf)\n\n### 🐛 修复\n\n- **notebooks**: apply inherited sort to notes (6d6bfc5)\n- **editor**: 全端关闭文档拼写检查（任务 1） (04ff8a4)\n- 修复反代部署附件刷新后变成 127.0.0.1 裂图 (#295) (f02f14a)\n- **export**: 延迟释放导出文件地址 (c243d06)\n- **export**: 允许浏览器重试下载 (dfecf4f)\n- **标签栏**: 完善标签列表收起与焦点行为 (e43ea81)\n\n### 📝 文档\n\n- 规划笔记排序继承修复 (eac2edc)\n- 设计笔记排序继承修复 (e8b0ec2)\n- 添加全端关闭拼写检查实现计划 (38de780)\n- 设计全端关闭文档拼写检查 (b7d844e)\n- **export**: 添加浏览器下载重试计划 (dbe91ba)\n- **export**: 设计浏览器下载重试修复 (27b87ba)\n- **计划**: 记录顶部标签快速切换实现步骤 (6706849)\n- **设计**: 记录顶部标签快速切换方案 (31e4154)\n\n### ✅ 测试\n\n- **notebooks**: cover sidebar sort inheritance (96249db)\n\n### 🔧 其他\n\n- **git**: 忽略本地工作树 (15c73f0)"
+    },
     {
       "version": "1.3.6",
       "date": "2026-07-14",
@@ -45,11 +50,6 @@
       "version": "1.2.8",
       "date": "2026-07-07",
       "body": "### ✨ 新增\n\n- combine notebook tree expand toggle (5a283c6)\n- add notebook tree expand collapse actions (#162) (add6eba)\n- 标题输入框增加 IME 输入法状态感知，避免拼音串被误保存为标题 (9051ece)\n- add browser-side size check and asset reference filtering for Siyuan import (fd6879a)\n\n### 🐛 修复\n\n- align notebook tree toggle icon state (3d37362)\n- restore cross-device editor sync (da772b4)\n- scroll markdown preview outline headings (#163) (b385fb9)\n- support markdown default preview and siyuan callouts (#164) (4e94e0a)"
-    },
-    {
-      "version": "1.2.7",
-      "date": "2026-07-06",
-      "body": "### ✨ 新增\n\n- HTML 预览资源/大纲提取与编辑器联动优化 (8f46ae0)\n- 任务重复/到期计算、导入导出、编辑器与任务面板优化 (25c6050)"
     }
   ]
 }

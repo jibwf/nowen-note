@@ -160,6 +160,41 @@ If this project helps you, feel free to scan the QR code and buy the author a co
 
 > 最近 5 个版本的更新内容，完整历史见 [CHANGELOG.md](./CHANGELOG.md)。
 
+### v1.3.7 - 2026-07-14
+
+### ✨ 新增
+
+- **标签栏**: 添加全部标签快速切换 (88ec3ac)
+- **笔记体验**: 添加打印与紧凑侧栏布局 (e414baf)
+
+### 🐛 修复
+
+- **notebooks**: apply inherited sort to notes (6d6bfc5)
+- **editor**: 全端关闭文档拼写检查（任务 1） (04ff8a4)
+- 修复反代部署附件刷新后变成 127.0.0.1 裂图 (#295) (f02f14a)
+- **export**: 延迟释放导出文件地址 (c243d06)
+- **export**: 允许浏览器重试下载 (dfecf4f)
+- **标签栏**: 完善标签列表收起与焦点行为 (e43ea81)
+
+### 📝 文档
+
+- 规划笔记排序继承修复 (eac2edc)
+- 设计笔记排序继承修复 (e8b0ec2)
+- 添加全端关闭拼写检查实现计划 (38de780)
+- 设计全端关闭文档拼写检查 (b7d844e)
+- **export**: 添加浏览器下载重试计划 (dbe91ba)
+- **export**: 设计浏览器下载重试修复 (27b87ba)
+- **计划**: 记录顶部标签快速切换实现步骤 (6706849)
+- **设计**: 记录顶部标签快速切换方案 (31e4154)
+
+### ✅ 测试
+
+- **notebooks**: cover sidebar sort inheritance (96249db)
+
+### 🔧 其他
+
+- **git**: 忽略本地工作树 (15c73f0)
+
 ### v1.3.6 - 2026-07-14
 
 ### 🐛 修复
@@ -479,168 +514,5 @@ If this project helps you, feel free to scan the QR code and buy the author a co
 - 修复桌面端左上角展示和原生模块兼容 (1c28cfd)
 - Add siyuan directory (bc3ada5)
 - testability(media): export video MIME inference (#214) (4d15d0f)
-
-### v1.3.2 - 2026-07-10
-
-### ✨ 新增
-
-- **images**: mount mobile and share image experience (#199) (553eb59)
-- **images**: add compact mobile sheet and share lightbox controls (#199) (8a6a873)
-- **images**: add mobile sheet and lightbox helpers (#199) (882614c)
-- **markdown**: mount experience bridge (#198) (176894c)
-- **markdown**: bridge live preview and split sync (#198) (37791f9)
-- **markdown**: unify preview tasks code and anchors (#198) (95ee809)
-- **markdown**: add block live preview extension (#198) (e2865b5)
-- **markdown**: add mapped split scroll sync (#198) (befcd6b)
-- **markdown**: add shared enhanced code block (#198) (15cb544)
-- **sidebar**: replace notebook icon picker (#170) (3bd414a)
-- **ui**: add searchable emoji picker with recents (#170) (2cf7066)
-- **emoji**: add comprehensive local emoji dataset (#170) (fae2995)
-- **markdown**: safely render imported HTML and sandboxed iframes (#196) (a9a3968)
-- **ai**: mount AI profile switcher bridge (#197) (6ad8151)
-- **ai**: manage multiple AI service profiles (#197) (8d9b583)
-- **ai**: add chat profile switcher (#197) (e9f8fdd)
-- **ai**: add AI profile client (#197) (bb76db1)
-- **ai**: add reusable AI profiles and model discovery (#197) (a13e2c6)
-- **search**: mount persistent search center (#166) (34327fa)
-- **search**: return match counts and notebook metadata (#166) (7c1edef)
-- **search**: add full-width search center (#166) (2dc53ea)
-- **notes**: mount note icon feature bridge (#171) (fedc653)
-- **notes**: add note icon picker and list rendering (#171) (f1fb17a)
-- **notes**: add batched note icon client store (#171) (ed692a5)
-- **notes**: add persistent note icon metadata API (#171) (b5859a9)
-- **notes**: add rename action to note context menus (#172) (772e912)
-- **notes**: add context menu rename dialog (#172) (c6276f8)
-- **tasks**: add habit check-in module (#191) (18da154)
-
-### 🐛 修复
-
-- **build**: accept missing image action grids (ab2637d)
-- **build**: narrow active note before rename update (eebee72)
-- **sync**: mark only confirmed detail responses as cached (#200) (c6267b2)
-- **sync**: preserve cache detail markers on metadata writes (#200) (02c848d)
-- **sync**: preserve offline base fingerprints across queue acknowledgements (#200) (4676c75)
-- **sync**: limit safety snapshots to destructive overwrites (#200) (fcb0401)
-- **sync**: require complete server note responses (#200) (92a18a6)
-- **sync**: require server identity fields for cached details (#200) (e27caa6)
-- **sync**: reject list placeholders as note details (#200) (b216739)
-- **sync**: distinguish cached details from list placeholders (#200) (2698bd0)
-- **sync**: install complete note response guard (#200) (860ae6a)
-- **sync**: reject incomplete update responses (#200) (065c8ae)
-- **sync**: reject incomplete note detail cache writes (#200) (433fd17)
-- **sync**: validate offline base content fingerprints (#200) (79f028b)
-- **sync**: fingerprint offline note bases (#200) (1f1dd73)
-- **sync**: finalize stale-base validation and conflict drafts (#200) (e6b2ffa)
-- **sync**: mark identical draft rebases as conflicts (#200) (7b2b1e5)
-- **sync**: preserve conflicted draft base revisions (#200) (86de7c0)
-- **sync**: install revision safety trigger (#200) (a8a2e20)
-- **sync**: preserve every overwritten note revision (#200) (204b67b)
-- **sync**: install note write safety before render (#200) (4b22240)
-- **sync**: guard stale and unconfirmed note writes (#200) (91b02ed)
-- **sync**: stop blind conflict replays (#200) (68ca026)
-- **sync**: distinguish offline note snapshots (#200) (fb97b2c)
-- **markdown**: provide live block decorations from state field (#198) (7f23848)
-- **images**: install mobile image focus guard (#199) (d1911d1)
-- **images**: blur editor when mobile image sheet opens (#199) (3d71a49)
-- **images**: use a strict-safe lightbox guard key (#199) (922912d)
-- **images**: keep lightbox rotation during zoom (#199) (55a1480)
-- **images**: preserve lightbox rotation across zoom updates (#199) (c52b8bc)
-- **markdown**: align preview when split mode opens (#198) (1025238)
-- **markdown**: stabilize bridge persistence and observers (#198) (2d2425e)
-- **siyuan**: bound metadata scans and align document mapping (#196) (db045b5)
-- **siyuan**: index assets referenced from imported HTML (#196) (1a47d2b)
-- **siyuan**: preserve notebook order and emoji metadata (#196) (7f23f72)
-- **siyuan**: preserve emoji and iframe nodes during markdown conversion (#196) (8975f9a)
-- **ai**: preserve connection testing for profiles (#197) (fe0c164)
-- **ai**: keep profile switcher compact on mobile (#197) (98e25a0)
-- **ai**: normalize AI profile request headers (#197) (c6af9fe)
-- **ai**: harden profile persistence and preserve icon validation (#197) (7be2687)
-- **ai**: reload profiles when chat opens (#197) (d70b413)
-- **android**: limit native bridge to JSON reads (d39b27a)
-- **android**: install native-first API bridge (e690f83)
-- **android**: prefer native HTTP for API reads (64ca208)
-- **search**: preserve destination notebook after opening a result (#166) (8f06e93)
-- **notes**: show rename in notebook tree context menu (e92279d)
-- **notes**: make icon picker race-safe and keyboard friendly (#171) (1c25488)
-- **notes**: recreate note icon table after database reset (#171) (e20e4b7)
-- **habits**: respect read-only workspace permissions (816827a)
-- **habits**: preserve history and validate check-in dates (b24db8c)
-- **ui**: load global overlay layer contract (#192) (6558af4)
-- **ui**: define settings modal overlay layer (#192) (9c56278)
-
-### ♻️ 重构
-
-- **siyuan**: preserve legacy import implementations (#196) (b243f34)
-- **notes**: remove superseded note icon bridge (#171) (6f83dd2)
-- **notes**: use stable note icon bridge (#171) (769d3a1)
-- **notes**: make note icon DOM integration idempotent (#171) (c8314e8)
-- **notes**: isolate note icon picker dialog (#171) (c5aa0db)
-
-### 📝 文档
-
-- add share lightbox control reference (cc4a0e7)
-- add mobile image menu issue evidence (0a6653e)
-- add live-preview reference screenshot for issue #198 (b1b7021)
-- add code-block reference screenshot for issue #198 (e3e98ac)
-- add task-list screenshot for issue #198 (16f4e4f)
-- add screenshot for issue #198 (dd6853f)
-
-### ✅ 测试
-
-- **sync**: preserve same-revision offline fingerprints (#200) (01fcfd1)
-- **sync**: exercise large-body shrink threshold (#200) (1a6d22d)
-- **sync**: cover scoped destructive snapshots (#200) (dd804fd)
-- **sync**: require identity fields in update responses (#200) (520a818)
-- **sync**: require server identity fields for detail cache (#200) (52ca0c9)
-- **sync**: distinguish cached details and placeholders (#200) (95f2dca)
-- **sync**: reject incomplete cached note details (#200) (08defa4)
-- **sync**: reject incomplete update acknowledgements (#200) (c4fa4f3)
-- **sync**: cover same-version body mismatches (#200) (9d0fbdd)
-- **sync**: use live timestamps for conflict drafts (#200) (e3e3400)
-- **sync**: update optimistic-lock expectations (#200) (d5d3d01)
-- **sync**: verify guarded note writes end to end (#200) (24582b3)
-- **sync**: preserve draft conflict baselines (#200) (9cf3e71)
-- **sync**: cover automatic pre-overwrite snapshots (#200) (2c8e376)
-- **sync**: cover note write confirmation and conflicts (#200) (ca2ea5d)
-- **sync**: prevent blind optimistic-lock replays (#200) (06198d4)
-- **markdown**: cover live block decoration installation (#198) (bbbcf26)
-- **images**: cover mobile image focus release (#199) (e068437)
-- **images**: cover mobile sheet and lightbox navigation (#199) (17a39b9)
-- **markdown**: cover tasks and enhanced code blocks (#198) (fd83cb3)
-- **markdown**: cover mapped scroll interpolation (#198) (84eafd0)
-- **emoji**: start issue 170 validation (c9f0b2d)
-- **emoji**: cover categories search and recents (#170) (022a16c)
-- **markdown**: isolate HTML preview globals (#196) (7d2c968)
-- **markdown**: cover sanitized HTML and iframe rendering (#196) (6427be1)
-- **siyuan**: cover order emoji HTML and iframe fidelity (#196) (e498496)
-- **ai**: assert normalized profile request headers (#197) (237558f)
-- **ai**: cover AI profile client (#197) (4f01866)
-- **ai**: cover profiles and model discovery (#197) (24fd351)
-- **android**: keep binary API reads on fetch (f4613cf)
-- **android**: cover native-first API transport (7ac3627)
-- **search**: cover match counts and result metadata (#166) (abf42df)
-- **notes**: cover note icon metadata permissions (#171) (d84ec1f)
-- **habits**: cover archived stats and validation regressions (2cce98d)
-
-### 🔧 其他
-
-- simplify question issue form (e53f492)
-- simplify feature request form (0abd199)
-- simplify bug issue form (74da975)
-- remove unused issue 198 workflow (5a1256b)
-- remove unused issue 198 codemod (b94f4c0)
-- run issue 198 implementation and validation (bdd6c56)
-- add one-shot markdown experience codemod (#198) (a119e85)
-- remove issue 170 validation workflow (39f80a0)
-- run one-shot sidebar emoji picker codemod (#170) (bd6960e)
-- add one-shot sidebar emoji picker codemod (#170) (b8e759c)
-- add usage question issue form (ba24df6)
-- add structured feature request form (907cf41)
-- add structured bug report form (6448da8)
-- configure GitHub issue templates (38a408b)
-- remove unused issue #171 PR workflow (37ac2b2)
-- remove unused issue #171 apply workflow (26dc740)
-- add one-shot PR trigger for issue #171 (659a4c2)
-- apply issue #171 implementation (8743075)
 
 <!-- CHANGELOG:END -->

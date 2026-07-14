@@ -16,19 +16,11 @@ export type NotebookDropResult = {
 
 export const DEFAULT_NOTEBOOK_SORT_PREF: NotebookSortPref = { by: "manual", dir: "desc" };
 
-/**
- * Sidebar stores only explicit per-parent overrides. When a parent has no override it returns
- * DEFAULT_NOTEBOOK_SORT_PREF as a sentinel. Keep the active root preference here so both the
- * recursive notebook tree and the note rows rendered inside that tree can inherit the same
- * global sort rule without materialising thousands of duplicate localStorage entries.
- *
- * Static buildNotebookTree(prefObject) calls deliberately do not update this context. That keeps
- * utility trees such as the "move notebook" picker from resetting the Sidebar's active rule.
- */
-let activeRootNotebookSortPref: NotebookSortPref = DEFAULT_NOTEBOOK_SORT_PREF;
-
-export function resolveInheritedNotebookSortPref(pref: NotebookSortPref): NotebookSortPref {
-  return pref === DEFAULT_NOTEBOOK_SORT_PREF ? activeRootNotebookSortPref : pref;
+export function resolveNotebookSortPref(
+  explicitPref: NotebookSortPref | undefined,
+  rootPref: NotebookSortPref,
+): NotebookSortPref {
+  return explicitPref ?? rootPref;
 }
 
 export function normalizeNotebookSortPref(raw: unknown): NotebookSortPref {
@@ -71,17 +63,11 @@ export function buildNotebookTree(notebooks: Notebook[], pref: NotebookSortResol
     }
   });
 
-  const isPerParentResolver = typeof pref === "function";
   const resolvePref: (parentId: string | null) => NotebookSortPref =
     typeof pref === "function" ? pref : () => pref;
-  const rootPref = resolvePref(null);
-  if (isPerParentResolver) activeRootNotebookSortPref = rootPref;
 
   const sortRecursive = (list: Notebook[], parentId: string | null) => {
-    const requestedPref = resolvePref(parentId);
-    const effectivePref = isPerParentResolver && parentId !== null
-      ? resolveInheritedNotebookSortPref(requestedPref)
-      : requestedPref;
+    const effectivePref = resolvePref(parentId);
     list.sort((a, b) => compareNotebooks(a, b, effectivePref));
     list.forEach((n) => {
       if (n.children && n.children.length > 0) sortRecursive(n.children, n.id);

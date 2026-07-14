@@ -1,27 +1,23 @@
 import type { NoteListItem } from "@/types";
-import {
-  resolveInheritedNotebookSortPref,
-  type NotebookSortPref,
-} from "@/lib/notebookSort";
+import type { NotebookSortPref } from "@/lib/notebookSort";
 
 export function directNotebookNotes(notes: NoteListItem[], notebookId: string): NoteListItem[] {
   return notes.filter((note) => note.notebookId === notebookId);
 }
 
 export function sortNotebookNotes(notes: NoteListItem[], pref: NotebookSortPref): NoteListItem[] {
-  const effectivePref = resolveInheritedNotebookSortPref(pref);
-  if (effectivePref.by === "manual") return notes;
+  if (pref.by === "manual") return notes;
 
-  const dir = effectivePref.dir === "asc" ? 1 : -1;
+  const dir = pref.dir === "asc" ? 1 : -1;
   return [...notes].sort((a, b) => {
     if ((a.isPinned || 0) !== (b.isPinned || 0)) {
       return (b.isPinned || 0) - (a.isPinned || 0);
     }
-    if (effectivePref.by === "name") {
+    if (pref.by === "name") {
       const cmp = (a.title || "").localeCompare(b.title || "", undefined, { sensitivity: "base" });
       return cmp * dir || a.id.localeCompare(b.id);
     }
-    const field = effectivePref.by as "updatedAt" | "createdAt";
+    const field = pref.by as "updatedAt" | "createdAt";
     const av = a[field] || "";
     const bv = b[field] || "";
     const cmp = av < bv ? -1 : av > bv ? 1 : 0;

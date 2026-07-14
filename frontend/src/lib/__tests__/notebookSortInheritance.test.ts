@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { NoteListItem, Notebook } from "@/types";
 import {
   buildNotebookTree,
-  DEFAULT_NOTEBOOK_SORT_PREF,
+  resolveNotebookSortPref,
   type NotebookSortPref,
 } from "@/lib/notebookSort";
 import { sortNotebookNotes } from "@/lib/notebookNoteCache";
@@ -46,7 +46,7 @@ function inheritedResolver(
 ) {
   return (parentId: string | null): NotebookSortPref => {
     if (parentId === null) return rootPref;
-    return overrides[parentId] ?? DEFAULT_NOTEBOOK_SORT_PREF;
+    return resolveNotebookSortPref(overrides[parentId], rootPref);
   };
 }
 
@@ -70,14 +70,15 @@ describe("notebook sort inheritance", () => {
   });
 
   it("applies the inherited root rule to notes inside a nested notebook", () => {
+    const resolvePref = inheritedResolver({ by: "name", dir: "asc" });
     buildNotebookTree(
       [notebook("root"), notebook("child-a", { parentId: "root" })],
-      inheritedResolver({ by: "name", dir: "asc" }),
+      resolvePref,
     );
 
     const sorted = sortNotebookNotes(
       [note("z", "Zulu note"), note("a", "Alpha note")],
-      DEFAULT_NOTEBOOK_SORT_PREF,
+      resolvePref("child-a"),
     );
 
     expect(sorted.map((item) => item.id)).toEqual(["a", "z"]);
@@ -85,20 +86,24 @@ describe("notebook sort inheritance", () => {
 
   it("keeps an explicit child manual override instead of inheriting the root rule", () => {
     const explicitManual: NotebookSortPref = { by: "manual", dir: "desc" };
+    const resolvePref = inheritedResolver(
+      { by: "name", dir: "asc" },
+      { root: explicitManual },
+    );
     const tree = buildNotebookTree(
       [
         notebook("root"),
         notebook("child-z", { parentId: "root", name: "Zulu", sortOrder: 0 }),
         notebook("child-a", { parentId: "root", name: "Alpha", sortOrder: 1 }),
       ],
-      inheritedResolver({ by: "name", dir: "asc" }, { root: explicitManual }),
+      resolvePref,
     );
 
     expect(tree[0].children?.map((item) => item.id)).toEqual(["child-z", "child-a"]);
     expect(
       sortNotebookNotes(
         [note("z", "Zulu note"), note("a", "Alpha note")],
-        explicitManual,
+        resolvePref("root"),
       ).map((item) => item.id),
     ).toEqual(["z", "a"]);
   });

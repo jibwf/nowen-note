@@ -60,6 +60,7 @@ import {
   getNotebookDropZone,
   getNotebookDragHint,
   normalizeNotebookSortPref,
+  resolveNotebookSortPref,
   reorderNotebooksForDrop,
   type NotebookDropZone,
   type NotebookSortBy,
@@ -101,7 +102,9 @@ function saveNotebookSortPrefs(prefMap: NotebookSortPrefMap) {
 }
 
 function getNotebookSortPrefForParent(prefMap: NotebookSortPrefMap, parentId: string | null): NotebookSortPref {
-  return prefMap[notebookSortKey(parentId)] ?? DEFAULT_NOTEBOOK_SORT_PREF;
+  const rootPref = prefMap[ROOT_NOTEBOOK_SORT_KEY] ?? DEFAULT_NOTEBOOK_SORT_PREF;
+  if (parentId === null) return rootPref;
+  return resolveNotebookSortPref(prefMap[notebookSortKey(parentId)], rootPref);
 }
 
 /* ===== 移动笔记本：树形选择器条目 ===== */

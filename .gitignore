@@ -63,3 +63,4 @@ dist-electron-lite
 tsconfig.tsbuildinfo
 backend-dev.out
 frontend-dev.out
+.worktrees/

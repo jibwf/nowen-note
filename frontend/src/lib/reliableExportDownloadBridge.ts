@@ -2,6 +2,7 @@ import { api } from "./api";
 
 const SUPPORTED_EXPORT_NAME = /\.(?:md|markdown|zip|pdf|docx)$/i;
 const LEGACY_TOKEN_PREFIX = "legacy-export-";
+const OBJECT_URL_CLEANUP_DELAY_MS = 60_000;
 const legacyDownloads = new Map<string, { blob: Blob; filename: string }>();
 const bypassAnchors = new WeakSet<HTMLAnchorElement>();
 let installed = false;
@@ -52,6 +53,13 @@ export function isReliableExportFilename(filename: string): boolean {
   return SUPPORTED_EXPORT_NAME.test(String(filename || "").trim());
 }
 
+export function scheduleObjectUrlRevocation(
+  url: string,
+  delayMs = OBJECT_URL_CLEANUP_DELAY_MS,
+): void {
+  window.setTimeout(() => URL.revokeObjectURL(url), delayMs);
+}
+
 function triggerBlobDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -62,7 +70,7 @@ function triggerBlobDownload(blob: Blob, filename: string): void {
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  scheduleObjectUrlRevocation(url);
 }
 
 async function handleBlobAnchor(anchor: HTMLAnchorElement, nativeFetch: typeof window.fetch): Promise<void> {

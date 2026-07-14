@@ -20,6 +20,7 @@ import {
 import { useApp, useAppActions } from "@/store/AppContext";
 import { api, withSudo, getCurrentWorkspace, setCurrentWorkspace, getBaseUrl } from "@/lib/api";
 import { toast } from "@/lib/toast";
+import { scheduleObjectUrlRevocation } from "@/lib/reliableExportDownloadBridge";
 import {
   chooseDesktopDataDir,
   getAppInfo,
@@ -454,7 +455,7 @@ export default function DataManager() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      scheduleObjectUrlRevocation(url);
       toast.success(t('note.nowenPackageSuccess'));
     } catch (err: any) {
       console.error("[NowenPackageExport] Failed:", err);

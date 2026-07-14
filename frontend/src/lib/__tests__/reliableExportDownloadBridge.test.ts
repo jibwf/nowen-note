@@ -1,8 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   extractLegacyDownloadToken,
   isReliableExportFilename,
+  scheduleObjectUrlRevocation,
 } from "@/lib/reliableExportDownloadBridge";
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe("reliableExportDownloadBridge", () => {
   it("recognizes every affected export type", () => {
@@ -19,5 +25,22 @@ describe("reliableExportDownloadBridge", () => {
       .toBe("legacy-export-123");
     expect(extractLegacyDownloadToken("https://note.test/api/export/download/real-token"))
       .toBeNull();
+  });
+
+  it("keeps an export object URL alive until the cleanup delay expires", () => {
+    vi.useFakeTimers();
+    const revoke = vi.fn();
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: revoke,
+    });
+
+    scheduleObjectUrlRevocation("blob:https://note.test/export", 60_000);
+
+    expect(revoke).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(59_999);
+    expect(revoke).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(revoke).toHaveBeenCalledWith("blob:https://note.test/export");
   });
 });

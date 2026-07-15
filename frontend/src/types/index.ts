@@ -204,6 +204,7 @@ export interface NoteListItem {
   isArchived: number;
   isTrashed: number;
   version: number;
+  sortOrder?: number;
   createdAt: string;
   updatedAt: string;
   /**

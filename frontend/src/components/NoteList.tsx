@@ -22,6 +22,7 @@ import { deleteNote as deleteLocalNote, getNote as getLocalNote, putNote as putL
 import { confirm } from "@/components/ui/confirm";
 import { highlightTextNode, sanitizeSearchHtml, stripSearchMarks } from "@/lib/searchHighlight";
 import { getNoteListDragHint, reorderNotesWithinNotebook, shouldUseHtmlNoteDragging } from "@/lib/noteManualSort";
+import { sortNotesPinnedFirst } from "@/lib/notePinnedOrder";
 // "导入 Word 文档" 走 dynamic import（见 createNoteInNotebook），减少首屏 bundle 体积。
 
 /* ===== 排序模式 ===== */
@@ -1596,14 +1597,18 @@ export default function NoteList() {
   // 字段）不重新拉列表，导致被编辑笔记的 updatedAt 更新了却没挪位置——看起来排序没生效。
   // 这里用 useMemo 派生一份 sortedNotes，每次 state.notes 变化都重算顺序。
   const sortedNotes = useMemo(() => {
-    // 搜索视图由 FTS 相关性排序、manual 模式由后端 sortOrder 字段决定——前端无法重排
-    if (state.viewMode === "search" || sortPref.by === "manual") {
-      return state.notes;
+    // 搜索视图保留 FTS 相关性，只按置顶状态做稳定分组。
+    if (state.viewMode === "search") {
+      return sortNotesPinnedFirst(state.notes);
+    }
+    if (sortPref.by === "manual") {
+      return sortNotesPinnedFirst(
+        state.notes,
+        (a, b) => (a.sortOrder || 0) - (b.sortOrder || 0),
+      );
     }
     const dir = sortPref.dir === "asc" ? 1 : -1;
-    return [...state.notes].sort((a, b) => {
-      // 置顶永远最前
-      if (a.isPinned !== b.isPinned) return b.isPinned - a.isPinned;
+    return sortNotesPinnedFirst(state.notes, (a, b) => {
       if (sortPref.by === "title") {
         const cmp = (a.title || "").localeCompare(b.title || "", undefined, { sensitivity: "base" });
         return cmp * dir || a.id.localeCompare(b.id);
@@ -2372,6 +2377,9 @@ export default function NoteList() {
         const newVal = targetNote.isPinned === 1 ? 0 : 1;
         await api.updateNote(targetId, { isPinned: newVal } as any);
         actions.updateNoteInList({ id: targetId, isPinned: newVal });
+        if (state.activeNote?.id === targetId) {
+          actions.setActiveNote({ ...state.activeNote, isPinned: newVal });
+        }
         break;
       }
       case "toggle_fav": {
@@ -2850,11 +2858,18 @@ export default function NoteList() {
       if (dragOverNoteId) setDragOverNoteId(null);
       return;
     }
+    const source = sortedNotes.find((note) => note.id === dragNoteId);
+    const target = sortedNotes.find((note) => note.id === noteId);
+    if (!source || !target || (source.isPinned === 1) !== (target.isPinned === 1)) {
+      e.dataTransfer.dropEffect = "none";
+      if (dragOverNoteId) setDragOverNoteId(null);
+      return;
+    }
     e.dataTransfer.dropEffect = "move";
     if (noteId !== dragNoteId) {
       setDragOverNoteId(noteId);
     }
-  }, [dragNoteId, dragOverNoteId]);
+  }, [dragNoteId, dragOverNoteId, sortedNotes]);
 
   const handleDragEnd = useCallback(() => {
     setDragNoteId(null);
@@ -2889,10 +2904,10 @@ export default function NoteList() {
     setDragOverNoteId(null);
     if (!sourceId || sourceId === targetNoteId) return;
 
-    const result = reorderNotesWithinNotebook(state.notes, sourceId, targetNoteId, "before");
+    const result = reorderNotesWithinNotebook(sortedNotes, sourceId, targetNoteId, "before");
     if (!result) {
-      const source = state.notes.find((n) => n.id === sourceId);
-      const target = state.notes.find((n) => n.id === targetNoteId);
+      const source = sortedNotes.find((n) => n.id === sourceId);
+      const target = sortedNotes.find((n) => n.id === targetNoteId);
       if (source && target && source.notebookId !== target.notebookId) {
         toast.warning("不同笔记本内的笔记不能直接排序");
       }
@@ -2909,7 +2924,7 @@ export default function NoteList() {
       toast.error("排序保存失败");
       await fetchNotes(); // 回滚
     }
-  }, [dragNoteId, state.notes, actions, fetchNotes]);
+  }, [dragNoteId, sortedNotes, actions, fetchNotes]);
 
   // 移动端触摸拖拽处理
   const handleTouchStart = useCallback((noteId: string, e: React.TouchEvent) => {
@@ -2971,7 +2986,7 @@ export default function NoteList() {
 
     if (!targetId || sourceId === targetId) return;
 
-    const result = reorderNotesWithinNotebook(state.notes, sourceId, targetId, "before");
+    const result = reorderNotesWithinNotebook(sortedNotes, sourceId, targetId, "before");
     if (!result) return;
 
     actions.setNotes(result.notes);
@@ -2985,7 +3000,7 @@ export default function NoteList() {
       toast.error("排序保存失败");
       await fetchNotes();
     }
-  }, [dragOverNoteId, state.notes, actions, fetchNotes]);
+  }, [dragOverNoteId, sortedNotes, actions, fetchNotes]);
 
   const viewTitles: Record<string, string> = {
     all: t('noteList.allNotes'),

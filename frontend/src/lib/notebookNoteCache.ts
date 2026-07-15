@@ -1,17 +1,42 @@
 import type { NoteListItem } from "@/types";
 import type { NotebookSortPref } from "@/lib/notebookSort";
+import { sortNotesPinnedFirst } from "@/lib/notePinnedOrder";
 
 export function directNotebookNotes(notes: NoteListItem[], notebookId: string): NoteListItem[] {
   return notes.filter((note) => note.notebookId === notebookId);
 }
 
-export function sortNotebookNotes(notes: NoteListItem[], pref: NotebookSortPref): NoteListItem[] {
-  if (pref.by === "manual") return notes;
+export function syncPinnedStateToNotebookCache(
+  cache: Map<string, NoteListItem[]>,
+  sourceNotes: readonly NoteListItem[],
+): Map<string, NoteListItem[]> {
+  const pinnedById = new Map(sourceNotes.map((note) => [note.id, note.isPinned || 0]));
+  const next = new Map(cache);
+  let cacheChanged = false;
 
+  cache.forEach((notes, notebookId) => {
+    let notesChanged = false;
+    const syncedNotes = notes.map((note) => {
+      const isPinned = pinnedById.get(note.id);
+      if (isPinned === undefined || isPinned === (note.isPinned || 0)) return note;
+      notesChanged = true;
+      return { ...note, isPinned };
+    });
+
+    if (notesChanged) {
+      cacheChanged = true;
+      next.set(notebookId, syncedNotes);
+    }
+  });
+
+  return cacheChanged ? next : cache;
+}
+
+export function sortNotebookNotes(notes: NoteListItem[], pref: NotebookSortPref): NoteListItem[] {
   const dir = pref.dir === "asc" ? 1 : -1;
-  return [...notes].sort((a, b) => {
-    if ((a.isPinned || 0) !== (b.isPinned || 0)) {
-      return (b.isPinned || 0) - (a.isPinned || 0);
+  return sortNotesPinnedFirst(notes, (a, b) => {
+    if (pref.by === "manual") {
+      return (a.sortOrder || 0) - (b.sortOrder || 0);
     }
     if (pref.by === "name") {
       const cmp = (a.title || "").localeCompare(b.title || "", undefined, { sensitivity: "base" });

@@ -4,7 +4,26 @@ import Paragraph from "@tiptap/extension-paragraph";
 import Text from "@tiptap/extension-text";
 import { describe, expect, it } from "vitest";
 
-import { getVideoDisplayStyle, Video } from "@/components/VideoExtension";
+import * as VideoExtension from "@/components/VideoExtension";
+
+const { getVideoDisplayStyle, Video } = VideoExtension;
+
+function getStopDecision(target: Element): boolean | undefined {
+  let decision: boolean | undefined;
+  target.addEventListener(
+    "mousedown",
+    (event) => {
+      decision = (
+        VideoExtension as typeof VideoExtension & {
+          shouldStopVideoNodeEvent?: (props: { event: Event }) => boolean;
+        }
+      ).shouldStopVideoNodeEvent?.({ event });
+    },
+    { once: true },
+  );
+  target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+  return decision;
+}
 
 describe("VideoExtension file uploads", () => {
   it("inserts uploaded video attachments as file video nodes", () => {
@@ -59,5 +78,28 @@ describe("VideoExtension file uploads", () => {
     expect(style.wrapper.maxWidth).toBe("min(480px, 100%)");
     expect(style.video.width).toBe("min(480px, 100%)");
     expect(style.video.aspectRatio).toBe("16 / 9");
+  });
+});
+
+describe("VideoExtension NodeView events", () => {
+  it("keeps native video control events away from ProseMirror", () => {
+    const video = document.createElement("video");
+
+    expect(getStopDecision(video)).toBe(true);
+  });
+
+  it("keeps toolbar descendant events away from ProseMirror", () => {
+    const toolbar = document.createElement("div");
+    toolbar.setAttribute("data-video-toolbar", "");
+    const icon = document.createElement("span");
+    toolbar.append(icon);
+
+    expect(getStopDecision(icon)).toBe(true);
+  });
+
+  it("leaves ordinary video node events to ProseMirror", () => {
+    const wrapper = document.createElement("div");
+
+    expect(getStopDecision(wrapper)).toBe(false);
   });
 });

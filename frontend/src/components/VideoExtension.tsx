@@ -228,6 +228,11 @@ export function getVideoDisplayStyle(ratio: number | null): {
   };
 }
 
+export function shouldStopVideoNodeEvent({ event }: { event: Event }): boolean {
+  const target = event.target;
+  return target instanceof Element && Boolean(target.closest("video, [data-video-toolbar]"));
+}
+
 const VideoNodeView: React.FC<ReactNodeViewProps> = ({ node, selected, deleteNode }) => {
   const src: string = node.attrs.src || "";
   const platform: VideoPlatform = node.attrs.platform || "unknown";
@@ -286,6 +291,7 @@ const VideoNodeView: React.FC<ReactNodeViewProps> = ({ node, selected, deleteNod
           </video>
           {(hovered || selected) && (
             <div
+              data-video-toolbar
               contentEditable={false}
               style={videoToolbarOverlayStyle}
             >
@@ -525,7 +531,9 @@ export const Video = Node.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(VideoNodeView);
+    return ReactNodeViewRenderer(VideoNodeView, {
+      stopEvent: shouldStopVideoNodeEvent,
+    });
   },
 
   addCommands() {

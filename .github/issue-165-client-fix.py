@@ -1,5 +1,22 @@
 from pathlib import Path
 
+# The compatibility migration wrapper already owns v45-v47. Move this feature to v48
+# and make the test cleanup resilient when setup fails early.
+backend_script_path = Path(".github/issue-165-backend.py")
+backend_script = backend_script_path.read_text(encoding="utf-8")
+backend_script = backend_script.replace(
+    "  // v45: 通用块索引、幂等块操作与来源块级双链。",
+    "  // v48: 通用块索引、幂等块操作与来源块级双链。",
+    1,
+)
+backend_script = backend_script.replace(
+    '    version: 45,\n    name: "knowledge-block-index-and-source-links",',
+    '    version: 48,\n    name: "knowledge-block-index-and-source-links",',
+    1,
+)
+backend_script = backend_script.replace("  closeDb();", "  if (closeDb) closeDb();", 1)
+backend_script_path.write_text(backend_script, encoding="utf-8")
+
 path = Path(".github/issue-165-client.py")
 source = path.read_text(encoding="utf-8")
 
@@ -94,5 +111,32 @@ backlinks_path.write_text(backlinks_source.replace(backlink_anchor, backlink_out
 '''
 source = source[:block_start] + backlink_replacement + source[block_end:]
 
+# Keep the frontend API contract aligned with the expanded backlink payload.
+api_contract_patch = r'''
+api_impl_path = Path("frontend/src/lib/api.impl.ts")
+api_impl_source = api_impl_path.read_text(encoding="utf-8")
+api_old = """        sourceNoteId: string;
+        title: string;
+        updatedAt: string;
+        linkText: string | null;
+        linkType: string;
+        targetBlockId: string | null;
+        excerpt: string | null;"""
+api_new = """        sourceNoteId: string;
+        sourceBlockId: string | null;
+        sourceNotebookId: string;
+        title: string;
+        updatedAt: string;
+        linkText: string | null;
+        linkType: \"note\" | \"block\";
+        targetBlockId: string | null;
+        excerpt: string | null;"""
+if api_impl_source.count(api_old) != 1:
+    raise SystemExit(f"backlink API contract: expected one match, got {api_impl_source.count(api_old)}")
+api_impl_path.write_text(api_impl_source.replace(api_old, api_new, 1), encoding="utf-8")
+'''
+print_pos = source.rfind('print("issue 165 client patch applied")')
+source = source[:print_pos] + api_contract_patch + "\n" + source[print_pos:]
+
 path.write_text(source, encoding="utf-8")
-print("issue 165 fragile client patches normalized")
+print("issue 165 migration, API contract and fragile client patches normalized")

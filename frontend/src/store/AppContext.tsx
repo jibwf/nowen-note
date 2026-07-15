@@ -340,7 +340,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
   useEffect(() => {
-    let refreshTimer: ReturnType<typeof window.setTimeout> | null = null;
+    let refreshTimer: number | null = null;
     let requestVersion = 0;
 
     const reconcileNotebookTree = () => {

@@ -20,8 +20,11 @@ interface AutoBackupConfigLike {
   [key: string]: unknown;
 }
 
-interface PatchedBackupManager extends BackupManager {
+interface PatchedBackupManager {
   autoBackupConfig: AutoBackupConfigLike;
+  createBackup: BackupManager["createBackup"];
+  listBackups: BackupManager["listBackups"];
+  deleteBackup: BackupManager["deleteBackup"];
   sendAutoBackupEmail(filename: string, to: string): Promise<void>;
   [RUNNING_FLAG]?: boolean;
 }

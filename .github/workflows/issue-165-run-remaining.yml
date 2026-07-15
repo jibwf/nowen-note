@@ -30,7 +30,8 @@ jobs:
             packages/nowen-mcp/package-lock.json
       - name: Load patch scripts from isolated branch
         run: |
-          git fetch origin codex/issue-165-patch-scripts codex/issue-165-finish-v2
+          git fetch origin refs/heads/codex/issue-165-patch-scripts:refs/remotes/origin/codex/issue-165-patch-scripts
+          git fetch origin refs/heads/codex/issue-165-finish-v2:refs/remotes/origin/codex/issue-165-finish-v2
           git rev-parse HEAD > /tmp/issue165-main-parent
           for file in \
             .github/issue-165-phase1-normalize.py \

@@ -30,7 +30,7 @@
 - 修改：`frontend/src/lib/__tests__/notebookNoteCache.test.ts`
 - 修改：`frontend/src/components/NoteList.tsx:1593-1618`
 
-- [ ] **步骤 1：编写共享排序函数的失败测试**
+- [x] **步骤 1：编写共享排序函数的失败测试**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -69,13 +69,13 @@ describe("sortNotesPinnedFirst", () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试并验证模块缺失**
+- [x] **步骤 2：运行测试并验证模块缺失**
 
 运行：`npm run test:run -- src/lib/__tests__/notePinnedOrder.test.ts`
 
 预期：FAIL，报告无法解析 `@/lib/notePinnedOrder`。
 
-- [ ] **步骤 3：实现最小共享排序函数**
+- [x] **步骤 3：实现最小共享排序函数**
 
 ```ts
 type PinnableNote = { isPinned?: number | null };
@@ -92,29 +92,7 @@ export function sortNotesPinnedFirst<T extends PinnableNote>(
 }
 ```
 
-- [ ] **步骤 4：让树形列表手动排序也置顶优先**
-
-在 `sortNotebookNotes` 中移除手动模式直接返回，统一调用共享函数：
-
-```ts
-export function sortNotebookNotes(notes: NoteListItem[], pref: NotebookSortPref): NoteListItem[] {
-  const dir = pref.dir === "asc" ? 1 : -1;
-  return sortNotesPinnedFirst(notes, (a, b) => {
-    if (pref.by === "manual") {
-      return (a.sortOrder || 0) - (b.sortOrder || 0) || a.id.localeCompare(b.id);
-    }
-    if (pref.by === "name") {
-      const cmp = (a.title || "").localeCompare(b.title || "", undefined, { sensitivity: "base" });
-      return cmp * dir || a.id.localeCompare(b.id);
-    }
-    const field = pref.by as "updatedAt" | "createdAt";
-    const av = a[field] || "";
-    const bv = b[field] || "";
-    const cmp = av < bv ? -1 : av > bv ? 1 : 0;
-    return cmp * dir || a.id.localeCompare(b.id);
-  });
-}
-```
+- [x] **步骤 4：编写树形列表手动排序的失败测试**
 
 在 `notebookNoteCache.test.ts` 增加：
 
@@ -131,7 +109,37 @@ it("keeps pinned notes first in manual mode and restores sortOrder after unpinni
 });
 ```
 
-- [ ] **步骤 5：让目录列表所有模式使用共享排序**
+- [x] **步骤 5：运行树形排序测试并验证失败**
+
+运行：`npm run test:run -- src/lib/__tests__/notebookNoteCache.test.ts`
+
+预期：FAIL，手动模式仍返回 `["n1", "n2", "n3"]`，未把 `n2` 移入顶部置顶区域。
+
+- [x] **步骤 6：让树形列表手动排序也置顶优先**
+
+在 `sortNotebookNotes` 中移除手动模式直接返回，统一调用共享函数：
+
+```ts
+export function sortNotebookNotes(notes: NoteListItem[], pref: NotebookSortPref): NoteListItem[] {
+  const dir = pref.dir === "asc" ? 1 : -1;
+  return sortNotesPinnedFirst(notes, (a, b) => {
+    if (pref.by === "manual") {
+      return (a.sortOrder || 0) - (b.sortOrder || 0);
+    }
+    if (pref.by === "name") {
+      const cmp = (a.title || "").localeCompare(b.title || "", undefined, { sensitivity: "base" });
+      return cmp * dir || a.id.localeCompare(b.id);
+    }
+    const field = pref.by as "updatedAt" | "createdAt";
+    const av = a[field] || "";
+    const bv = b[field] || "";
+    const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return cmp * dir || a.id.localeCompare(b.id);
+  });
+}
+```
+
+- [x] **步骤 7：让目录列表所有模式使用共享排序**
 
 将 `sortedNotes` 改为：
 
@@ -143,7 +151,7 @@ const sortedNotes = useMemo(() => {
   if (sortPref.by === "manual") {
     return sortNotesPinnedFirst(
       state.notes,
-      (a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || a.id.localeCompare(b.id),
+      (a, b) => (a.sortOrder || 0) - (b.sortOrder || 0),
     );
   }
   const dir = sortPref.dir === "asc" ? 1 : -1;
@@ -161,13 +169,13 @@ const sortedNotes = useMemo(() => {
 }, [state.notes, sortPref.by, sortPref.dir, state.viewMode]);
 ```
 
-- [ ] **步骤 6：运行排序相关测试**
+- [x] **步骤 8：运行排序相关测试**
 
 运行：`npm run test:run -- src/lib/__tests__/notePinnedOrder.test.ts src/lib/__tests__/notebookNoteCache.test.ts src/lib/__tests__/notebookSortInheritance.test.ts`
 
 预期：3 个测试文件全部通过。
 
-- [ ] **步骤 7：提交任务 1**
+- [x] **步骤 9：提交任务 1**
 
 ```powershell
 git add frontend/src/lib/notePinnedOrder.ts frontend/src/lib/__tests__/notePinnedOrder.test.ts frontend/src/lib/notebookNoteCache.ts frontend/src/lib/__tests__/notebookNoteCache.test.ts frontend/src/components/NoteList.tsx
@@ -184,7 +192,7 @@ git commit -m "fix(notes): 统一置顶笔记实时排序（任务 1）"
 - 修改：`frontend/src/components/NoteList.tsx:2368-2378`
 - 创建：`frontend/src/components/__tests__/NotePinRealtimeSync.test.ts`
 
-- [ ] **步骤 1：编写树形缓存同步的失败测试**
+- [x] **步骤 1：编写树形缓存同步的失败测试**
 
 向 `notebookNoteCache.test.ts` 增加：
 
@@ -202,13 +210,13 @@ it("syncs pinned state into cached tree notes and preserves references when unch
 });
 ```
 
-- [ ] **步骤 2：运行测试并验证导出缺失**
+- [x] **步骤 2：运行测试并验证导出缺失**
 
 运行：`npm run test:run -- src/lib/__tests__/notebookNoteCache.test.ts`
 
 预期：FAIL，报告 `syncPinnedStateToNotebookCache` 未导出。
 
-- [ ] **步骤 3：实现最小树形缓存同步函数**
+- [x] **步骤 3：实现最小树形缓存同步函数**
 
 ```ts
 export function syncPinnedStateToNotebookCache(
@@ -236,7 +244,7 @@ export function syncPinnedStateToNotebookCache(
 }
 ```
 
-- [ ] **步骤 4：编写组件同步接线的失败测试**
+- [x] **步骤 4：编写组件同步接线的失败测试**
 
 ```ts
 import { readFileSync } from "node:fs";
@@ -257,13 +265,13 @@ describe("realtime note pin synchronization", () => {
 });
 ```
 
-- [ ] **步骤 5：运行组件同步测试并验证失败**
+- [x] **步骤 5：运行组件同步测试并验证失败**
 
 运行：`npm run test:run -- src/components/__tests__/NotePinRealtimeSync.test.ts`
 
 预期：2 个测试失败，分别报告树形缓存协调调用和当前笔记更新缺失。
 
-- [ ] **步骤 6：接入树形缓存协调与当前笔记同步**
+- [x] **步骤 6：接入树形缓存协调与当前笔记同步**
 
 在 `Sidebar.tsx` 增加：
 
@@ -282,19 +290,19 @@ if (state.activeNote?.id === targetId) {
 }
 ```
 
-- [ ] **步骤 7：运行全部本次相关测试**
+- [x] **步骤 7：运行全部本次相关测试**
 
 运行：`npm run test:run -- src/lib/__tests__/notePinnedOrder.test.ts src/lib/__tests__/notebookNoteCache.test.ts src/lib/__tests__/notebookSortInheritance.test.ts src/components/__tests__/NotePinRealtimeSync.test.ts`
 
 预期：4 个测试文件全部通过。
 
-- [ ] **步骤 8：运行前端构建**
+- [x] **步骤 8：运行前端构建**
 
 运行：`npm run build`
 
 预期：TypeScript 检查和 Vite 构建退出码为 0。
 
-- [ ] **步骤 9：提交任务 2**
+- [x] **步骤 9：提交任务 2**
 
 ```powershell
 git add frontend/src/lib/notebookNoteCache.ts frontend/src/lib/__tests__/notebookNoteCache.test.ts frontend/src/components/Sidebar.tsx frontend/src/components/NoteList.tsx frontend/src/components/__tests__/NotePinRealtimeSync.test.ts

@@ -22,6 +22,7 @@ import { deleteNote as deleteLocalNote, getNote as getLocalNote, putNote as putL
 import { confirm } from "@/components/ui/confirm";
 import { highlightTextNode, sanitizeSearchHtml, stripSearchMarks } from "@/lib/searchHighlight";
 import { getNoteListDragHint, reorderNotesWithinNotebook, shouldUseHtmlNoteDragging } from "@/lib/noteManualSort";
+import { sortNotesPinnedFirst } from "@/lib/notePinnedOrder";
 // "导入 Word 文档" 走 dynamic import（见 createNoteInNotebook），减少首屏 bundle 体积。
 
 /* ===== 排序模式 ===== */
@@ -1596,14 +1597,18 @@ export default function NoteList() {
   // 字段）不重新拉列表，导致被编辑笔记的 updatedAt 更新了却没挪位置——看起来排序没生效。
   // 这里用 useMemo 派生一份 sortedNotes，每次 state.notes 变化都重算顺序。
   const sortedNotes = useMemo(() => {
-    // 搜索视图由 FTS 相关性排序、manual 模式由后端 sortOrder 字段决定——前端无法重排
-    if (state.viewMode === "search" || sortPref.by === "manual") {
-      return state.notes;
+    // 搜索视图保留 FTS 相关性，只按置顶状态做稳定分组。
+    if (state.viewMode === "search") {
+      return sortNotesPinnedFirst(state.notes);
+    }
+    if (sortPref.by === "manual") {
+      return sortNotesPinnedFirst(
+        state.notes,
+        (a, b) => (a.sortOrder || 0) - (b.sortOrder || 0),
+      );
     }
     const dir = sortPref.dir === "asc" ? 1 : -1;
-    return [...state.notes].sort((a, b) => {
-      // 置顶永远最前
-      if (a.isPinned !== b.isPinned) return b.isPinned - a.isPinned;
+    return sortNotesPinnedFirst(state.notes, (a, b) => {
       if (sortPref.by === "title") {
         const cmp = (a.title || "").localeCompare(b.title || "", undefined, { sensitivity: "base" });
         return cmp * dir || a.id.localeCompare(b.id);
@@ -2372,6 +2377,9 @@ export default function NoteList() {
         const newVal = targetNote.isPinned === 1 ? 0 : 1;
         await api.updateNote(targetId, { isPinned: newVal } as any);
         actions.updateNoteInList({ id: targetId, isPinned: newVal });
+        if (state.activeNote?.id === targetId) {
+          actions.setActiveNote({ ...state.activeNote, isPinned: newVal });
+        }
         break;
       }
       case "toggle_fav": {

@@ -46,6 +46,7 @@ import {
   directNotebookNotes,
   moveNoteInNotebookCache,
   sortNotebookNotes,
+  syncPinnedStateToNotebookCache,
   upsertNoteInNotebookCache,
 } from "@/lib/notebookNoteCache";
 import {
@@ -1209,6 +1210,17 @@ export default function Sidebar({ variant = "mobile" }: { variant?: "desktop" | 
   useEffect(() => {
     notesByNotebookIdRef.current = notesByNotebookId;
   }, [notesByNotebookId]);
+
+  useEffect(() => {
+    if (!showNotesInNotebookTree) return;
+    setNotesByNotebookId((prev) => {
+      const synced = syncPinnedStateToNotebookCache(prev, state.notes);
+      return syncPinnedStateToNotebookCache(
+        synced,
+        state.activeNote ? [state.activeNote] : [],
+      );
+    });
+  }, [showNotesInNotebookTree, state.activeNote, state.notes]);
 
   useEffect(() => {
     loadingNotebookIdsRef.current = loadingNotebookIds;

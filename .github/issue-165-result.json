@@ -1,6 +1,7 @@
 {
   "ok": false,
   "statuses": {
+    "fix_script": 0,
     "backend_patch": 0,
     "client_patch": 1,
     "backend_install": 99,
@@ -12,5 +13,5 @@
     "frontend_install": 99,
     "frontend_build": 99
   },
-  "log": "issue 165 backend patch applied\n/home/runner/work/nowen-note/nowen-note/.github/issue-165-client.py:603: SyntaxWarning: invalid escape sequence '\\['\n  '''  // 脚注：定义行 `[^id]: 内容` → 保留内容文本；引用 `[^id]` → 去掉\n/home/runner/work/nowen-note/nowen-note/.github/issue-165-client.py:608: SyntaxWarning: invalid escape sequence '\\['\n  '''  // 脚注：定义行 `[^id]: 内容` → 保留内容文本；引用 `[^id]` → 去掉\nMCP note/block search: expected exactly one match in packages/nowen-mcp/src/index.ts, got 0"
+  "log": "issue 165 client search patch fixed\nissue 165 backend patch applied\n/home/runner/work/nowen-note/nowen-note/.github/issue-165-client.py:584: SyntaxWarning: invalid escape sequence '\\['\n  '''  // 脚注：定义行 `[^id]: 内容` → 保留内容文本；引用 `[^id]` → 去掉\n/home/runner/work/nowen-note/nowen-note/.github/issue-165-client.py:589: SyntaxWarning: invalid escape sequence '\\['\n  '''  // 脚注：定义行 `[^id]: 内容` → 保留内容文本；引用 `[^id]` → 去掉\ncontent format universal block attrs: expected exactly one match in frontend/src/lib/contentFormat.ts, got 0"
 }

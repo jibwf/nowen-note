@@ -55,6 +55,7 @@ import versionRouter, { resolveAppVersion } from "./routes/version";
 import releasesRouter from "./routes/releases";
 import { seedDatabase } from "./db/seed";
 import { initApiTokensTable, looksLikeApiToken, resolveApiToken } from "./lib/api-tokens";
+import { enforceApiTokenAccess } from "./middleware/api-token-resource-scope";
 import { getDb, closeDb } from "./db/schema";
 import { userSessionsRepository } from "./repositories";
 import { generateOpenAPISpec } from "./services/openapi";
@@ -408,6 +409,8 @@ app.use("/api/*", async (c, next) => {
     }
     c.req.raw.headers.set("X-User-Id", resolved.userId);
     c.req.raw.headers.set("X-Auth-Mode", "api-token");
+    c.req.raw.headers.set("X-Api-Token-Id", resolved.tokenId);
+    c.req.raw.headers.set("X-Api-Resource-Mode", resolved.resourceMode);
     if (resolved.scopes.length > 0) {
       c.req.raw.headers.set("X-Api-Scopes", resolved.scopes.join(","));
     }
@@ -458,6 +461,10 @@ app.use("/api/*", async (c, next) => {
   if (payload.jti) c.req.raw.headers.set("X-Session-Id", payload.jti);
   await next();
 });
+
+// API Token scopes + notebook resource scope enforcement.
+// JWT login requests pass through unchanged.
+app.use("/api/*", enforceApiTokenAccess);
 
 // API 路由（受 JWT 保护）
 app.route("/api/notebooks", notebooksRouter);

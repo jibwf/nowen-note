@@ -11,17 +11,22 @@ process.env.DB_PATH = path.join(tmpDir, "test.db");
 let db: Database.Database;
 let closeDb: () => void;
 let repository: typeof import("../src/repositories/userAISettingsRepository").userAISettingsRepository;
+let settingsService: typeof import("../src/services/user-ai-settings");
 
 test.before(async () => {
-  const [schema, repositoryModule] = await Promise.all([
+  const [schema, repositoryModule, serviceModule] = await Promise.all([
     import("../src/db/schema"),
     import("../src/repositories/userAISettingsRepository"),
+    import("../src/services/user-ai-settings"),
   ]);
   db = schema.getDb();
   closeDb = schema.closeDb;
   repository = repositoryModule.userAISettingsRepository;
+  settingsService = serviceModule;
   db.prepare("INSERT INTO users (id, username, passwordHash) VALUES (?, ?, ?)").run("user-a", "user-a", "hash");
   db.prepare("INSERT INTO users (id, username, passwordHash) VALUES (?, ?, ?)").run("user-b", "user-b", "hash");
+  db.prepare("INSERT INTO users (id, username, passwordHash) VALUES (?, ?, ?)").run("service-a", "service-a", "hash");
+  db.prepare("INSERT INTO users (id, username, passwordHash) VALUES (?, ?, ?)").run("service-b", "service-b", "hash");
 });
 
 test.after(async () => {
@@ -59,4 +64,49 @@ test("deleting a user cascades only that user's AI settings", () => {
   db.prepare("DELETE FROM users WHERE id = ?").run("user-a");
   assert.equal(repository.get("user-a", "ai_api_key"), undefined);
   assert.equal(repository.get("user-b", "ai_api_key")?.value, "key-b");
+});
+
+test("service resolves chat and embedding settings by user", () => {
+  settingsService.setUserAISettings("service-a", [
+    { key: "ai_provider", value: "openai" },
+    { key: "ai_api_key", value: "key-a" },
+    { key: "ai_model", value: "model-a" },
+    { key: "ai_embedding_model", value: "embed-a" },
+  ]);
+  settingsService.setUserAISettings("service-b", [
+    { key: "ai_provider", value: "deepseek" },
+    { key: "ai_api_key", value: "key-b" },
+    { key: "ai_model", value: "model-b" },
+    { key: "ai_embedding_model", value: "embed-b" },
+  ]);
+
+  assert.deepEqual(settingsService.getUserAISettings("service-a"), {
+    ai_provider: "openai",
+    ai_api_url: "https://api.openai.com/v1",
+    ai_api_key: "key-a",
+    ai_model: "model-a",
+    ai_embedding_url: "",
+    ai_embedding_key: "",
+    ai_embedding_model: "embed-a",
+  });
+  assert.equal(settingsService.getUserAISettings("service-b").ai_api_key, "key-b");
+  assert.equal(settingsService.getUserAISettings("service-b").ai_model, "model-b");
+  assert.throws(() => settingsService.getUserAISettings(""), /userId/);
+});
+
+test("guarded writes only respect the target user's manual AI switch", () => {
+  settingsService.setUserAISetting("service-a", "ai_manual_enabled", "false");
+  settingsService.setGuardedUserAISettings("service-a", [
+    { key: "ai_api_key", value: "blocked-key" },
+    { key: "ai_model", value: "blocked-model" },
+  ]);
+  settingsService.setGuardedUserAISettings("service-b", [
+    { key: "ai_api_key", value: "updated-key-b" },
+  ]);
+
+  assert.equal(settingsService.getUserAISettings("service-a").ai_api_key, "key-a");
+  assert.equal(settingsService.getUserAISettings("service-a").ai_model, "model-a");
+  assert.equal(settingsService.getUserAISettings("service-b").ai_api_key, "updated-key-b");
+  assert.equal(settingsService.isManualAIEnabled("service-a"), false);
+  assert.equal(settingsService.isManualAIEnabled("service-b"), true);
 });

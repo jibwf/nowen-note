@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import MarkdownPreview from "@/components/MarkdownPreview";
+import { MarkdownPreview } from "@/components/MarkdownPreview";
 import TiptapEditor from "@/components/TiptapEditor";
 import type { Note } from "@/types";
 import { cn } from "@/lib/utils";
@@ -107,12 +107,8 @@ function PublicNotebookIndex() {
                 className="group rounded-2xl border border-app-border bg-app-surface p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-accent-primary/40 hover:shadow-md"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-app-hover text-xl">
-                    {item.icon || "📚"}
-                  </div>
-                  <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-300">
-                    公开发布
-                  </span>
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-app-hover text-xl">{item.icon || "📚"}</div>
+                  <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-300">公开发布</span>
                 </div>
                 <h2 className="mt-4 truncate text-base font-semibold group-hover:text-accent-primary">{item.name}</h2>
                 <p className="mt-1 text-xs text-tx-tertiary">
@@ -132,8 +128,7 @@ function PublicNotebookIndex() {
 }
 
 export default function PublicNotebookView({ token }: PublicNotebookViewProps) {
-  if (!token) return <PublicNotebookIndex />;
-  return <PublicNotebookReader token={token} />;
+  return token ? <PublicNotebookReader token={token} /> : <PublicNotebookIndex />;
 }
 
 function PublicNotebookReader({ token }: { token: string }) {
@@ -161,7 +156,7 @@ function PublicNotebookReader({ token }: { token: string }) {
   const [joining, setJoining] = useState(false);
   const contentRef = useRef<HTMLDivElement | null>(null);
 
-  const loadTree = useCallback(async (nextInfo: PublicNotebookInfo, nextAccessToken = accessToken) => {
+  const loadTree = useCallback(async (nextInfo: PublicNotebookInfo, nextAccessToken: string) => {
     try {
       const tree = await notebookPublicationApi.getPublicTree(token, nextAccessToken || undefined);
       setNotebooks(tree.notebooks);
@@ -175,7 +170,7 @@ function PublicNotebookReader({ token }: { token: string }) {
       }
       throw err;
     }
-  }, [token, accessToken]);
+  }, [token]);
 
   useEffect(() => {
     let cancelled = false;
@@ -184,7 +179,7 @@ function PublicNotebookReader({ token }: { token: string }) {
       .then(async (nextInfo) => {
         if (cancelled) return;
         setInfo(nextInfo);
-        await loadTree(nextInfo);
+        await loadTree(nextInfo, accessToken);
       })
       .catch((err: any) => {
         if (!cancelled) setError(err?.message || "公共知识库不可用");
@@ -193,7 +188,7 @@ function PublicNotebookReader({ token }: { token: string }) {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [token]);
+  }, [token, accessToken, loadTree]);
 
   useEffect(() => {
     if (!activeNoteId || needsSecret) {
@@ -229,27 +224,31 @@ function PublicNotebookReader({ token }: { token: string }) {
     }
     const timer = window.setTimeout(() => {
       const headings = Array.from(host.querySelectorAll<HTMLHeadingElement>("h1,h2,h3,h4,h5,h6"));
-      const next = headings.map((heading, index) => {
+      setOutline(headings.map((heading, index) => {
         const id = heading.id || `public-heading-${index}`;
         heading.id = id;
         return { id, level: Number(heading.tagName.slice(1)) || 1, text: heading.textContent?.trim() || "未命名标题" };
-      });
-      setOutline(next);
+      }));
     }, 80);
     return () => window.clearTimeout(timer);
   }, [activeNote]);
 
-  const grouped = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    const byNotebook = new Map<string, PublicNoteSummary[]>();
-    for (const note of notes) {
-      if (normalized && !`${note.title} ${note.contentText || ""}`.toLowerCase().includes(normalized)) continue;
-      const list = byNotebook.get(note.notebookId) || [];
-      list.push(note);
-      byNotebook.set(note.notebookId, list);
-    }
-    return byNotebook;
+  const filteredNotes = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    return keyword
+      ? notes.filter((note) => `${note.title} ${note.contentText || ""}`.toLowerCase().includes(keyword))
+      : notes;
   }, [notes, query]);
+
+  const notesByNotebook = useMemo(() => {
+    const grouped = new Map<string, PublicNoteSummary[]>();
+    for (const note of filteredNotes) {
+      const list = grouped.get(note.notebookId) || [];
+      list.push(note);
+      grouped.set(note.notebookId, list);
+    }
+    return grouped;
+  }, [filteredNotes]);
 
   const fakeNote = useMemo<Note | null>(() => {
     if (!activeNote) return null;
@@ -329,6 +328,7 @@ function PublicNotebookReader({ token }: { token: string }) {
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center gap-2 bg-app-bg text-sm text-tx-secondary"><Loader2 size={17} className="animate-spin" />正在加载知识库</div>;
   }
+
   if (error || !info) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-app-bg px-5 text-tx-primary">
@@ -373,10 +373,7 @@ function PublicNotebookReader({ token }: { token: string }) {
         <div className="border-b border-app-border p-4">
           <button className="flex min-w-0 items-center gap-3 text-left" onClick={() => window.location.assign("/public")}>
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-app-hover text-xl">{info.icon || "📚"}</div>
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold">{info.name}</div>
-              <div className="truncate text-[11px] text-tx-tertiary">{info.ownerDisplayName || info.ownerUsername} 的公共知识库</div>
-            </div>
+            <div className="min-w-0"><div className="truncate text-sm font-semibold">{info.name}</div><div className="truncate text-[11px] text-tx-tertiary">{info.ownerDisplayName || info.ownerUsername} 的公共知识库</div></div>
           </button>
           <div className="relative mt-4">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-tx-tertiary" />
@@ -385,26 +382,19 @@ function PublicNotebookReader({ token }: { token: string }) {
         </div>
         <div className="flex-1 overflow-y-auto p-2">
           {notebooks.map((notebook) => {
-            const childNotes = grouped.get(notebook.id) || [];
+            const childNotes = notesByNotebook.get(notebook.id) || [];
             if (query.trim() && childNotes.length === 0) return null;
             return (
               <div key={notebook.id} className="mb-1">
-                <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-tx-secondary" style={{ paddingLeft: `${8 + notebook.depth * 14}px` }}>
-                  <span>{notebook.icon || "📁"}</span><span className="truncate">{notebook.name}</span>
-                </div>
+                <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-tx-secondary" style={{ paddingLeft: `${8 + notebook.depth * 14}px` }}><span>{notebook.icon || "📁"}</span><span className="truncate">{notebook.name}</span></div>
                 {childNotes.map((note) => (
                   <button
                     key={note.id}
                     type="button"
                     onClick={() => setActiveNoteId(note.id)}
-                    className={cn(
-                      "mb-0.5 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs transition",
-                      activeNoteId === note.id ? "bg-accent-primary/10 text-accent-primary" : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary",
-                    )}
+                    className={cn("mb-0.5 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs transition", activeNoteId === note.id ? "bg-accent-primary/10 text-accent-primary" : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary")}
                     style={{ paddingLeft: `${22 + notebook.depth * 14}px` }}
-                  >
-                    <FileText size={13} className="shrink-0" /><span className="truncate">{note.title || "无标题笔记"}</span>
-                  </button>
+                  ><FileText size={13} className="shrink-0" /><span className="truncate">{note.title || "无标题笔记"}</span></button>
                 ))}
               </div>
             );
@@ -419,11 +409,14 @@ function PublicNotebookReader({ token }: { token: string }) {
       </aside>
 
       <main className="min-w-0 flex-1 overflow-y-auto">
-        <header className="sticky top-0 z-10 flex items-center justify-between border-b border-app-border bg-app-surface/90 px-4 py-3 backdrop-blur-xl md:hidden">
-          <button className="flex min-w-0 items-center gap-2" onClick={() => window.location.assign("/public")}>
-            <BookOpen size={17} className="text-accent-primary" /><span className="truncate text-sm font-semibold">{info.name}</span>
-          </button>
-          <Button size="sm" variant="outline" onClick={join}><UserPlus size={13} className="mr-1" />加入</Button>
+        <header className="sticky top-0 z-10 border-b border-app-border bg-app-surface/90 px-4 py-3 backdrop-blur-xl md:hidden">
+          <div className="flex items-center justify-between gap-3">
+            <button className="flex min-w-0 items-center gap-2" onClick={() => window.location.assign("/public")}><BookOpen size={17} className="text-accent-primary" /><span className="truncate text-sm font-semibold">{info.name}</span></button>
+            <Button size="sm" variant="outline" onClick={join}><UserPlus size={13} className="mr-1" />加入</Button>
+          </div>
+          <select className="mt-3 h-9 w-full rounded-lg border border-app-border bg-app-bg px-3 text-xs" value={activeNoteId} onChange={(event) => setActiveNoteId(event.target.value)}>
+            {filteredNotes.map((note) => <option key={note.id} value={note.id}>{note.title || "无标题笔记"}</option>)}
+          </select>
         </header>
 
         <div className="mx-auto grid max-w-[1180px] grid-cols-1 gap-8 px-5 py-8 lg:grid-cols-[minmax(0,1fr)_220px]">
@@ -431,24 +424,22 @@ function PublicNotebookReader({ token }: { token: string }) {
             {noteLoading ? (
               <div className="flex min-h-[50vh] items-center justify-center gap-2 text-sm text-tx-secondary"><Loader2 size={16} className="animate-spin" />正在加载笔记</div>
             ) : !activeNote ? (
-              <div className="flex min-h-[50vh] flex-col items-center justify-center text-center text-tx-tertiary">
-                <FileText size={32} className="mb-3" /><p className="text-sm">这个目录暂时没有可公开浏览的笔记</p>
-              </div>
+              <div className="flex min-h-[50vh] flex-col items-center justify-center text-center text-tx-tertiary"><FileText size={32} className="mb-3" /><p className="text-sm">这个目录暂时没有可公开浏览的笔记</p></div>
             ) : (
               <>
                 <div className="mb-7 border-b border-app-border pb-5">
                   <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-tx-tertiary">
                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-emerald-600 dark:text-emerald-300"><ShieldCheck size={11} />已发布</span>
                     <span>更新于 {new Date(activeNote.updatedAt).toLocaleString("zh-CN")}</span>
-                    {!activeNote.allowDownload && <span>· 禁止附件下载</span>}
+                    {!activeNote.allowDownload && <span>· 未开放附件下载</span>}
                   </div>
                   <h1 className="text-3xl font-bold leading-tight">{activeNote.title || "无标题笔记"}</h1>
                 </div>
                 <div ref={contentRef} className="public-notebook-content min-h-[240px]">
-                  {activeNote.contentFormat === "md" || activeNote.content.trim().startsWith("#") ? (
+                  {activeNote.contentFormat === "md" ? (
                     <MarkdownPreview markdown={activeNote.content} compact className="p-0" />
                   ) : fakeNote ? (
-                    <TiptapEditor note={fakeNote} editable={false} onUpdate={() => {}} isGuest />
+                    <TiptapEditor note={fakeNote} editable={false} onUpdate={() => undefined} isGuest />
                   ) : null}
                 </div>
 
@@ -477,13 +468,9 @@ function PublicNotebookReader({ token }: { token: string }) {
           <aside className="hidden lg:block">
             <div className="sticky top-8 rounded-xl border border-app-border bg-app-surface p-3">
               <div className="mb-2 flex items-center gap-2 px-1 text-xs font-semibold text-tx-secondary"><ListTree size={14} />本页大纲</div>
-              {outline.length === 0 ? (
-                <p className="px-1 py-2 text-xs text-tx-tertiary">当前笔记没有标题层级</p>
-              ) : (
+              {outline.length === 0 ? <p className="px-1 py-2 text-xs text-tx-tertiary">当前笔记没有标题层级</p> : (
                 <div className="space-y-0.5">
-                  {outline.map((item) => (
-                    <button key={item.id} type="button" onClick={() => document.getElementById(item.id)?.scrollIntoView({ behavior: "smooth", block: "start" })} className="block w-full truncate rounded-md px-2 py-1.5 text-left text-xs text-tx-secondary hover:bg-app-hover hover:text-tx-primary" style={{ paddingLeft: `${8 + (item.level - 1) * 10}px` }}>{item.text}</button>
-                  ))}
+                  {outline.map((item) => <button key={item.id} type="button" onClick={() => document.getElementById(item.id)?.scrollIntoView({ behavior: "smooth", block: "start" })} className="block w-full truncate rounded-md px-2 py-1.5 text-left text-xs text-tx-secondary hover:bg-app-hover hover:text-tx-primary" style={{ paddingLeft: `${8 + (item.level - 1) * 10}px` }}>{item.text}</button>)}
                 </div>
               )}
             </div>

@@ -1,36 +1,15 @@
 /**
  * 长期 API Token（Personal Access Token）
  * ---------------------------------------------------------------------------
- * 背景：
- *   登录用的 JWT 有 30 天过期时间，而浏览器剪藏插件、CLI、自动化脚本等
- *   场景需要一个"长期有效、可随时吊销"的凭证。本模块提供：
- *     - 生成不可逆的 token（前缀 `nkn_`，便于日志里一眼识别）
- *     - 存 hash 而不是明文（像 GitHub PAT 那样，明文只返回一次）
- *     - 支持 scopes（粗粒度能力声明，如 "notes:write" / "attachments:write"）
- *     - 支持 expiresAt（可选，NULL 表示永不过期）
- *     - 支持 revoke（DELETE 路由 + 软删除）
- *     - 命中后同步 lastUsedAt，方便用户审计
- *
- * 鉴权链路：
- *   JWT 中间件会先识别 Authorization 头中的前缀：
- *     - "Bearer <jwt>"     → 走原有登录 token 路径
- *     - "Bearer nkn_xxx"   → 走本模块 resolveApiToken
- *   同等价：鉴权成功后把 userId 写入 X-User-Id，下游路由无感知差异。
- *
- * 安全：
- *   - token 使用 32 字节 crypto.randomBytes，base64url 编码后 ~43 字符
- *   - 仅存 SHA-256 hash，server 端泄露 DB 也拿不到原文
- *   - 吊销走 revokedAt 字段，index 上的 where 过滤复用 (userId, revokedAt)
+ * 支持粗粒度 scopes、过期/吊销、使用统计，以及可选的笔记本资源级授权。
  */
-
 import crypto from "crypto";
 import type { Database as BetterSqliteDB } from "better-sqlite3";
 import { apiTokensRepository } from "../repositories";
 
-export const API_TOKEN_PREFIX = "nkn_"; // "nowen note key"
+export const API_TOKEN_PREFIX = "nkn_";
 const TOKEN_RAW_BYTES = 32;
 
-/** 支持的 scope 常量 */
 export const API_TOKEN_SCOPES = [
   "notes:read",
   "notes:write",
@@ -42,12 +21,13 @@ export const API_TOKEN_SCOPES = [
   "export:import",
 ] as const;
 export type ApiTokenScope = (typeof API_TOKEN_SCOPES)[number];
+export type ApiTokenResourceMode = "unrestricted" | "restricted";
 
 export function isValidScope(s: string): s is ApiTokenScope {
   return (API_TOKEN_SCOPES as readonly string[]).includes(s);
 }
 
-/** 建表（幂等） */
+/** 建表与历史库增量升级（幂等）。 */
 export function initApiTokensTable(db: BetterSqliteDB) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS api_tokens (
@@ -55,8 +35,9 @@ export function initApiTokensTable(db: BetterSqliteDB) {
       userId TEXT NOT NULL,
       name TEXT NOT NULL,
       tokenHash TEXT NOT NULL UNIQUE,
-      scopes TEXT NOT NULL DEFAULT '[]',  -- JSON array
-      expiresAt TEXT,                      -- NULL = never
+      scopes TEXT NOT NULL DEFAULT '[]',
+      resourceMode TEXT NOT NULL DEFAULT 'unrestricted',
+      expiresAt TEXT,
       lastUsedAt TEXT,
       lastUsedIp TEXT,
       createdAt TEXT NOT NULL DEFAULT (datetime('now')),
@@ -66,8 +47,6 @@ export function initApiTokensTable(db: BetterSqliteDB) {
     CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(userId, revokedAt);
     CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(tokenHash);
 
-    -- 【使用量统计】按 (token, day) 聚合调用次数，远低于原始调用日志的存储开销。
-    -- day 统一用 UTC YYYY-MM-DD；90 天后由后台清理。
     CREATE TABLE IF NOT EXISTS api_token_usage (
       tokenId TEXT NOT NULL,
       day TEXT NOT NULL,
@@ -76,51 +55,58 @@ export function initApiTokensTable(db: BetterSqliteDB) {
       FOREIGN KEY (tokenId) REFERENCES api_tokens(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_api_token_usage_day ON api_token_usage(day);
-  `);
-}
 
-/**
- * 记录一次 token 使用（调用量 +1）。
- * - SQLite UPSERT 单语句原子操作，高频调用下可接受。
- * - day 用 UTC，避免服务器跨时区部署导致的漂移。
- * - 用 try/catch 包装，走错不影响主鉴权路径。
- */
-export function recordTokenUsage(db: BetterSqliteDB, tokenId: string): void {
-  try {
-    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
-    apiTokensRepository.recordUsage(tokenId, today);
-  } catch {
-    /* 非关键路径，忽略 */
+    CREATE TABLE IF NOT EXISTS api_token_resources (
+      id TEXT PRIMARY KEY,
+      tokenId TEXT NOT NULL,
+      resourceType TEXT NOT NULL DEFAULT 'notebook',
+      resourceId TEXT NOT NULL,
+      permission TEXT NOT NULL DEFAULT 'read',
+      includeDescendants INTEGER NOT NULL DEFAULT 0,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (tokenId) REFERENCES api_tokens(id) ON DELETE CASCADE,
+      UNIQUE(tokenId, resourceType, resourceId),
+      CHECK(resourceType IN ('notebook')),
+      CHECK(permission IN ('read', 'write'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_api_token_resources_token
+      ON api_token_resources(tokenId, resourceType);
+    CREATE INDEX IF NOT EXISTS idx_api_token_resources_resource
+      ON api_token_resources(resourceType, resourceId);
+  `);
+
+  // 老版本 api_tokens 不包含 resourceMode；PRAGMA 检查后再 ALTER，避免依赖异常文本。
+  const columns = db.prepare("PRAGMA table_info(api_tokens)").all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === "resourceMode")) {
+    db.exec("ALTER TABLE api_tokens ADD COLUMN resourceMode TEXT NOT NULL DEFAULT 'unrestricted'");
   }
 }
 
-/**
- * 清理超过 retentionDays 天的 usage 数据（启动时 / 定期调用）。
- * 给 90 天额度已是 “多于任何选择期” 的冲量，避免表不限制增长。
- */
-export function pruneTokenUsage(db: BetterSqliteDB, retentionDays = 90): void {
+export function recordTokenUsage(_db: BetterSqliteDB, tokenId: string): void {
   try {
-    const cutoff = new Date(Date.now() - retentionDays * 86400_000)
-      .toISOString()
-      .slice(0, 10);
+    apiTokensRepository.recordUsage(tokenId, new Date().toISOString().slice(0, 10));
+  } catch {
+    // 统计失败不能阻塞鉴权。
+  }
+}
+
+export function pruneTokenUsage(_db: BetterSqliteDB, retentionDays = 90): void {
+  try {
+    const cutoff = new Date(Date.now() - retentionDays * 86400_000).toISOString().slice(0, 10);
     apiTokensRepository.pruneUsageBefore(cutoff);
   } catch {
-    /* 忽略 */
+    // 清理失败不阻塞启动。
   }
 }
 
-/** 生成一个新 token 的明文（以 nkn_ 开头） */
 export function generateApiTokenRaw(): string {
-  const raw = crypto.randomBytes(TOKEN_RAW_BYTES).toString("base64url");
-  return API_TOKEN_PREFIX + raw;
+  return API_TOKEN_PREFIX + crypto.randomBytes(TOKEN_RAW_BYTES).toString("base64url");
 }
 
-/** 对 token 明文做 SHA-256，得到 hex hash */
 export function hashApiToken(raw: string): string {
   return crypto.createHash("sha256").update(raw).digest("hex");
 }
 
-/** 判断 Authorization 头里的 Bearer 值是否看起来像 API token（以 nkn_ 开头） */
 export function looksLikeApiToken(bearer: string): boolean {
   return bearer.startsWith(API_TOKEN_PREFIX);
 }
@@ -129,39 +115,30 @@ export interface ResolvedApiToken {
   tokenId: string;
   userId: string;
   scopes: ApiTokenScope[];
+  resourceMode: ApiTokenResourceMode;
 }
 
-/**
- * 用明文 token 在 DB 里查找并校验（未吊销、未过期）。
- * 成功返回用户信息；失败返回 null。副作用：更新 lastUsedAt / lastUsedIp（节流：60s 一次）。
- */
 export function resolveApiToken(
   db: BetterSqliteDB,
   raw: string,
   ip?: string,
 ): ResolvedApiToken | null {
   if (!looksLikeApiToken(raw)) return null;
-  const h = hashApiToken(raw);
-  const row = apiTokensRepository.findByTokenHash(h);
-  if (!row) return null;
-  if (row.revokedAt) return null;
+  const row = apiTokensRepository.findByTokenHash(hashApiToken(raw));
+  if (!row || row.revokedAt) return null;
   if (row.expiresAt) {
-    const t = Date.parse(row.expiresAt);
-    if (!isNaN(t) && t < Date.now()) return null;
+    const expiresAt = Date.parse(row.expiresAt);
+    if (!Number.isNaN(expiresAt) && expiresAt < Date.now()) return null;
   }
 
-  // lastUsedAt 节流：距上次写入 >= 60s 才更新，避免高频写
-  const shouldTouch =
-    !row.lastUsedAt || Date.now() - Date.parse(row.lastUsedAt) > 60_000;
+  const shouldTouch = !row.lastUsedAt || Date.now() - Date.parse(row.lastUsedAt) > 60_000;
   if (shouldTouch) {
     try {
       apiTokensRepository.updateLastUsed(row.id, ip || "");
     } catch {
-      /* 非关键路径，忽略 */
+      // 非关键路径。
     }
   }
-
-  // 使用量统计埋点：不节流（按天粒度聚合本身就十分稀疏，UPSERT 很快）
   recordTokenUsage(db, row.id);
 
   let scopes: ApiTokenScope[] = [];
@@ -172,10 +149,16 @@ export function resolveApiToken(
     scopes = [];
   }
 
-  return { tokenId: row.id, userId: row.userId, scopes };
+  const modeRow = db.prepare("SELECT resourceMode FROM api_tokens WHERE id = ?").get(row.id) as
+    | { resourceMode?: string }
+    | undefined;
+  const resourceMode: ApiTokenResourceMode = modeRow?.resourceMode === "restricted"
+    ? "restricted"
+    : "unrestricted";
+
+  return { tokenId: row.id, userId: row.userId, scopes, resourceMode };
 }
 
-// SEC-PAT-01: 空 scopes 默认拒绝，LEGACY_EMPTY_SCOPE_FULL_ACCESS=true 可恢复旧行为
 const legacyEmptyScopeFullAccess = process.env.LEGACY_EMPTY_SCOPE_FULL_ACCESS === "true";
 
 export function hasScope(token: ResolvedApiToken, required: ApiTokenScope): boolean {
@@ -184,5 +167,5 @@ export function hasScope(token: ResolvedApiToken, required: ApiTokenScope): bool
 }
 
 export function hasAnyScope(token: ResolvedApiToken, required: ApiTokenScope[]): boolean {
-  return required.some((s) => hasScope(token, s));
+  return required.some((scope) => hasScope(token, scope));
 }

@@ -6,6 +6,7 @@ import {
   loadScopeConfiguration,
   type NotebookLike,
 } from "./scope-policy.js";
+import { injectKnowledgeToolScope } from "./knowledge-scope-tool.js";
 
 const scopeConfig = loadScopeConfiguration();
 const policy = new NotebookScopePolicy(scopeConfig);
@@ -301,8 +302,12 @@ async function handleTagRequest(request: Request, url: URL): Promise<Response> {
 }
 
 async function scopedFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
-  const request = new Request(input, init);
+  let request = new Request(input, init);
   const url = new URL(request.url);
+
+  if (url.pathname === "/api/ai/ask") {
+    request = await injectKnowledgeToolScope(request);
+  }
 
   if (scopeConfig.apiToken && url.pathname === "/api/auth/login" && request.method.toUpperCase() === "POST") {
     return jsonResponse({ token: scopeConfig.apiToken });

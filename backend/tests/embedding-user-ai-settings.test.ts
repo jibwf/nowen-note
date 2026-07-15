@@ -30,6 +30,7 @@ test.before(async () => {
   schema.getDb().prepare("INSERT INTO users (id, username, passwordHash) VALUES (?, ?, ?)").run("embed-b", "embed-b", "hash");
   schema.getDb().prepare("INSERT INTO users (id, username, passwordHash) VALUES (?, ?, ?)").run("embed-default", "embed-default", "hash");
   schema.getDb().prepare("INSERT INTO users (id, username, passwordHash) VALUES (?, ?, ?)").run("embed-invalid", "embed-invalid", "hash");
+  schema.getDb().prepare("INSERT INTO users (id, username, passwordHash) VALUES (?, ?, ?)").run("embed-whitespace", "embed-whitespace", "hash");
 });
 
 test.after(async () => {
@@ -85,6 +86,36 @@ test("embedQuery uses the requested user's URL, key, and model", async () => {
     { url: "https://embed-a.example/v1/embeddings", authorization: "Bearer embed-key-a", model: "embed-model-a" },
     { url: "https://embed-b.example/v1/embeddings", authorization: "Bearer embed-key-b", model: "embed-model-b" },
   ]);
+});
+
+test("blank embedding URL falls back after trimming", async () => {
+  setUserAISettings("embed-whitespace", [
+    { key: "ai_api_url", value: "https://fallback.example/v1" },
+    { key: "ai_api_key", value: "fallback-key" },
+    { key: "ai_embedding_url", value: "   " },
+    { key: "ai_embedding_key", value: "   " },
+    { key: "ai_embedding_model", value: "whitespace-model" },
+  ]);
+  let requestedUrl = "";
+  let requestedAuthorization = "";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    requestedUrl = String(input);
+    requestedAuthorization = new Headers(init?.headers).get("authorization") || "";
+    return new Response(JSON.stringify({ data: [{ index: 0, embedding: [0.1, 0.2] }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  try {
+    await embedQuery("embed-whitespace", "fallback question");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(requestedUrl, "https://fallback.example/v1/embeddings");
+  assert.equal(requestedAuthorization, "Bearer fallback-key");
 });
 
 test("background queue uses the same default URL semantics as embedQuery", async () => {

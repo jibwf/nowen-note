@@ -74,10 +74,13 @@ function readEmbeddingConfig(userId: string): EmbeddingConfig | null {
   const model = settings.ai_embedding_model.trim();
   if (!model) return null;
 
-  const url = (settings.ai_embedding_url || settings.ai_api_url).trim().replace(/\/+$/, "");
+  const embeddingUrl = settings.ai_embedding_url.trim();
+  const apiUrl = settings.ai_api_url.trim();
+  const url = (embeddingUrl || apiUrl).replace(/\/+$/, "");
   if (!url) return null;
 
-  const apiKey = (settings.ai_embedding_key || settings.ai_api_key).trim();
+  const embeddingKey = settings.ai_embedding_key.trim();
+  const apiKey = embeddingKey || settings.ai_api_key.trim();
   const provider = settings.ai_provider.trim();
 
   // Ollama 是少数允许空 key 的 provider；其它 provider 一般必须给 key

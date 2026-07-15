@@ -63,6 +63,7 @@ import {
   isRemoteVersionNewer,
   shouldSkipUnchangedTitleOnlyUpdate,
 } from "@/lib/editorSyncGuards";
+import { canWriteNote } from "@/lib/notePermissions";
 
 // ---------------------------------------------------------------------------
 // 编辑器模式切换（MD vs Tiptap）
@@ -117,6 +118,7 @@ export default function EditorPane() {
   const isViewLocked = !!activeNote && viewLockedIds.has(activeNote.id);
   const isTrashed = !!activeNote?.isTrashed;
   const effectiveLocked = !!activeNote?.isLocked || isViewLocked || isTrashed;
+  const canEditActiveNote = canWriteNote(activeNote);
   const showDesktopOutline = showOutline && !state.editorFullscreen;
 
   useEffect(() => {
@@ -3035,7 +3037,7 @@ const moveToTrash = useCallback(async () => {
               onTagsChange={handleTagsChange}
               onHeadingsChange={setHeadings}
               onEditorReady={(fn) => { scrollToRef.current = fn; }}
-              editable={!effectiveLocked && !modeSwitching}
+              editable={canEditActiveNote && !effectiveLocked && !modeSwitching}
               yDoc={collabYDoc}
               awareness={collabProvider?.awareness ?? null}
             />
@@ -3063,7 +3065,7 @@ const moveToTrash = useCallback(async () => {
               onEditorReady={(fn) => { scrollToRef.current = fn; }}
               // UX3��ģʽ�л��ڼ䶳��༭�������û��� mount��unmount ��������֣�
               // ��������������һ�༭����������������"�ڶ�����"����
-              editable={!effectiveLocked && !modeSwitching}
+              editable={canEditActiveNote && !effectiveLocked && !modeSwitching}
               yDoc={collabYDoc}
               awareness={collabProvider?.awareness ?? null}
             />
@@ -3076,7 +3078,7 @@ const moveToTrash = useCallback(async () => {
               onHeadingsChange={setHeadings}
               onEditorReady={(fn) => { scrollToRef.current = fn; }}
               onOpenNote={handleOpenNote}
-              editable={!effectiveLocked && !modeSwitching}
+              editable={canEditActiveNote && !effectiveLocked && !modeSwitching}
               searchQuery={state.searchQuery}
             />
           )}

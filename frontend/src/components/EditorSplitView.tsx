@@ -10,6 +10,7 @@ import { useApp, useAppActions } from "@/store/AppContext";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { canWriteNote } from "@/lib/notePermissions";
 import type { Note } from "@/types";
 import { useUserPreferences } from "@/hooks/useUserPreferences";
 
@@ -200,7 +201,7 @@ function SplitEditorPane({ noteId }: { noteId: string }) {
 
   const handleUpdate = useCallback(async (data: NoteEditorUpdatePayload) => {
     const current = noteRef.current;
-    if (!current || (data._noteId && data._noteId !== current.id)) return;
+    if (!current || !canWriteNote(current) || (data._noteId && data._noteId !== current.id)) return;
     setSyncing(true);
     try {
       const updated = await api.updateNote(current.id, {
@@ -255,7 +256,7 @@ function SplitEditorPane({ noteId }: { noteId: string }) {
   }, [actions, t]);
 
   const title = note?.title || tabMeta?.title || t("editorTabs.noTitle");
-  const editable = !!note && !note.isLocked && !note.isTrashed;
+  const editable = !!note && canWriteNote(note) && !note.isLocked && !note.isTrashed;
 
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col bg-app-bg">

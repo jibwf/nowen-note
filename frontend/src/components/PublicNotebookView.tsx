@@ -439,7 +439,13 @@ function PublicNotebookReader({ token }: { token: string }) {
                   {activeNote.contentFormat === "md" ? (
                     <MarkdownPreview markdown={activeNote.content} compact className="p-0" />
                   ) : fakeNote ? (
-                    <TiptapEditor note={fakeNote} editable={false} onUpdate={() => undefined} isGuest />
+                    <TiptapEditor
+                      note={fakeNote}
+                      editable={false}
+                      onUpdate={() => undefined}
+                      isGuest
+                      presentationMode
+                    />
                   ) : null}
                 </div>
 

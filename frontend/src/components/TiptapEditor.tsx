@@ -1492,7 +1492,10 @@ function ColorPopover({ editor, iconSize = 15, compact = false }: ColorPopoverPr
  * TiptapEditor props 契约：完全继承 NoteEditorProps，保证和 MarkdownEditor 100% 对齐。
  * 若需要 Tiptap 独有的 prop，请在此处 extends 扩展，而非另起炉灶。
  */
-type TiptapEditorProps = NoteEditorProps;
+type TiptapEditorProps = NoteEditorProps & {
+  /** Published/read-only embedding: render document content without editor chrome. */
+  presentationMode?: boolean;
+};
 
 function extractHeadings(editor: any): NoteEditorHeading[] {
   const headings: NoteEditorHeading[] = [];
@@ -1520,7 +1523,7 @@ function getEditorPlainText(editor: any): string {
 }
 
 export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEditor(
-  { note, onUpdate, onTagsChange, onHeadingsChange, onEditorReady, onOpenNote, editable = true, isGuest = false, searchQuery },
+  { note, onUpdate, onTagsChange, onHeadingsChange, onEditorReady, onOpenNote, editable = true, isGuest = false, presentationMode = false, searchQuery },
   ref,
 ) {
   const titleRef = useRef<HTMLInputElement>(null);
@@ -4408,13 +4411,14 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
       .run();
   };
   return (
-    <div className="flex flex-col h-full relative">
+    <div className={cn("flex flex-col h-full relative", presentationMode && "tiptap-presentation-mode")}>
       {/* Toolbar
           v2026-05-18：取消「键盘弹起时隐藏 + 浮动工具栏顶替」方案，改为始终保留
           单一顶部工具栏并 sticky 在容器顶端：
             - 键盘弹起时不再隐藏，避免移动端找不到格式按钮；
             - sticky top-0 让长内容滚动时也能随时点到工具栏；
             - z 索引压在选区/链接气泡之下（z-50），保留气泡的覆盖能力。 */}
+      {!presentationMode && (
       <div
         className={cn(
           "editor-toolbar-scroll-fade hide-scrollbar sticky top-0 z-20 flex flex-nowrap items-center gap-0.5 overflow-x-auto touch-pan-x border-b border-app-border bg-app-surface/95 px-4 py-2 backdrop-blur transition-shadow duration-200 supports-[backdrop-filter]:bg-app-surface/70 md:flex-wrap md:overflow-visible md:touch-auto",
@@ -4715,10 +4719,11 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
           </>
         )}
       </div>
+      )}
 
       {/* 查找替换浮窗：依附最外层 relative，右上角应于序列。
           - editable=false 的只读场景仍可查找，只是隐藏替换输入框 */}
-      {editor && (
+      {editor && !presentationMode && (
         <SearchReplacePanel
           editor={editor}
           open={searchOpen}
@@ -4728,6 +4733,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
       )}
 
       {/* Title */}
+      {!presentationMode && (
       <div className="px-4 md:px-8 pt-4 md:pt-6 pb-0">
         <input
           ref={titleRef}
@@ -4753,6 +4759,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
           <span>{wordStats.charsNoSpace}{t('tiptap.chars')}</span>
         </div>
       </div>
+      )}
 
       {/* Tag Bar：访客模式下隐藏（TagInput 依赖 AppProvider + 登录态 API） */}
       {!isGuest && (

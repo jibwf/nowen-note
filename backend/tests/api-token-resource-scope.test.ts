@@ -40,7 +40,7 @@ before(async () => {
       (id, userId, name, tokenHash, scopes, resourceMode)
     VALUES
       ('token-1', 'user-1', 'Agent', 'hash-token',
-       '["notes:read","notes:write","notebooks:read"]', 'restricted');
+       '["notes:read","notes:write","notebooks:read","tags:write"]', 'restricted');
   `);
 });
 
@@ -53,13 +53,13 @@ beforeEach(() => {
   `).run();
 });
 
-function createApp() {
+function createApp(resourceMode: "restricted" | "unrestricted" = "restricted") {
   const app = new Hono();
   app.use("*", async (c, next) => {
     c.req.raw.headers.set("X-Auth-Mode", "api-token");
     c.req.raw.headers.set("X-Api-Token-Id", "token-1");
-    c.req.raw.headers.set("X-Api-Resource-Mode", "restricted");
-    c.req.raw.headers.set("X-Api-Scopes", "notes:read,notes:write,notebooks:read");
+    c.req.raw.headers.set("X-Api-Resource-Mode", resourceMode);
+    c.req.raw.headers.set("X-Api-Scopes", "notes:read,notes:write,notebooks:read,tags:write");
     c.req.raw.headers.set("X-User-Id", "user-1");
     return enforceApiTokenAccess(c, next);
   });
@@ -70,6 +70,8 @@ function createApp() {
   ]));
   app.get("/api/notes/:id", (c) => c.json({ id: c.req.param("id") }));
   app.put("/api/notes/:id", (c) => c.json({ id: c.req.param("id"), updated: true }));
+  app.post("/api/tags", (c) => c.json({ created: true }, 201));
+  app.get("/api/backups", (c) => c.json({ backups: [] }));
   return app;
 }
 
@@ -111,5 +113,26 @@ test("write grant permits writes", async () => {
 test("restricted token with empty resource list fails closed", async () => {
   db.prepare("DELETE FROM api_token_resources WHERE tokenId = 'token-1'").run();
   const response = await createApp().request("/api/notes/note-a");
+  assert.equal(response.status, 403);
+});
+
+test("unrestricted legacy token keeps access to unmapped endpoints", async () => {
+  const response = await createApp("unrestricted").request("/api/backups");
+  assert.equal(response.status, 200);
+});
+
+test("restricted token denies unmapped endpoints", async () => {
+  const response = await createApp("restricted").request("/api/backups");
+  assert.equal(response.status, 403);
+  const body = await response.json() as { code: string };
+  assert.equal(body.code, "API_TOKEN_ENDPOINT_DENIED");
+});
+
+test("restricted token cannot create global tags", async () => {
+  const response = await createApp().request("/api/tags", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "global" }),
+  });
   assert.equal(response.status, 403);
 });

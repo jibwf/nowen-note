@@ -13,5 +13,5 @@
     "frontend_install": 99,
     "frontend_build": 99
   },
-  "log": "issue 165 client search and spacing patches fixed\nissue 165 backend patch applied\n/home/runner/work/nowen-note/nowen-note/.github/issue-165-client.py:584: SyntaxWarning: invalid escape sequence '\\['\n  '''  // 脚注：定义行 `[^id]: 内容` → 保留内容文本；引用 `[^id]` → 去掉\n/home/runner/work/nowen-note/nowen-note/.github/issue-165-client.py:589: SyntaxWarning: invalid escape sequence '\\['\n  '''  // 脚注：定义行 `[^id]: 内容` → 保留内容文本；引用 `[^id]` → 去掉\nbacklink panel excerpt: expected exactly one match in frontend/src/components/BacklinksPanel.tsx, got 0"
+  "log": "issue 165 client search, spacing and backlink patches fixed\nissue 165 backend patch applied\n/home/runner/work/nowen-note/nowen-note/.github/issue-165-client.py:584: SyntaxWarning: invalid escape sequence '\\['\n  '''  // 脚注：定义行 `[^id]: 内容` → 保留内容文本；引用 `[^id]` → 去掉\n/home/runner/work/nowen-note/nowen-note/.github/issue-165-client.py:589: SyntaxWarning: invalid escape sequence '\\['\n  '''  // 脚注：定义行 `[^id]: 内容` → 保留内容文本；引用 `[^id]` → 去掉\nbacklink panel excerpt: expected exactly one match in frontend/src/components/BacklinksPanel.tsx, got 0"
 }

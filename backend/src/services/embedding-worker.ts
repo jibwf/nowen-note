@@ -437,6 +437,25 @@ async function tick(): Promise<void> {
             AND model.key = 'ai_embedding_model'
             AND trim(model.value) <> ''
         )
+        AND (
+          EXISTS (
+            SELECT 1 FROM user_ai_settings embedding_url
+            WHERE embedding_url.userId = q.userId
+              AND embedding_url.key = 'ai_embedding_url'
+              AND trim(embedding_url.value) <> ''
+          )
+          OR EXISTS (
+            SELECT 1 FROM user_ai_settings api_url
+            WHERE api_url.userId = q.userId
+              AND api_url.key = 'ai_api_url'
+              AND trim(api_url.value) <> ''
+          )
+          OR NOT EXISTS (
+            SELECT 1 FROM user_ai_settings explicit_api_url
+            WHERE explicit_api_url.userId = q.userId
+              AND explicit_api_url.key = 'ai_api_url'
+          )
+        )
       ORDER BY q.enqueuedAt ASC
       LIMIT ?
     `).all(MAX_RETRIES, BATCH_SIZE) as Array<{ noteId: string; userId: string; retries: number }>;
@@ -484,6 +503,25 @@ async function tickAttachments(): Promise<void> {
               WHERE model.userId = q.userId
                 AND model.key = 'ai_embedding_model'
                 AND trim(model.value) <> ''
+            )
+            AND (
+              EXISTS (
+                SELECT 1 FROM user_ai_settings embedding_url
+                WHERE embedding_url.userId = q.userId
+                  AND embedding_url.key = 'ai_embedding_url'
+                  AND trim(embedding_url.value) <> ''
+              )
+              OR EXISTS (
+                SELECT 1 FROM user_ai_settings api_url
+                WHERE api_url.userId = q.userId
+                  AND api_url.key = 'ai_api_url'
+                  AND trim(api_url.value) <> ''
+              )
+              OR NOT EXISTS (
+                SELECT 1 FROM user_ai_settings explicit_api_url
+                WHERE explicit_api_url.userId = q.userId
+                  AND explicit_api_url.key = 'ai_api_url'
+              )
             )
           ORDER BY q.enqueuedAt ASC
           LIMIT ?`,

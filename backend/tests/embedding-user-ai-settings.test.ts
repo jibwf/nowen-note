@@ -29,6 +29,7 @@ test.before(async () => {
   schema.getDb().prepare("INSERT INTO users (id, username, passwordHash) VALUES (?, ?, ?)").run("embed-a", "embed-a", "hash");
   schema.getDb().prepare("INSERT INTO users (id, username, passwordHash) VALUES (?, ?, ?)").run("embed-b", "embed-b", "hash");
   schema.getDb().prepare("INSERT INTO users (id, username, passwordHash) VALUES (?, ?, ?)").run("embed-default", "embed-default", "hash");
+  schema.getDb().prepare("INSERT INTO users (id, username, passwordHash) VALUES (?, ?, ?)").run("embed-invalid", "embed-invalid", "hash");
 });
 
 test.after(async () => {
@@ -87,6 +88,20 @@ test("embedQuery uses the requested user's URL, key, and model", async () => {
 });
 
 test("background queue uses the same default URL semantics as embedQuery", async () => {
+  setUserAISettings("embed-invalid", [
+    { key: "ai_api_url", value: "" },
+    { key: "ai_embedding_url", value: "" },
+    { key: "ai_embedding_model", value: "invalid-model" },
+  ]);
+  getDb().prepare("INSERT INTO notebooks (id, userId, name) VALUES (?, ?, ?)")
+    .run("embed-invalid-notebook", "embed-invalid", "Invalid notebook");
+  for (let index = 0; index < 5; index += 1) {
+    getDb().prepare("INSERT INTO notes (id, userId, notebookId, title, contentText) VALUES (?, ?, ?, ?, ?)")
+      .run(`embed-invalid-note-${index}`, "embed-invalid", "embed-invalid-notebook", "Invalid title", "Invalid queue item body");
+  }
+  getDb().prepare("UPDATE embedding_queue SET enqueuedAt = '2000-01-01 00:00:00' WHERE userId = ?")
+    .run("embed-invalid");
+
   setUserAISettings("embed-default", [
     { key: "ai_api_key", value: "default-key" },
     { key: "ai_embedding_model", value: "default-model" },
@@ -95,6 +110,8 @@ test("background queue uses the same default URL semantics as embedQuery", async
     .run("embed-default-notebook", "embed-default", "Notebook");
   getDb().prepare("INSERT INTO notes (id, userId, notebookId, title, contentText) VALUES (?, ?, ?, ?, ?)")
     .run("embed-default-note", "embed-default", "embed-default-notebook", "Long enough title", "Long enough body for embedding");
+  getDb().prepare("UPDATE embedding_queue SET enqueuedAt = '2001-01-01 00:00:00' WHERE noteId = ?")
+    .run("embed-default-note");
 
   let requests = 0;
   const originalFetch = globalThis.fetch;

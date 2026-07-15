@@ -5,6 +5,10 @@ import "./i18n";
 // Must run before App and its import/export/editor schemas are evaluated.
 import "./lib/imageNodeTransformBootstrap";
 import App from "./App";
+import PublicNotebookView from "./components/PublicNotebookView";
+import PublicSpaceLauncher from "./components/PublicSpaceLauncher";
+import { ThemeProvider } from "./components/ThemeProvider";
+import Toaster from "./components/Toaster";
 import NoteIconBridge from "./components/NoteIconBridge";
 import AIProfileSwitcherBridge from "./components/AIProfileSwitcherBridge";
 import MarkdownExperienceBridge from "./components/MarkdownExperienceBridge";
@@ -96,23 +100,46 @@ try {
   /* 纯 Web 环境：静默 */
 }
 
+function resolvePublicNotebookRoute(): { matched: boolean; token?: string } {
+  const match = window.location.pathname.match(/^\/public(?:\/([^/]+))?\/?$/);
+  if (!match) return { matched: false };
+  if (!match[1]) return { matched: true };
+  try {
+    return { matched: true, token: decodeURIComponent(match[1]) };
+  } catch {
+    return { matched: true, token: match[1] };
+  }
+}
+
+const publicRoute = resolvePublicNotebookRoute();
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BootSplashRemover />
-    <NoteIconBridge />
-    <AIProfileSwitcherBridge />
-    <MarkdownExperienceBridge />
-    <EmbedPasswordBridge />
-    <ImageExperienceBridge />
-    <MediaExperienceBridge />
-    <EditorImageTransformBridge />
-    <DesktopUpdateCenter />
-    <TwoFactorLoginChallengeCenter />
-    <TaskDataTransferBridgeV2 />
-    <SystemFullDataTransferBridge />
-    <AndroidShareImportCenter />
-    <ServerConnectionCenter />
-    <NoteImageExportCenter />
-    <App />
+    {publicRoute.matched ? (
+      <ThemeProvider>
+        <PublicNotebookView token={publicRoute.token} />
+        <Toaster />
+      </ThemeProvider>
+    ) : (
+      <>
+        <NoteIconBridge />
+        <AIProfileSwitcherBridge />
+        <MarkdownExperienceBridge />
+        <EmbedPasswordBridge />
+        <ImageExperienceBridge />
+        <MediaExperienceBridge />
+        <EditorImageTransformBridge />
+        <DesktopUpdateCenter />
+        <TwoFactorLoginChallengeCenter />
+        <TaskDataTransferBridgeV2 />
+        <SystemFullDataTransferBridge />
+        <AndroidShareImportCenter />
+        <ServerConnectionCenter />
+        <NoteImageExportCenter />
+        <PublicSpaceLauncher />
+        <App />
+      </>
+    )}
   </React.StrictMode>,
 );

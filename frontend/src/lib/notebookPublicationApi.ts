@@ -107,7 +107,7 @@ export interface PublicComment {
 }
 
 function apiBase(): string {
-  const server = getServerUrl().replace(/\/+$/, "");
+  const server = (getServerUrl() || "").replace(/\/+$/, "");
   return server ? `${server}/api` : "/api";
 }
 
@@ -117,6 +117,11 @@ function loginToken(): string {
   } catch {
     return "";
   }
+}
+
+function normalizeContentFormat(value: string | null | undefined): string | null | undefined {
+  if (value === "markdown") return "md";
+  return value;
 }
 
 async function request<T>(
@@ -224,20 +229,25 @@ export const notebookPublicationApi = {
     );
   },
 
-  getPublicTree(token: string, accessToken?: string) {
-    return request<{ notebooks: PublicNotebookNode[]; notes: PublicNoteSummary[] }>(
+  async getPublicTree(token: string, accessToken?: string) {
+    const tree = await request<{ notebooks: PublicNotebookNode[]; notes: PublicNoteSummary[] }>(
       `/shared/notebook-public/${encodeURIComponent(token)}/tree`,
       {},
       { accessToken },
     );
+    return {
+      notebooks: tree.notebooks,
+      notes: tree.notes.map((note) => ({ ...note, contentFormat: normalizeContentFormat(note.contentFormat) })),
+    };
   },
 
-  getPublicNote(token: string, noteId: string, accessToken?: string) {
-    return request<PublicNoteContent>(
+  async getPublicNote(token: string, noteId: string, accessToken?: string) {
+    const note = await request<PublicNoteContent>(
       `/shared/notebook-public/${encodeURIComponent(token)}/notes/${encodeURIComponent(noteId)}`,
       {},
       { accessToken },
     );
+    return { ...note, contentFormat: normalizeContentFormat(note.contentFormat) };
   },
 
   getComments(token: string, noteId: string, accessToken?: string) {

@@ -353,8 +353,7 @@ async function handleTags(c: Context, next: Next, ctx: TokenAccessContext): Prom
     return;
   }
   if (path === "/api/tags" && method === "POST") {
-    await next();
-    return;
+    throw new ApiTokenAccessError("restricted Token 不允许创建全局标签；仅可增删作用域内笔记的标签关联");
   }
   throw new ApiTokenAccessError("restricted Token 不允许修改全局标签；仅可增删作用域内笔记的标签关联");
 }
@@ -402,7 +401,11 @@ export async function enforceApiTokenAccess(c: Context, next: Next): Promise<Res
       throw new ApiTokenAccessError("API Token 不能管理或创建其他 Token", "API_TOKEN_SELF_MANAGEMENT_DENIED");
     }
     if (required === "__unsupported__") {
-      throw new ApiTokenAccessError(`API Token 未授权访问端点: ${c.req.path}`, "API_TOKEN_ENDPOINT_DENIED");
+      if (ctx.resourceMode === "restricted") {
+        throw new ApiTokenAccessError(`restricted Token 未授权访问端点: ${c.req.path}`, "API_TOKEN_ENDPOINT_DENIED");
+      }
+      await next();
+      return;
     }
     if (required) requireScope(ctx, required);
 

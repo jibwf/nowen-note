@@ -1,5 +1,8 @@
 import type { Permission } from "../middleware/acl";
 import { memberQueryService } from "../queries";
+import { ensureNotebookTreeIntegrityGuards } from "../runtime/notebook-tree-hardening.js";
+
+ensureNotebookTreeIntegrityGuards();
 
 export type NotebookRole = "owner" | "editor" | "viewer";
 

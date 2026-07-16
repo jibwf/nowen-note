@@ -31,6 +31,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import { common, createLowlight } from "lowlight";
 import { DOMParser as ProseMirrorDOMParser, Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { TextSelection, NodeSelection } from "@tiptap/pm/state";
+import { CellSelection } from "@tiptap/pm/tables";
 import { markdownToSimpleHtml } from "@/lib/importService";
 import { repairTiptapJson } from "@/lib/tiptapSchemaRepair";
 import { markdownToHtml as mdToFullHtml, detectFormat as detectContentFormat, tiptapJsonToMarkdown } from "@/lib/contentFormat";
@@ -70,6 +71,7 @@ import {
 import { downloadAttachment } from "@/lib/downloadFile";
 import { saveImageToGallery, isAndroidNative } from "@/lib/nativeImageSave";
 import { cn } from "@/lib/utils";
+import { resolveEditorBubbleKind, type BubbleSelectionKind } from "@/lib/editorBubbleSelection";
 import { toast } from "@/lib/toast";
 import { copyText } from "@/lib/clipboard";
 import { saveAs } from "file-saver";
@@ -3442,13 +3444,32 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         return;
       }
 
+      const selectionKind: BubbleSelectionKind = empty
+        ? "empty"
+        : selection instanceof CellSelection
+          ? "cell"
+          : selection instanceof NodeSelection && selection.node.type.name === "image"
+            ? "image"
+            : selection instanceof TextSelection
+              ? "text"
+              : "other";
+      const selectedText = selectionKind === "text"
+        ? state.doc.textBetween(from, to, " ")
+        : "";
+      const bubbleKind = resolveEditorBubbleKind({
+        selectionKind,
+        tableActive: editor.isActive("table"),
+        linkActive: editor.isActive("link"),
+        hasVisibleText: selectedText.trim().length > 0,
+      });
+
       // 空选区 → 文本/图片格式化气泡都关，但若光标停在链接里，显示链接气泡
       if (empty) {
         setBubble(b => b.open ? { ...b, open: false } : b);
         setImageBubble(b => b.open ? { ...b, open: false } : b);
 
         // 光标在表格里 → 显示表格操作气泡（独立于 link 气泡，因为表格里基本不会有 link）
-        if (editor.isActive("table")) {
+        if (bubbleKind === "table") {
           // 用当前光标位置所在 <td>/<th> 的 DOM 作为锚定矩形
           let cellEl: HTMLElement | null = null;
           try {
@@ -3470,7 +3491,12 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
           setTableBubble(b => b.open ? { ...b, open: false } : b);
         }
 
-        if (editor.isActive("link")) {
+        if (bubbleKind === "table") {
+          setLinkBubble(b => (b.open && b.source === "caret") ? { ...b, open: false } : b);
+          return;
+        }
+
+        if (bubbleKind === "link") {
           // 取整段 link mark 的范围用于定位（光标位置矩形是零宽，定位会偏）
           const $pos = state.doc.resolve(from);
           const linkType = state.schema.marks.link;
@@ -3523,8 +3549,10 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
 
       // 有选区 → 关闭 caret 链接气泡（hover 的不动），走原有文本/图片气泡逻辑
       setLinkBubble(b => (b.open && b.source === "caret") ? { ...b, open: false } : b);
-      // Keep table bubble open when cells are selected
-      if (editor.isActive("table")) {
+      // CellSelection owns the table bubble. A TextSelection inside a cell stays textual.
+      if (bubbleKind === "table") {
+        setBubble(b => b.open ? { ...b, open: false } : b);
+        setImageBubble(b => b.open ? { ...b, open: false } : b);
         const rect = posToDOMRect(view, from, to);
         const { top } = placeBubble(rect, 40, 360);
         const cx = rect.left + rect.width / 2;
@@ -3538,13 +3566,12 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
           cellText = cell?.textContent?.trim() || "";
         } catch { /* ignore */ }
         setTableBubble({ open: true, top, left, cellText });
+        return;
       } else {
         setTableBubble(b => b.open ? { ...b, open: false } : b);
       }
 
-      const isImage = editor.isActive("image");
-
-      if (isImage) {
+      if (bubbleKind === "image") {
         // 图片选区 → 显示图片尺寸气泡
         setBubble(b => b.open ? { ...b, open: false } : b);
         const rect = getImageSelectionRect(from) ?? posToDOMRect(view, from, to);
@@ -3557,7 +3584,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         // 文本选区 → 显示格式化气泡
         setImageBubble(b => b.open ? { ...b, open: false } : b);
         // 若文本长度为 0（全是不可见字符）也跳过
-        const text = state.doc.textBetween(from, to, " ");
+        const text = selectedText;
         if (!text.trim().length) {
           setBubble(b => b.open ? { ...b, open: false } : b);
           setSelectedTextAction(null);

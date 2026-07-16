@@ -85,7 +85,8 @@ jobs:
           if [ -f backend/dist/postgres/schema.sql ] &&
              [ -f backend/dist/postgres/schema.base.sql ] &&
              [ -f backend/dist/postgres/migrations/0001_migration_state.sql ] &&
-             [ -f backend/dist/postgres/migrations/0002_api_tokens_parity.sql ]; then
+             [ -f backend/dist/postgres/migrations/0002_api_tokens_parity.sql ] &&
+             [ -f backend/dist/postgres/migrations/0003_runtime_tables_parity.sql ]; then
             echo "- ✅ PostgreSQL runtime resources packaged" >> /tmp/pg-validation-results.md
           else
             echo "- ❌ PostgreSQL runtime resources packaged" >> /tmp/pg-validation-results.md

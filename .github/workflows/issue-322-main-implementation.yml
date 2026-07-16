@@ -1,6 +1,5 @@
 name: Issue 322 main implementation
 
-# One-shot runner. A successful run deletes this workflow and all staged patches.
 on:
   issue_comment:
     types: [created]
@@ -8,10 +7,6 @@ on:
 permissions:
   contents: write
   issues: write
-
-concurrency:
-  group: issue-322-main-implementation
-  cancel-in-progress: true
 
 jobs:
   implement:
@@ -21,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
-          fetch-depth: 0
+          fetch-depth: 1
 
       - uses: actions/setup-node@v4
         with:
@@ -31,21 +26,9 @@ jobs:
 
       - id: apply
         name: Apply staged patches
-        shell: bash
         run: |
-          set -o pipefail
-          : > /tmp/issue322-apply-error.txt
-          for patch in .github/issue322/*.patch; do
-            echo "Checking $patch"
-            if ! git apply --check "$patch" 2> /tmp/issue322-current-error.txt; then
-              {
-                echo "Failed patch: $patch"
-                cat /tmp/issue322-current-error.txt
-              } | tee /tmp/issue322-apply-error.txt
-              exit 1
-            fi
-            git apply "$patch"
-          done
+          git apply --verbose --check .github/issue322/*.patch
+          git apply --verbose .github/issue322/*.patch
           git diff --check
 
       - id: install
@@ -77,14 +60,4 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          body="Issue #322 implementation run $GITHUB_RUN_ID finished with status: ${{ job.status }}. Steps — apply: ${{ steps.apply.outcome }}, install: ${{ steps.install.outcome }}, validate: ${{ steps.validate.outcome }}, commit: ${{ steps.commit.outcome }}."
-          if [ -s /tmp/issue322-apply-error.txt ]; then
-            body="$body
-
-\`\`\`
-$(cat /tmp/issue322-apply-error.txt)
-\`\`\`"
-          fi
-          gh issue comment 322 --repo "$GITHUB_REPOSITORY" --body "$body"
+        run: gh issue comment 322 --repo "$GITHUB_REPOSITORY" --body "Issue #322 implementation run $GITHUB_RUN_ID finished with status ${{ job.status }}; apply=${{ steps.apply.outcome }}, install=${{ steps.install.outcome }}, validate=${{ steps.validate.outcome }}, commit=${{ steps.commit.outcome }}."

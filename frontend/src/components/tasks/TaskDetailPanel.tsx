@@ -1121,7 +1121,7 @@ export const TaskDetailPanel = React.forwardRef<HTMLDivElement, {
                       min={0}
                       max={59}
                       value={customReminder.minutes}
-                      onChange={(e) => setCustomReminder((prev) => ({ ...prev, minutes: Math.max(0, Math.min(59, parseInt(e.target.value) || 0) }))}
+                      onChange={(e) => setCustomReminder((prev) => ({ ...prev, minutes: Math.max(0, Math.min(59, parseInt(e.target.value) || 0)) }))}
                       className="w-12 px-2 py-1 rounded-md bg-app-bg border border-app-border text-xs text-tx-primary text-center focus:outline-none focus:border-accent-primary"
                     />
                     <span className="text-[11px] text-tx-tertiary">{t("tasks.reminder.minutesUnit")}</span>

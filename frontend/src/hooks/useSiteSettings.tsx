@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import i18n from "i18next";
 import { api, SERVER_URL_CHANGED_EVENT } from "@/lib/api";
+import { setRuntimePublicWebOrigin } from "@/lib/publicWebOrigin";
 
 export interface SiteConfig {
   title: string;
@@ -128,6 +129,10 @@ function toSiteConfig(data: any, previous: SiteConfig = DEFAULT_CONFIG): SiteCon
   };
 }
 
+function applyRuntimePublicOrigin(config: SiteConfig): void {
+  setRuntimePublicWebOrigin(config.publicWebOrigin, config.publicWebOriginSource);
+}
+
 export function SiteSettingsProvider({ children }: { children: React.ReactNode }) {
   const [siteConfig, setSiteConfig] = useState<SiteConfig>(DEFAULT_CONFIG);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -135,6 +140,7 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
   const loadSiteSettings = useCallback(() => {
     api.getSiteSettingsPublic().then(async (data) => {
       const config = toSiteConfig(data);
+      applyRuntimePublicOrigin(config);
       setSiteConfig(config);
       applyToDOM(config.title, config.favicon);
 
@@ -152,6 +158,7 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
 
       setIsLoaded(true);
     }).catch(() => {
+      applyRuntimePublicOrigin(DEFAULT_CONFIG);
       applyToDOM(DEFAULT_CONFIG.title, DEFAULT_CONFIG.favicon);
       applyEditorFont("");
       setIsLoaded(true);
@@ -174,6 +181,7 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
       site_favicon: favicon,
     });
     const config = toSiteConfig(data, siteConfig);
+    applyRuntimePublicOrigin(config);
     setSiteConfig(config);
     applyToDOM(config.title, config.favicon);
   }, [siteConfig]);
@@ -182,7 +190,11 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
     const data = await api.updateSiteSettings({
       site_public_web_origin: origin,
     } as any);
-    setSiteConfig((previous) => toSiteConfig(data, previous));
+    setSiteConfig((previous) => {
+      const config = toSiteConfig(data, previous);
+      applyRuntimePublicOrigin(config);
+      return config;
+    });
   }, []);
 
   const updateEditorFont = useCallback(async (fontId: string) => {
@@ -191,6 +203,7 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
       ...siteConfig,
       editorFontFamily: data.editor_font_family || "",
     };
+    applyRuntimePublicOrigin(config);
     setSiteConfig(config);
 
     if (fontId && !BUILTIN_FONTS.find(f => f.id === fontId)) {

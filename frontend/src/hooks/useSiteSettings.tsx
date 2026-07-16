@@ -7,6 +7,10 @@ export interface SiteConfig {
   favicon: string;
   /** ICP 备案号；由 Docker/运行时环境变量 NOWEN_ICP_BEIAN 提供。 */
   icpBeian: string;
+  /** 公开分享最终使用的 Web 根地址；空串表示继续走构建变量/当前 origin 兜底。 */
+  publicWebOrigin: string;
+  /** settings / environment / current，用于分享弹窗解释地址来源。 */
+  publicWebOriginSource: string;
   editorFontFamily: string; // 空串=默认(Inter), 自定义字体 id, 或内置字体名
   // 注：v6 起，"个人空间导出/导入"不再是站点级全站开关；它已下沉为 users 表
   // 的 personalExportEnabled / personalImportEnabled 两列，由管理员在
@@ -18,6 +22,8 @@ const DEFAULT_CONFIG: SiteConfig = {
   title: "nowen-note",
   favicon: "",
   icpBeian: "",
+  publicWebOrigin: "",
+  publicWebOriginSource: "current",
   editorFontFamily: "",
 };
 
@@ -37,6 +43,7 @@ export function getBuiltinFontName(font: typeof BUILTIN_FONTS[number]): string {
 interface SiteSettingsContextValue {
   siteConfig: SiteConfig;
   updateSiteConfig: (title: string, favicon: string) => Promise<void>;
+  updatePublicWebOrigin: (origin: string) => Promise<void>;
   updateEditorFont: (fontId: string) => Promise<void>;
   isLoaded: boolean;
 }
@@ -44,6 +51,7 @@ interface SiteSettingsContextValue {
 const SiteSettingsContext = createContext<SiteSettingsContextValue>({
   siteConfig: DEFAULT_CONFIG,
   updateSiteConfig: async () => {},
+  updatePublicWebOrigin: async () => {},
   updateEditorFont: async () => {},
   isLoaded: false,
 });
@@ -109,18 +117,24 @@ function applyEditorFont(fontId: string, customFontName?: string) {
   );
 }
 
+function toSiteConfig(data: any, previous: SiteConfig = DEFAULT_CONFIG): SiteConfig {
+  return {
+    title: data?.site_title || "nowen-note",
+    favicon: data?.site_favicon || "",
+    icpBeian: data?.site_icp_beian || previous.icpBeian || "",
+    publicWebOrigin: data?.site_public_web_origin || "",
+    publicWebOriginSource: data?.site_public_web_origin_source || "current",
+    editorFontFamily: data?.editor_font_family || previous.editorFontFamily || "",
+  };
+}
+
 export function SiteSettingsProvider({ children }: { children: React.ReactNode }) {
   const [siteConfig, setSiteConfig] = useState<SiteConfig>(DEFAULT_CONFIG);
   const [isLoaded, setIsLoaded] = useState(false);
 
   const loadSiteSettings = useCallback(() => {
     api.getSiteSettingsPublic().then(async (data) => {
-      const config: SiteConfig = {
-        title: data.site_title || "nowen-note",
-        favicon: data.site_favicon || "",
-        icpBeian: (data as any).site_icp_beian || "",
-        editorFontFamily: data.editor_font_family || "",
-      };
+      const config = toSiteConfig(data);
       setSiteConfig(config);
       applyToDOM(config.title, config.favicon);
 
@@ -159,15 +173,17 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
       site_title: title,
       site_favicon: favicon,
     });
-    const config: SiteConfig = {
-      title: data.site_title || "nowen-note",
-      favicon: data.site_favicon || "",
-      icpBeian: (data as any).site_icp_beian || siteConfig.icpBeian,
-      editorFontFamily: data.editor_font_family || siteConfig.editorFontFamily,
-    };
+    const config = toSiteConfig(data, siteConfig);
     setSiteConfig(config);
     applyToDOM(config.title, config.favicon);
-  }, [siteConfig.editorFontFamily, siteConfig.icpBeian]);
+  }, [siteConfig]);
+
+  const updatePublicWebOrigin = useCallback(async (origin: string) => {
+    const data = await api.updateSiteSettings({
+      site_public_web_origin: origin,
+    } as any);
+    setSiteConfig((previous) => toSiteConfig(data, previous));
+  }, []);
 
   const updateEditorFont = useCallback(async (fontId: string) => {
     const data = await api.updateSiteSettings({ editor_font_family: fontId });
@@ -191,7 +207,7 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
   }, [siteConfig]);
 
   return (
-    <SiteSettingsContext.Provider value={{ siteConfig, updateSiteConfig, updateEditorFont, isLoaded }}>
+    <SiteSettingsContext.Provider value={{ siteConfig, updateSiteConfig, updatePublicWebOrigin, updateEditorFont, isLoaded }}>
       {children}
     </SiteSettingsContext.Provider>
   );

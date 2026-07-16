@@ -1,0 +1,48 @@
+name: Inspect issue 311 selection handling
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/issue-311-inspect.yml
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Extract selection handling
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('frontend/src/components/TiptapEditor.tsx')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          hits = [i for i, line in enumerate(lines) if 'selectionUpdate' in line or 'setTableBubble' in line]
+          ranges = []
+          for i in hits:
+              start = max(0, i - 35)
+              end = min(len(lines), i + 80)
+              if ranges and start <= ranges[-1][1]:
+                  ranges[-1] = (ranges[-1][0], max(ranges[-1][1], end))
+              else:
+                  ranges.append((start, end))
+          out = []
+          for start, end in ranges:
+              out.append(f'--- lines {start + 1}-{end} ---')
+              out.extend(f'{n + 1:05d}: {lines[n]}' for n in range(start, end))
+          Path('.github/issue-311-selection.txt').write_text('\n'.join(out) + '\n', encoding='utf-8')
+          PY
+      - name: Commit diagnostic excerpt
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/issue-311-selection.txt
+          git commit -m "chore(issue-311): capture selection handler excerpt"
+          git push origin HEAD:main

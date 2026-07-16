@@ -31,9 +31,21 @@ jobs:
 
       - id: apply
         name: Apply staged patches
+        shell: bash
         run: |
-          git apply --check .github/issue322/*.patch
-          git apply .github/issue322/*.patch
+          set -o pipefail
+          : > /tmp/issue322-apply-error.txt
+          for patch in .github/issue322/*.patch; do
+            echo "Checking $patch"
+            if ! git apply --check "$patch" 2> /tmp/issue322-current-error.txt; then
+              {
+                echo "Failed patch: $patch"
+                cat /tmp/issue322-current-error.txt
+              } | tee /tmp/issue322-apply-error.txt
+              exit 1
+            fi
+            git apply "$patch"
+          done
           git diff --check
 
       - id: install
@@ -65,5 +77,14 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          gh issue comment 322 --repo "$GITHUB_REPOSITORY" --body "Issue #322 implementation run $GITHUB_RUN_ID finished with status: ${{ job.status }}. Steps — apply: ${{ steps.apply.outcome }}, install: ${{ steps.install.outcome }}, validate: ${{ steps.validate.outcome }}, commit: ${{ steps.commit.outcome }}."
+          body="Issue #322 implementation run $GITHUB_RUN_ID finished with status: ${{ job.status }}. Steps — apply: ${{ steps.apply.outcome }}, install: ${{ steps.install.outcome }}, validate: ${{ steps.validate.outcome }}, commit: ${{ steps.commit.outcome }}."
+          if [ -s /tmp/issue322-apply-error.txt ]; then
+            body="$body
+
+\`\`\`
+$(cat /tmp/issue322-apply-error.txt)
+\`\`\`"
+          fi
+          gh issue comment 322 --repo "$GITHUB_REPOSITORY" --body "$body"

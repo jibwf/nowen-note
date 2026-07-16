@@ -210,7 +210,7 @@ export class NowenAttachmentClient {
         headers: { Authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(this.timeout),
       }),
-      params,
+      params as Record<string, QueryValue>,
     );
   }
 

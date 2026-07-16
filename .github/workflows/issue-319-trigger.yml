@@ -1,0 +1,76 @@
+name: Trigger issue 319 implementation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/issue-319-trigger
+
+permissions:
+  contents: write
+
+concurrency:
+  group: issue-319-main
+  cancel-in-progress: false
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Sync latest main
+        run: |
+          git fetch origin main
+          git reset --hard origin/main
+
+      - name: Extract and run validated patch script
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/issue-319-apply.yml').read_text(encoding='utf-8')
+          start_marker = "          python <<'PY'\n"
+          end_marker = "\n          PY\n\n      - name: Install frontend dependencies"
+          start = source.index(start_marker) + len(start_marker)
+          end = source.index(end_marker, start)
+          lines = source[start:end].splitlines()
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+          Path('/tmp/issue319_apply.py').write_text(script, encoding='utf-8')
+          PY
+          python /tmp/issue319_apply.py
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Run autosave regression tests
+        working-directory: frontend
+        run: npm run test:run -- src/lib/__tests__/latestOnlyVersionedSaveQueue.test.ts src/components/__tests__/EditorPaneSerialAutosave.test.ts src/components/__tests__/EditorPaneSaveSafety.test.ts
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Commit validated fix and clean temporary files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/issue-319-apply.yml
+          git rm .github/workflows/issue-319-trigger.yml
+          git rm .github/issue-319-trigger
+          git add frontend/src/components/EditorPane.tsx \
+                  frontend/src/lib/latestOnlyVersionedSaveQueue.ts \
+                  frontend/src/lib/__tests__/latestOnlyVersionedSaveQueue.test.ts \
+                  frontend/src/components/__tests__/EditorPaneSerialAutosave.test.ts
+          git commit -m "fix(sync): serialize per-note autosaves (#319)" \
+            -m "Validation: latest-only queue tests, EditorPane integration tests, existing save-safety tests, and frontend production build passed."
+          git push origin HEAD:main

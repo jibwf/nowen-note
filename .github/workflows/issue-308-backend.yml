@@ -8,6 +8,7 @@ on:
       - scripts/issue-308-fix1.py
       - scripts/issue-308-fix2.py
       - scripts/issue-308-post1.py
+      - scripts/issue-308-post2.py
       - .github/workflows/issue-308-backend.yml
   workflow_dispatch:
 
@@ -49,9 +50,7 @@ jobs:
 
           echo "## $phase" | tee -a "$LOG"
           python scripts/issue-308-fix1.py >>"$LOG" 2>&1 || status=$?
-          if [ "$status" -eq 0 ]; then
-            python scripts/issue-308-fix2.py >>"$LOG" 2>&1 || status=$?
-          fi
+          if [ "$status" -eq 0 ]; then python scripts/issue-308-fix2.py >>"$LOG" 2>&1 || status=$?; fi
 
           if [ "$status" -eq 0 ]; then
             phase="apply_patch"
@@ -62,6 +61,7 @@ jobs:
             phase="post_patch"
             echo "## $phase" | tee -a "$LOG"
             python scripts/issue-308-post1.py >>"$LOG" 2>&1 || status=$?
+            if [ "$status" -eq 0 ]; then python scripts/issue-308-post2.py >>"$LOG" 2>&1 || status=$?; fi
           fi
           if [ "$status" -eq 0 ]; then
             phase="npm_ci"
@@ -74,9 +74,19 @@ jobs:
             (cd backend && npm run build:tsc) >>"$LOG" 2>&1 || status=$?
           fi
           if [ "$status" -eq 0 ]; then
-            phase="tests"
+            phase="tests_share_security"
             echo "## $phase" | tee -a "$LOG"
-            (cd backend && node --import tsx --test tests/share-security-capabilities.test.ts tests/attachment-shared-access.test.ts tests/notebook-directory-permissions.test.ts) >>"$LOG" 2>&1 || status=$?
+            (cd backend && node --import tsx --test tests/share-security-capabilities.test.ts) >>"$LOG" 2>&1 || status=$?
+          fi
+          if [ "$status" -eq 0 ]; then
+            phase="tests_attachment"
+            echo "## $phase" | tee -a "$LOG"
+            (cd backend && node --import tsx --test tests/attachment-shared-access.test.ts) >>"$LOG" 2>&1 || status=$?
+          fi
+          if [ "$status" -eq 0 ]; then
+            phase="tests_directory_acl"
+            echo "## $phase" | tee -a "$LOG"
+            (cd backend && node --import tsx --test tests/notebook-directory-permissions.test.ts) >>"$LOG" 2>&1 || status=$?
           fi
           if [ "$status" -eq 0 ]; then
             phase="bundle"
@@ -112,7 +122,7 @@ jobs:
           fi
 
           rm -f .github/issue-308-backend-result.json
-          rm -f scripts/issue-308-backend.py scripts/issue-308-fix1.py scripts/issue-308-fix2.py scripts/issue-308-post1.py .github/workflows/issue-308-backend.yml
+          rm -f scripts/issue-308-backend.py scripts/issue-308-fix1.py scripts/issue-308-fix2.py scripts/issue-308-post1.py scripts/issue-308-post2.py .github/workflows/issue-308-backend.yml
           git add -A
           if git diff --cached --quiet; then
             echo "No changes to commit"

@@ -29,6 +29,13 @@ interface MammothResult {
   messages?: Array<{ type?: string; message?: string }>;
 }
 
+interface ZipEntryLike {
+  name: string;
+  dir: boolean;
+  _data?: { uncompressedSize?: number };
+  _dataBinary?: { uncompressedSize?: number };
+}
+
 const mammoth = ((mammothNamespace as unknown as { default?: unknown }).default || mammothNamespace) as unknown as {
   convertToHtml: (
     input: { arrayBuffer: ArrayBuffer },
@@ -55,21 +62,15 @@ function base64ToArrayBuffer(value: string): ArrayBuffer {
   return bytes.buffer;
 }
 
-function entryUncompressedSize(entry: JSZip.JSZipObject): number {
-  const internal = entry as unknown as {
-    _data?: { uncompressedSize?: number };
-    _dataBinary?: { uncompressedSize?: number };
-  };
-  const value = internal._data?.uncompressedSize ?? internal._dataBinary?.uncompressedSize ?? 0;
+function entryUncompressedSize(entry: ZipEntryLike): number {
+  const value = entry._data?.uncompressedSize ?? entry._dataBinary?.uncompressedSize ?? 0;
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 async function inspectArchive(buffer: ArrayBuffer, originalBytes: number): Promise<DocxArchiveStats> {
-  const zip = await JSZip.loadAsync(buffer, {
-    checkCRC32: false,
-    createFolders: false,
-  });
-  const entries = Object.values(zip.files).filter((entry) => !entry.dir);
+  const zip = await JSZip.loadAsync(buffer, { checkCRC32: false });
+  const entries = (Object.values(zip.files) as unknown as ZipEntryLike[])
+    .filter((entry) => !entry.dir);
   let uncompressedBytes = 0;
   let xmlBytes = 0;
   let imageCount = 0;

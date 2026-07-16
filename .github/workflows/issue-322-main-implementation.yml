@@ -1,5 +1,6 @@
 name: Issue 322 main implementation
 
+# Trigger revision 2: workflow already exists with the push event.
 on:
   push:
     branches: [main]

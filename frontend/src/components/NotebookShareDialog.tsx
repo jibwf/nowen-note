@@ -3,6 +3,7 @@ import { Globe2, KeyRound, Link2, LockKeyhole, MessageCircle, RefreshCw, RotateC
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { copyText } from "@/lib/clipboard";
 import { toast } from "@/lib/toast";
 import { confirm } from "@/components/ui/confirm";
 import { buildPublicWebUrl } from "@/lib/publicWebOrigin";
@@ -91,7 +92,10 @@ export default function NotebookShareDialog({ notebook, onClose }: Props) {
   useEffect(() => { let cancelled = false; setLoading(true); reload().catch((e: any) => !cancelled && toast.error(e?.message || "加载分享设置失败")).finally(() => !cancelled && setLoading(false)); return () => { cancelled = true; }; }, [notebook.id]);
   useEffect(() => { if (tab === "publish") void loadComments(); }, [tab, publication?.id, publication?.isActive]);
 
-  const copy = async (value: string) => { try { await navigator.clipboard.writeText(value); toast.success("链接已复制"); } catch { toast.error("复制失败"); } };
+  const copy = async (value: string) => {
+    const copied = await copyText(value);
+    toast[copied ? "success" : "error"](copied ? "链接已复制" : "复制失败");
+  };
   const searchUsers = async (kind: "member" | "acl") => {
     const keyword = (kind === "member" ? query : aclQuery).trim(); if (!keyword) return;
     const rows = await api.searchUsers(keyword);

@@ -160,6 +160,25 @@ If this project helps you, feel free to scan the QR code and buy the author a co
 
 > 最近 5 个版本的更新内容，完整历史见 [CHANGELOG.md](./CHANGELOG.md)。
 
+### v1.4.1 - 2026-07-17
+
+### 📝 文档
+
+- design markdown live preview image auth fix (eaf611e)
+
+### 🤖 CI
+
+- remove temporary PostgreSQL access/session validator (abec8f3)
+- temporarily validate PostgreSQL access and sessions (38251e6)
+
+### 📌 杂项
+
+- fix preserve protocol-relative markdown images (c394870)
+- fix markdown live preview attachment images (13f5822)
+- fix notebook export attachment auth (9bd3dd8)
+- fix clipboard copy (03b2c68)
+- fix notebook publication routes (5b02e06)
+
 ### v1.4.0 - 2026-07-17
 
 ### 🐛 修复
@@ -615,13 +634,5 @@ If this project helps you, feel free to scan the QR code and buy the author a co
 ### 🔧 其他
 
 - **git**: 忽略本地工作树 (15c73f0)
-
-### v1.3.6 - 2026-07-14
-
-### 🐛 修复
-
-- 完成版本冲突处理闭环并停止重复弹窗 (#274) (b10c2cb)
-- 简化全局同步状态，隐藏普通用户队列概念 (#275) (c222bfb)
-- 修复安卓主题切换抖动与图片旋转缩放 (#270) (7510060)
 
 <!-- CHANGELOG:END -->

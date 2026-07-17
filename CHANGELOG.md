@@ -12,6 +12,26 @@
 
 <!-- ADD_NEW_HERE -->
 
+## v1.4.1 - 2026-07-17
+
+### 📝 文档
+
+- design markdown live preview image auth fix (eaf611e)
+
+### 🤖 CI
+
+- remove temporary PostgreSQL access/session validator (abec8f3)
+- temporarily validate PostgreSQL access and sessions (38251e6)
+
+### 📌 杂项
+
+- fix preserve protocol-relative markdown images (c394870)
+- fix markdown live preview attachment images (13f5822)
+- fix notebook export attachment auth (9bd3dd8)
+- fix clipboard copy (03b2c68)
+- fix notebook publication routes (5b02e06)
+
+
 ## v1.4.0 - 2026-07-17
 
 ### 🐛 修复

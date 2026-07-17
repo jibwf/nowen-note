@@ -17,6 +17,7 @@ import ImageExperienceBridge from "./components/ImageExperienceBridge";
 import MediaExperienceBridge from "./components/MediaExperienceBridge";
 import EditorImageTransformBridge from "./components/EditorImageTransformBridge";
 import DesktopUpdateCenter from "./components/DesktopUpdateCenter";
+import DockerUpdateCenter from "./components/DockerUpdateCenter";
 import TwoFactorLoginChallengeCenter from "./components/TwoFactorLoginChallengeCenter";
 import TaskDataTransferBridgeV2 from "./components/TaskDataTransferBridgeV2";
 import SystemFullDataTransferBridge from "./components/SystemFullDataTransferBridge";
@@ -145,6 +146,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <MediaExperienceBridge />
         <EditorImageTransformBridge />
         <DesktopUpdateCenter />
+        <DockerUpdateCenter />
         <TwoFactorLoginChallengeCenter />
         <TaskDataTransferBridgeV2 />
         <SystemFullDataTransferBridge />

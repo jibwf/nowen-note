@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   validate:
-    if: github.event.issue.number == 299 && github.event.issue.pull_request && github.event.comment.body == '/validate-pg-unified-batch-b'
+    if: github.event.issue.number == 299 && github.event.issue.pull_request && github.event.comment.body == '/validate-pg-unified-batch-b-final'
     runs-on: ubuntu-latest
     timeout-minutes: 35
 
@@ -88,22 +88,22 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pg-unified-batch-b-${{ github.run_id }}
+          name: pg-unified-batch-b-final-${{ github.run_id }}
           path: |
             /tmp/pg-validation.log
             /tmp/pg-validation-results.md
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Comment validation result
+      - name: Publish validation result
         if: always()
         shell: bash
         run: |
           status="${{ steps.validate.outputs.overall }}"
           if [ "$status" = "0" ]; then
-            heading="## ✅ PostgreSQL Batch B validation passed"
+            heading="## ✅ PostgreSQL Batch B final validation passed"
           else
-            heading="## ❌ PostgreSQL Batch B validation failed"
+            heading="## ❌ PostgreSQL Batch B final validation failed"
           fi
           {
             echo "$heading"
@@ -114,7 +114,7 @@ jobs:
             echo
             cat /tmp/pg-validation-results.md
           } > /tmp/pg-pr-comment.md
-          gh api "repos/${GITHUB_REPOSITORY}/issues/299/comments" -f body="$(cat /tmp/pg-pr-comment.md)"
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/4993632724" -f body="$(cat /tmp/pg-pr-comment.md)"
 
       - name: Enforce validation result
         if: steps.validate.outputs.overall != '0'

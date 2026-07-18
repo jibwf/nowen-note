@@ -42,19 +42,6 @@ function parseRequest(c: any, body: any): NoteTransferRequest {
   };
 }
 
-function validateMoveSafety(c: any, request: NoteTransferRequest): Response | null {
-  if (request.mode === "move" && request.includeAttachments === false) {
-    return c.json(
-      {
-        error: "安全移动必须复制附件；如需保留源附件，请改用复制模式",
-        code: "MOVE_REQUIRES_ATTACHMENTS",
-      },
-      400,
-    );
-  }
-  return null;
-}
-
 function errorResponse(c: any, error: unknown) {
   if (error instanceof NoteTransferError) {
     return c.json(
@@ -74,10 +61,7 @@ app.post("/preview", async (c) => {
   c.header("Cache-Control", "private, no-store");
   try {
     const body = await c.req.json().catch(() => ({}));
-    const request = parseRequest(c, body);
-    const unsafe = validateMoveSafety(c, request);
-    if (unsafe) return unsafe;
-    return c.json(previewNoteTransfer(request));
+    return c.json(await previewNoteTransfer(parseRequest(c, body)));
   } catch (error) {
     return errorResponse(c, error);
   }
@@ -88,8 +72,6 @@ app.post("/", async (c) => {
   try {
     const body = await c.req.json().catch(() => ({}));
     const request = parseRequest(c, body);
-    const unsafe = validateMoveSafety(c, request);
-    if (unsafe) return unsafe;
     if (request.mode === "move" && !request.expectedVersions) {
       return c.json(
         {
@@ -99,7 +81,7 @@ app.post("/", async (c) => {
         409,
       );
     }
-    const result = executeNoteTransfer(request);
+    const result = await executeNoteTransfer(request);
     return c.json(result, 201);
   } catch (error) {
     return errorResponse(c, error);

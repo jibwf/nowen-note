@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./lib/androidCompat";
+import "./lib/noteTransferRefreshBridge";
 import "./i18n";
 // Must run before App and its import/export/editor schemas are evaluated.
 import "./lib/imageNodeTransformBootstrap";

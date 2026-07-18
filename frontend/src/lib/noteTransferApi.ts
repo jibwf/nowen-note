@@ -49,6 +49,7 @@ export type NoteTransferPreview = {
   attachmentBytes: number;
   missingAttachmentCount: number;
   tagCount: number;
+  internalNoteLinkCount: number;
   externalNoteLinkCount: number;
   sourceVersions: Record<string, number>;
   blockers: Array<{ code: string; message: string; noteId?: string }>;
@@ -73,6 +74,7 @@ export type NoteTransferResult = {
   copiedTagCount: number;
   skippedAttachmentCount: number;
   movedSourceNoteCount: number;
+  internalNoteLinkCount: number;
   externalNoteLinkCount: number;
   warnings: string[];
   omitted: string[];

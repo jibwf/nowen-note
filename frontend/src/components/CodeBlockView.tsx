@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
+import React, { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { NodeViewWrapper, NodeViewContent, NodeViewProps } from "@tiptap/react";
 import { Copy, Check, ChevronDown, Palette, Eye, Code2, FileText, Minimize2, Maximize2 } from "lucide-react";
@@ -13,6 +13,11 @@ import MermaidView from "@/components/MermaidView";
 import { isMermaidLang } from "@/lib/mermaidRenderer";
 import { replaceCodeBlockWithPlainText } from "@/lib/tiptapEditorCommands";
 import { canUseCodeBlockToolbarAction } from "@/lib/codeBlockPermissions";
+import { recordPhaseAPerfEvent } from "@/lib/phaseAPerfDiagnostics";
+import {
+  getEditorEditableSnapshot,
+  subscribeEditorEditable,
+} from "@/lib/editorEditableStore";
 
 /**
  * 自定义代码块视图：
@@ -45,6 +50,8 @@ function formatLanguageLabel(raw: string | null | undefined): string {
 export function CodeBlockView(props: NodeViewProps) {
   const { node, updateAttributes, extension, editor, getPos } = props;
   const lowlight = (extension.options as any)?.lowlight;
+  const perfBlockId = String(node.attrs.blockId || node.attrs.language || "code-block");
+  recordPhaseAPerfEvent({ type: "code-block-render", blockId: perfBlockId });
 
   const currentLang: string = node.attrs.language || "auto";
   const isMermaid = isMermaidLang(currentLang);
@@ -54,21 +61,19 @@ export function CodeBlockView(props: NodeViewProps) {
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [activeTheme, setActiveTheme] = useState<CodeBlockThemeId>(getSavedCodeBlockTheme);
   const [collapsed, setCollapsed] = useState(false);
-  // editor.isEditable 是可变 getter。订阅 editor 事件只用于触发 React 重渲染，
-  // 实际权限每次都从当前 editor 状态重新计算，确保锁定/解锁立即反映到 NodeView。
-  const [, setEditorPermissionVersion] = useState(0);
+  const subscribeToEditable = useCallback((listener: () => void) => (
+    subscribeEditorEditable(editor, () => {
+      recordPhaseAPerfEvent({ type: "code-block-permission-state-update", blockId: perfBlockId });
+      listener();
+    })
+  ), [editor, perfBlockId]);
+  useSyncExternalStore(
+    subscribeToEditable,
+    () => getEditorEditableSnapshot(editor),
+    () => getEditorEditableSnapshot(editor),
+  );
   const canChangeLanguage = canUseCodeBlockToolbarAction("language", editor);
   const canDissolve = canUseCodeBlockToolbarAction("dissolve", editor);
-
-  useEffect(() => {
-    const syncPermission = () => setEditorPermissionVersion((value) => value + 1);
-    editor.on("update", syncPermission);
-    editor.on("transaction", syncPermission);
-    return () => {
-      editor.off("update", syncPermission);
-      editor.off("transaction", syncPermission);
-    };
-  }, [editor]);
 
   useEffect(() => {
     if (canChangeLanguage) return;

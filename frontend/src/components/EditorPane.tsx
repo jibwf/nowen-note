@@ -4,7 +4,8 @@ import { Star, Pin, Trash2, Cloud, CloudOff, RefreshCw, Check, Loader2, ChevronL
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import TiptapEditor from "@/components/TiptapEditor";
-import type { NoteEditorHeading } from "@/components/editors/types";
+import { PhaseAPerfProfiler } from "@/components/PhaseAPerfProfiler";
+import type { NoteEditorHeading, NoteEditorUpdatePayload } from "@/components/editors/types";
 import MarkdownEditor from "@/components/MarkdownEditor";
 import HtmlPreviewPane, { isFullHtmlDocument } from "@/components/HtmlPreviewPane";
 import type { NoteEditorHandle } from "@/components/editors/types";
@@ -61,6 +62,7 @@ import {
 import { useUserPreferences } from "@/hooks/useUserPreferences";
 import {
   isRemoteVersionNewer,
+  resolveConfirmedTiptapContent,
   shouldSkipUnchangedTitleOnlyUpdate,
 } from "@/lib/editorSyncGuards";
 import { canWriteNote } from "@/lib/notePermissions";
@@ -106,6 +108,9 @@ export default function EditorPane() {
   viewLockedIdsRef.current = viewLockedIds;
   const [headings, setHeadings] = useState<NoteEditorHeading[]>([]);
   const scrollToRef = useRef<((pos: number) => void) | null>(null);
+  const handleEditorReady = useCallback((scrollTo: (pos: number) => void) => {
+    scrollToRef.current = scrollTo;
+  }, []);
   const { t } = useTranslation();
 
   /**
@@ -652,6 +657,9 @@ export default function EditorPane() {
     | ((data: { content?: string; contentText?: string; title: string }) => Promise<void>)
     | null
   >(null);
+  const handleEditorUpdate = useCallback(async (data: NoteEditorUpdatePayload) => {
+    await handleUpdateRef.current?.(data);
+  }, []);
 
   // �л��ʼ�ʱ��Ȿ�زݸ�
   useEffect(() => {
@@ -1197,7 +1205,7 @@ export default function EditorPane() {
     };
   }, [showDesktopMoreMenu]);
 
-  const handleUpdate = useCallback(async (data: { content?: string; contentText?: string; title: string; _noteId?: string }) => {
+  const handleUpdate = useCallback(async (data: NoteEditorUpdatePayload) => {
     const currentNote = activeNoteRef.current;
     if (!currentNote || currentNote.isLocked || viewLockedIdsRef.current.has(currentNote.id)) return;
 
@@ -1379,25 +1387,38 @@ export default function EditorPane() {
         // �������� TiptapEditor effect ���ؽ��༭�� DOM ����������ˡ�
         let nextContent = activeNoteRef.current.content;
         let nextContentText = activeNoteRef.current.contentText;
+        let preserveLocalEditor = false;
         if (lastSentData.content !== undefined) {
           let editorSnap: { content: string; contentText: string } | null = null;
           try {
             const snap = editorHandleRef.current?.getSnapshot?.();
             if (snap && typeof snap.content === "string") editorSnap = snap as any;
           } catch { /* ignore */ }
-          if (!editorSnap || editorSnap.content === lastSentData.content) {
-            // �༭����ǰ���� == ����˸��յ������� �� ��ȫ����
-            nextContent = lastSentData.content;
-            nextContentText = lastSentData.contentText ?? activeNoteRef.current.contentText;
-          } else {
-            // �༭�����������룺����ǰ�����£��� editorSnap�������� setActiveNote
-            // �ñ༭������Ϊ"�ⲿ����"����һ�� debounce ����Ȼ�����������ݡ�
-            nextContent = editorSnap.content;
-            nextContentText = editorSnap.contentText ?? activeNoteRef.current.contentText;
-          }
+          const confirmed = resolveConfirmedTiptapContent({
+            serverContent: typeof updated.content === "string" ? updated.content : undefined,
+            serverContentText: typeof updated.contentText === "string" ? updated.contentText : undefined,
+            sentContent: lastSentData.content,
+            sentContentText: lastSentData.contentText,
+            editorSnapshot: editorSnap,
+            fallbackContentText: activeNoteRef.current.contentText,
+          });
+          nextContent = confirmed.content;
+          nextContentText = confirmed.contentText;
+          preserveLocalEditor = confirmed.preserveLocalEditor;
+        }
+        const activeNoteForAck = activeNoteRef.current;
+        if (!activeNoteForAck) return;
+        if (data._saveGeneration && lastSentData.content !== undefined) {
+          editorHandleRef.current?.acknowledgeSave?.({
+            noteId: updated.id,
+            version: updated.version,
+            content: nextContent,
+            saveGeneration: data._saveGeneration,
+            preserveLocalEditor,
+          });
         }
         actions.setActiveNote({
-          ...activeNoteRef.current,
+          ...activeNoteForAck,
           version: updated.version,
           updatedAt: updated.updatedAt,
           title: data.title,
@@ -1674,6 +1695,12 @@ const moveToTrash = useCallback(async () => {
     actions.setActiveNote({ ...activeNote, tags });
     api.getTags().then(actions.setTags).catch(console.error);
   }, [activeNote, actions]);
+  const handleOpenNoteRef = useRef(handleOpenNote);
+  handleOpenNoteRef.current = handleOpenNote;
+  const handleEditorOpenNote = useCallback((noteId: string) => handleOpenNoteRef.current(noteId), []);
+  const handleTagsChangeRef = useRef(handleTagsChange);
+  handleTagsChangeRef.current = handleTagsChange;
+  const handleEditorTagsChange = useCallback((tags: Tag[]) => handleTagsChangeRef.current(tags), []);
 
   // AI ���ɱ���
   const [aiTitleLoading, setAiTitleLoading] = useState(false);
@@ -3036,7 +3063,7 @@ const moveToTrash = useCallback(async () => {
               onUpdate={handleUpdate}
               onTagsChange={handleTagsChange}
               onHeadingsChange={setHeadings}
-              onEditorReady={(fn) => { scrollToRef.current = fn; }}
+              onEditorReady={handleEditorReady}
               editable={canEditActiveNote && !effectiveLocked && !modeSwitching}
               yDoc={collabYDoc}
               awareness={collabProvider?.awareness ?? null}
@@ -3049,7 +3076,7 @@ const moveToTrash = useCallback(async () => {
               onUpdate={handleUpdate}
               onTagsChange={handleTagsChange}
               onHeadingsChange={setHeadings}
-              onEditorReady={(fn) => { scrollToRef.current = fn; }}
+              onEditorReady={handleEditorReady}
               editable={false}
             />
           ) : editorMode === "md" ? (
@@ -3062,7 +3089,7 @@ const moveToTrash = useCallback(async () => {
               onUpdate={handleUpdate}
               onTagsChange={handleTagsChange}
               onHeadingsChange={setHeadings}
-              onEditorReady={(fn) => { scrollToRef.current = fn; }}
+              onEditorReady={handleEditorReady}
               // UX3��ģʽ�л��ڼ䶳��༭�������û��� mount��unmount ��������֣�
               // ��������������һ�༭����������������"�ڶ�����"����
               editable={canEditActiveNote && !effectiveLocked && !modeSwitching}
@@ -3070,17 +3097,19 @@ const moveToTrash = useCallback(async () => {
               awareness={collabProvider?.awareness ?? null}
             />
           ) : (
-            <TiptapEditor
-              ref={editorHandleRef}
-              note={activeNote}
-              onUpdate={handleUpdate}
-              onTagsChange={handleTagsChange}
-              onHeadingsChange={setHeadings}
-              onEditorReady={(fn) => { scrollToRef.current = fn; }}
-              onOpenNote={handleOpenNote}
-              editable={canEditActiveNote && !effectiveLocked && !modeSwitching}
-              searchQuery={state.searchQuery}
-            />
+            <PhaseAPerfProfiler>
+              <TiptapEditor
+                ref={editorHandleRef}
+                note={activeNote}
+                onUpdate={handleEditorUpdate}
+                onTagsChange={handleEditorTagsChange}
+                onHeadingsChange={setHeadings}
+                onEditorReady={handleEditorReady}
+                onOpenNote={handleEditorOpenNote}
+                editable={canEditActiveNote && !effectiveLocked && !modeSwitching}
+                searchQuery={state.searchQuery}
+              />
+            </PhaseAPerfProfiler>
           )}
           </EditorErrorBoundary>
           {/*
@@ -3734,4 +3763,3 @@ function SyncIndicator({
     </button>
   );
 }
-

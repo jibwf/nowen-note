@@ -11,15 +11,12 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-async function flushMicrotasks() {
-  await Promise.resolve();
-  await Promise.resolve();
-}
-
 describe("LatestOnlyVersionedSaveQueue", () => {
   it("serializes one note, coalesces pending snapshots and chains ACK versions", async () => {
     const first = deferred<{ version: number }>();
     const second = deferred<{ version: number }>();
+    const firstStarted = deferred<void>();
+    const secondStarted = deferred<void>();
     const calls: Array<{ payload: { content?: string; title?: string }; version: number }> = [];
     let concurrent = 0;
     let maxConcurrent = 0;
@@ -30,6 +27,8 @@ describe("LatestOnlyVersionedSaveQueue", () => {
       version: number,
     ) => {
       calls.push({ payload, version });
+      if (calls.length === 1) firstStarted.resolve();
+      if (calls.length === 2) secondStarted.resolve();
       concurrent += 1;
       maxConcurrent = Math.max(maxConcurrent, concurrent);
       try {
@@ -44,13 +43,13 @@ describe("LatestOnlyVersionedSaveQueue", () => {
       (previous, next) => ({ ...previous, ...next }),
     );
     const p1 = queue.enqueue({ key: "n1", baseVersion: 10, payload: { content: "A", title: "old" } });
-    await flushMicrotasks();
+    await firstStarted.promise;
     const p2 = queue.enqueue({ key: "n1", baseVersion: 10, payload: { content: "B" } });
     const p3 = queue.enqueue({ key: "n1", baseVersion: 10, payload: { title: "new" } });
 
     expect(calls).toEqual([{ payload: { content: "A", title: "old" }, version: 10 }]);
     first.resolve({ version: 11 });
-    await flushMicrotasks();
+    await secondStarted.promise;
 
     expect(calls).toEqual([
       { payload: { content: "A", title: "old" }, version: 10 },
@@ -71,6 +70,7 @@ describe("LatestOnlyVersionedSaveQueue", () => {
 
   it("allows different notes to save independently", async () => {
     const gates = new Map<string, ReturnType<typeof deferred<{ version: number }>>>();
+    const bothStarted = deferred<void>();
     let concurrent = 0;
     let maxConcurrent = 0;
     const queue = new LatestOnlyVersionedSaveQueue<string, { version: number }>(
@@ -79,6 +79,7 @@ describe("LatestOnlyVersionedSaveQueue", () => {
         maxConcurrent = Math.max(maxConcurrent, concurrent);
         const gate = deferred<{ version: number }>();
         gates.set(noteId, gate);
+        if (gates.size === 2) bothStarted.resolve();
         try {
           return await gate.promise;
         } finally {
@@ -89,12 +90,36 @@ describe("LatestOnlyVersionedSaveQueue", () => {
 
     const p1 = queue.enqueue({ key: "n1", baseVersion: 1, payload: "one" });
     const p2 = queue.enqueue({ key: "n2", baseVersion: 7, payload: "two" });
-    await flushMicrotasks();
+    await bothStarted.promise;
 
     expect(maxConcurrent).toBe(2);
     gates.get("n1")!.resolve({ version: 2 });
     gates.get("n2")!.resolve({ version: 8 });
     await Promise.all([p1, p2]);
+  });
+
+  it("rejects the in-flight and pending batches without advancing the confirmed version", async () => {
+    const first = deferred<{ version: number }>();
+    const firstStarted = deferred<void>();
+    let calls = 0;
+    const queue = new LatestOnlyVersionedSaveQueue<string, { version: number }>(
+      async () => {
+        calls += 1;
+        firstStarted.resolve();
+        return first.promise;
+      },
+    );
+
+    const p1 = queue.enqueue({ key: "n1", baseVersion: 5, payload: "first" });
+    await firstStarted.promise;
+    const p2 = queue.enqueue({ key: "n1", baseVersion: 5, payload: "latest" });
+    const resultsPromise = Promise.allSettled([p1, p2]);
+    first.reject(Object.assign(new Error("conflict"), { code: "VERSION_CONFLICT" }));
+
+    const results = await resultsPromise;
+    expect(results.every((result) => result.status === "rejected")).toBe(true);
+    expect(calls).toBe(1);
+    expect(queue.getConfirmedVersion("n1")).toBe(5);
   });
 
   it("rejects unconfirmed writes instead of reporting them as saved", async () => {

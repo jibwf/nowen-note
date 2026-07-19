@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useEffect, useReducer, useMemo } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useReducer, useMemo, useRef } from "react";
 import { Notebook, NoteListItem, Note, Tag, ViewMode } from "@/types";
 import { api } from "@/lib/api";
 import { NOTEBOOKS_INVALIDATED_EVENT } from "@/lib/notebookInvalidation";
+import { PhaseAPerfProfiler } from "@/components/PhaseAPerfProfiler";
+import { recordPhaseAPerfEvent } from "@/lib/phaseAPerfDiagnostics";
 
 export type SyncStatus = "idle" | "saving" | "saved" | "error" | "offline" | "queued";
 export type MobileView = "list" | "editor";
@@ -338,6 +340,28 @@ const AppContext = createContext<{
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const profiledDispatch = useCallback<React.Dispatch<Action>>((action) => {
+    const current = stateRef.current;
+    let changedFields = "";
+    if (action.type === "SET_ACTIVE_NOTE") {
+      const previous = current.activeNote;
+      const next = action.payload;
+      if (previous && next) {
+        changedFields = Object.keys(next)
+          .filter((key) => previous[key as keyof Note] !== next[key as keyof Note])
+          .join(",");
+      } else if (previous !== next) {
+        changedFields = "activeNote";
+      }
+    }
+    recordPhaseAPerfEvent({
+      type: "app-context-dispatch",
+      detail: { action: action.type, changedFields },
+    });
+    dispatch(action);
+  }, []);
 
   useEffect(() => {
     let refreshTimer: number | null = null;
@@ -373,8 +397,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AppContext.Provider value={{ state, dispatch }}>
-      {children}
+    <AppContext.Provider value={{ state, dispatch: profiledDispatch }}>
+      <PhaseAPerfProfiler id="AppProvider">{children}</PhaseAPerfProfiler>
     </AppContext.Provider>
   );
 }

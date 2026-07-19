@@ -9,7 +9,7 @@ import { Plugin, PluginKey } from "prosemirror-state";
 const DocxAttachmentPreview = lazy(() => import("@/office/word/DocxAttachmentPreview"));
 // 复用的附件详情抽屉（与 FileManager 同一份实现）
 import AttachmentDetailDrawer from "@/components/attachmentDetail/AttachmentDetailDrawer";
-import { posToDOMRect } from "@tiptap/core";
+import { posToDOMRect, type Content } from "@tiptap/core";
 import { AnimatePresence, motion } from "framer-motion";import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Image from "@tiptap/extension-image";
@@ -17,7 +17,7 @@ import ResizableImageView from "./ResizableImageView";
 import ImageEditDialog from "@/components/image-editor/ImageEditDialog";
 import { editedImageBlobToFile, isSvgImageSource } from "@/components/image-editor/imageEditService";
 import { TableGridPicker, TableResizeDialog } from "./TableGridPicker";
-import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import { CodeBlock, type CodeBlockOptions } from "@tiptap/extension-code-block";
 import Underline from "@tiptap/extension-underline";
 import Highlight from "@tiptap/extension-highlight";
 import TaskList from "@tiptap/extension-task-list";
@@ -29,6 +29,23 @@ import { Table, TableHeader, TableCell } from "@tiptap/extension-table";
 import { TableRowResizable } from "./extensions/TableRowResizable";
 import TextAlign from "@tiptap/extension-text-align";
 import { common, createLowlight } from "lowlight";
+import {
+  installPhaseABrowserObservers,
+  installPhaseAEditorTransactionInstrumentation,
+  instrumentPhaseALowlight,
+  isPhaseAPerfEnabled,
+  recordPhaseAPerfEvent,
+} from "@/lib/phaseAPerfDiagnostics";
+import { publishEditorEditable } from "@/lib/editorEditableStore";
+import { EditorRevisionGuard } from "@/lib/editorRevisionGuard";
+import {
+  isMatchingTiptapSaveAck,
+  type TiptapSaveAckToken,
+} from "@/lib/editorSyncGuards";
+import {
+  createCodeBlockHighlightPlugin,
+  type LowlightLike,
+} from "@/lib/codeBlockHighlightPlugin";
 import { DOMParser as ProseMirrorDOMParser, Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { TextSelection, NodeSelection } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
@@ -125,7 +142,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { getActiveListType, type ActiveListType } from "@/lib/activeListType";
 
-const lowlight = createLowlight(common);
+const lowlight = instrumentPhaseALowlight(createLowlight(common));
 
 const NOTE_WIKI_LINK_RE = /\[\[note:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:#blk:([a-zA-Z0-9_-]+))?(?:\|((?:\\\]|[^\]])*))?\]\]/g;
 
@@ -1529,15 +1546,37 @@ function getEditorPlainText(editor: any): string {
   }
 }
 
-export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEditor(
+type WordStats = { chars: number; charsNoSpace: number; words: number };
+type WordStatsHandle = { update: (stats: WordStats) => void };
+
+const WordStatsDisplay = React.memo(forwardRef<WordStatsHandle, {
+  wordsLabel: string;
+  charsLabel: string;
+}>(function WordStatsDisplay({ wordsLabel, charsLabel }, ref) {
+  const [stats, setStats] = useState<WordStats>({ chars: 0, charsNoSpace: 0, words: 0 });
+  useImperativeHandle(ref, () => ({ update: setStats }), []);
+  return (
+    <>
+      <span>{stats.words}{wordsLabel}</span>
+      <span className="max-md:hidden">·</span>
+      <span>{stats.charsNoSpace}{charsLabel}</span>
+    </>
+  );
+}));
+
+const TiptapEditor = forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEditor(
   { note, onUpdate, onTagsChange, onHeadingsChange, onEditorReady, onOpenNote, editable = true, isGuest = false, presentationMode = false, searchQuery },
   ref,
 ) {
   const titleRef = useRef<HTMLInputElement>(null);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+  const derivedTimer = useRef<NodeJS.Timeout | null>(null);
+  const editorRevisionGuardRef = useRef(new EditorRevisionGuard());
+  const saveGenerationRef = useRef(0);
+  const pendingSaveAckRef = useRef<TiptapSaveAckToken | null>(null);
   const isTitleComposingRef = useRef(false);
   const lastEmittedTitleRef = useRef(note.title);
-  const [wordStats, setWordStats] = useState({ chars: 0, charsNoSpace: 0, words: 0 });
+  const wordStatsDisplayRef = useRef<WordStatsHandle>(null);
   const [activeListType, setActiveListType] = useState<ActiveListType>(null);
   const activeListTypeRef = useRef<ActiveListType>(null);
   const syncActiveListType = useCallback((currentEditor: Editor | null) => {
@@ -1654,7 +1693,6 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
     blockId: string;
     timestamp: number;
   } | null>(null);
-
   useEffect(() => {
     const apply = () => {
       const request = consumeBlockNavigation(note.id);
@@ -1718,22 +1756,8 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
   // 保持最新的 onUpdate ref
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
-
-  /**
-   * 本编辑器最近一次派发给 onUpdate 的 content 字符串。
-   *
-   * 作用：父级 EditorPane 保存成功后会把 `content` 回填到 `activeNote`，
-   * 这会让本组件的 `note.content` 引用变化并触发
-   * `useEffect([note.id, note.content])` 去 setContent —— 如果恰好 setContent
-   * 的就是"自己刚派出去的那份"，没有意义且可能打断正在继续输入的用户。
-   *
-   * 守卫策略：
-   *   - onUpdate 派出前把 JSON 记到这里
-   *   - 同步 effect 里先比对：note.content === lastEmittedContentRef.current 就跳过
-   *   - 其他来源（MD 编辑器保存、版本恢复、切换笔记）的变化不会等于这个值，
-   *     走正常 setContent 路径
-   */
-  const lastEmittedContentRef = useRef<string | null>(null);
+  const onHeadingsChangeRef = useRef(onHeadingsChange);
+  onHeadingsChangeRef.current = onHeadingsChange;
 
   // 立即保存（Ctrl/Cmd+S 使用）：清掉 debounce 并立刻调用 onUpdate
   const flushSaveRef = useRef<() => void>(() => {});
@@ -1754,7 +1778,25 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
     return { chars, charsNoSpace, words: cjk + enWords };
   }, []);
 
+  // `content` is only consumed when useEditor creates a new editor. Live content
+  // changes are handled by the guarded note-sync effect below, so an ACK for the
+  // same note must not repeat JSON parsing and schema repair during React render.
+  const initialEditorContentRef = useRef<{ noteId: string; content: Content } | null>(null);
+  if (initialEditorContentRef.current?.noteId !== note.id) {
+    const startedAt = isPhaseAPerfEnabled() ? performance.now() : 0;
+    initialEditorContentRef.current = { noteId: note.id, content: parseContent(note.content) };
+    if (startedAt) {
+      recordPhaseAPerfEvent({
+        type: "tiptap-parse-content",
+        durationMs: performance.now() - startedAt,
+        detail: { noteId: note.id, contentLength: note.content.length },
+      });
+    }
+  }
+  const initialEditorContent = initialEditorContentRef.current.content;
+
   const editor: Editor | null = useEditor({
+    shouldRerenderOnTransaction: false,
     extensions: [
       keyboardExtension.current,
       StarterKit.configure({
@@ -1836,11 +1878,27 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         allowBase64: true,
         HTMLAttributes: { class: "rounded-lg max-w-full mx-auto my-4 shadow-md" },
       }),
-      CodeBlockLowlight.extend({
+      CodeBlock.extend<CodeBlockOptions & { lowlight: LowlightLike }>({
+        addOptions() {
+          return { ...this.parent?.(), lowlight } as CodeBlockOptions & { lowlight: LowlightLike };
+        },
+        addProseMirrorPlugins() {
+          return [
+            ...(this.parent?.() || []),
+            createCodeBlockHighlightPlugin({
+              name: this.name,
+              lowlight: this.options.lowlight,
+              defaultLanguage: this.options.defaultLanguage,
+              onDiagnostic: isPhaseAPerfEnabled()
+                ? (type, detail) => recordPhaseAPerfEvent({ type, detail })
+                : undefined,
+            }),
+          ];
+        },
         addNodeView() {
           return ReactNodeViewRenderer(CodeBlockView);
         },
-      }).configure({ lowlight, defaultLanguage: null as any }),
+      }).configure({ lowlight, defaultLanguage: null }),
       Underline,
       Highlight.configure({
         multicolor: true,
@@ -1897,7 +1955,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
       VideoExtension,
       BlockEmbedExtension,
     ],
-    content: parseContent(note.content),
+    content: initialEditorContent,
     editable,
     editorProps: {
       attributes: {
@@ -2649,9 +2707,27 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
       // setContent 触发的 onUpdate 不应该保存（防止死循环）
       if (isSettingContent.current) return;
 
-      const text = getEditorPlainText(editor);
-      setWordStats(computeStats(text));
-      onHeadingsChange?.(extractHeadings(editor));
+      const onUpdateStartedAt = performance.now();
+      const scheduledNoteId = noteRef.current.id;
+      const revisionToken = editorRevisionGuardRef.current.next(scheduledNoteId, editor);
+      if (derivedTimer.current) clearTimeout(derivedTimer.current);
+      derivedTimer.current = setTimeout(() => {
+        derivedTimer.current = null;
+        if (editor.isDestroyed || !editorRevisionGuardRef.current.isCurrent(
+          revisionToken,
+          noteRef.current.id,
+          editor,
+        )) return;
+        const plainTextStartedAt = performance.now();
+        const derivedText = getEditorPlainText(editor);
+        recordPhaseAPerfEvent({ type: "tiptap-plain-text", durationMs: performance.now() - plainTextStartedAt });
+        const wordStatsStartedAt = performance.now();
+        wordStatsDisplayRef.current?.update(computeStats(derivedText));
+        recordPhaseAPerfEvent({ type: "tiptap-word-stats", durationMs: performance.now() - wordStatsStartedAt });
+        const headingsStartedAt = performance.now();
+        onHeadingsChangeRef.current?.(extractHeadings(editor));
+        recordPhaseAPerfEvent({ type: "tiptap-headings", durationMs: performance.now() - headingsStartedAt });
+      }, 150);
 
       // 检测 [[ 触发笔记搜索菜单
       const { state } = editor;
@@ -2681,21 +2757,45 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
       }
 
       // P0: 调度时快照 noteId，防止 debounce 期间切换笔记导致写错目标
-      const scheduledNoteId = noteRef.current.id;
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
       debounceTimer.current = setTimeout(() => {
+        debounceTimer.current = null;
         // 再次校验 noteId 未变化（切换笔记时 debounce 会被清理，这里是双重保险）
-        if (noteRef.current.id !== scheduledNoteId) return;
+        if (editor.isDestroyed || editor.view.composing || !editorRevisionGuardRef.current.isCurrent(
+          revisionToken,
+          noteRef.current.id,
+          editor,
+        )) return;
         const json = JSON.stringify(editor.getJSON());
+        const plainTextStartedAt = performance.now();
+        const text = getEditorPlainText(editor);
+        recordPhaseAPerfEvent({ type: "tiptap-plain-text", durationMs: performance.now() - plainTextStartedAt });
         const title = isTitleComposingRef.current
           ? noteRef.current.title
           : titleRef.current?.value || noteRef.current.title;
-        lastEmittedContentRef.current = json;
         lastEmittedTitleRef.current = title;
-        onUpdateRef.current({ content: json, contentText: text, title, _noteId: scheduledNoteId });
+        onUpdateRef.current({
+          content: json,
+          contentText: text,
+          title,
+          _noteId: scheduledNoteId,
+          _saveGeneration: ++saveGenerationRef.current,
+        });
       }, 500);
+      recordPhaseAPerfEvent({ type: "tiptap-on-update", durationMs: performance.now() - onUpdateStartedAt });
     },
   });
+
+  useEffect(() => {
+    const removeBrowserObservers = installPhaseABrowserObservers();
+    const removeTransactionInstrumentation = editor
+      ? installPhaseAEditorTransactionInstrumentation(editor)
+      : () => undefined;
+    return () => {
+      removeTransactionInstrumentation();
+      removeBrowserObservers();
+    };
+  }, [editor]);
 
   // BLOCK-LINKS-UI-02: 笔记/任意块引用，区分自动标题与固定别名。
   const handleNoteLinkSelect = useCallback((
@@ -2750,9 +2850,14 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
     const title = isTitleComposingRef.current
       ? noteRef.current.title
       : titleRef.current?.value || noteRef.current.title;
-    lastEmittedContentRef.current = json;
     lastEmittedTitleRef.current = title;
-    onUpdateRef.current({ content: json, contentText: text, title, _noteId: noteRef.current.id });
+    onUpdateRef.current({
+      content: json,
+      contentText: text,
+      title,
+      _noteId: noteRef.current.id,
+      _saveGeneration: ++saveGenerationRef.current,
+    });
     try {
       toast.success(t('tiptap.saved') || 'Saved');
     } catch {}
@@ -2783,9 +2888,14 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         const title = isTitleComposingRef.current
           ? noteRef.current.title
           : titleRef.current?.value || noteRef.current.title;
-        lastEmittedContentRef.current = json;
         lastEmittedTitleRef.current = title;
-        onUpdateRef.current({ content: json, contentText: text, title, _noteId: noteRef.current.id });
+        onUpdateRef.current({
+          content: json,
+          contentText: text,
+          title,
+          _noteId: noteRef.current.id,
+          _saveGeneration: ++saveGenerationRef.current,
+        });
       },
       discardPending: () => {
         // 切换编辑器时调用方已经自己 PUT 规范化内容，清掉 debounce 避免竞态
@@ -2793,6 +2903,12 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
           clearTimeout(debounceTimer.current);
           debounceTimer.current = null;
         }
+        if (derivedTimer.current) {
+          clearTimeout(derivedTimer.current);
+          derivedTimer.current = null;
+        }
+        editorRevisionGuardRef.current.invalidate();
+        pendingSaveAckRef.current = null;
       },
       getSnapshot: () => {
         if (!editor) return null;
@@ -2800,6 +2916,9 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
           content: JSON.stringify(editor.getJSON()),
           contentText: getEditorPlainText(editor),
         };
+      },
+      acknowledgeSave: (ack) => {
+        pendingSaveAckRef.current = ack;
       },
       isReady: () => !!editor && !editor.isDestroyed,
       appendMarkdown: (md: string) => {
@@ -2871,38 +2990,42 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
   }, [pendingBlockJump, editor, note, t]);
 
   useEffect(() => {
+    const noteChanged = lastSyncedNoteIdRef.current !== note.id;
+    const matchingAck = isMatchingTiptapSaveAck({
+      noteChanged,
+      noteId: note.id,
+      noteVersion: note.version,
+      noteContent: note.content,
+      ack: pendingSaveAckRef.current,
+    });
+    if (matchingAck) pendingSaveAckRef.current = null;
+    if (editor && matchingAck) {
+      if (titleRef.current && shouldSyncTitleValue({
+        inputValue: titleRef.current.value,
+        noteTitle: note.title,
+        isComposing: isTitleComposingRef.current,
+      })) {
+        titleRef.current.value = note.title;
+      }
+      return;
+    }
+
     // 切换笔记时立即清理旧的 debounce timer，防止旧笔记的保存请求泄漏
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current);
       debounceTimer.current = null;
     }
+    if (derivedTimer.current) {
+      clearTimeout(derivedTimer.current);
+      derivedTimer.current = null;
+    }
+    if (editor) editorRevisionGuardRef.current.reset(note.id, editor);
 
     if (editor && note) {
       // 笔记切换时重置 lastEmitted 守卫（新笔记的 content 肯定要真正 setContent）
-      const noteChanged = lastSyncedNoteIdRef.current !== note.id;
       if (noteChanged) {
-        lastEmittedContentRef.current = null;
+        pendingSaveAckRef.current = null;
         lastSyncedNoteIdRef.current = note.id;
-      }
-
-      // 自写自读守卫：如果 note.content 正是自己上次派出去的那份 JSON 字符串，
-      // 说明这次 effect 是 EditorPane 保存完成后回填引起的 → 编辑器 DOM 已是
-      // 最新，不需要 setContent（否则会打断继续输入 / 产生光标抖动）。
-      if (
-        lastEmittedContentRef.current !== null &&
-        note.content === lastEmittedContentRef.current
-      ) {
-        // 仍然刷新字数/大纲，保证状态栏和大纲与实际内容同步
-        setWordStats(computeStats(getEditorPlainText(editor)));
-        onHeadingsChange?.(extractHeadings(editor));
-        if (titleRef.current && shouldSyncTitleValue({
-          inputValue: titleRef.current.value,
-          noteTitle: note.title,
-          isComposing: isTitleComposingRef.current,
-        })) {
-          titleRef.current.value = note.title;
-        }
-        return;
       }
 
       const parsed = parseContent(note.content);
@@ -2937,12 +3060,8 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         } else {
           setTimeout(unlockSettingContent, 0);
         }
-        // 外部驱动的 setContent 之后，本编辑器当前持有的 content 不再等于
-        // 自己之前派出去的值（现在持有的是 parsed 后再重新 serialize 的版本），
-        // 把 lastEmitted 清掉，避免后续误判为"自写"。
-        lastEmittedContentRef.current = null;
       }
-      setWordStats(computeStats(getEditorPlainText(editor)));
+      wordStatsDisplayRef.current?.update(computeStats(getEditorPlainText(editor)));
       onHeadingsChange?.(extractHeadings(editor));
     }
     if (titleRef.current && !isTitleComposingRef.current) {
@@ -2953,13 +3072,13 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
   //   依赖含 content 的完整语义（更新版）：
   //
   //   父组件 EditorPane.handleUpdate 现在会把保存成功的 content 回填到 activeNote，
-  //   这样切换编辑器 (MD ↔ RTE) 时双方都能看到最新内容。但为避免 "自己刚派的
-  //   JSON 又被 setContent 回来" 打断输入，本 effect 内用 lastEmittedContentRef
-  //   做自写自读守卫。命中则 no-op，否则才执行真正的 setContent。
+  //   这样切换编辑器 (MD ↔ RTE) 时双方都能看到最新内容。为避免本机保存 ACK
+  //   把较新的未保存输入重放成旧内容，EditorPane 会在 REST ACK 到达时登记一次性
+  //   noteId/version/generation/content 令牌；只有令牌精确匹配才跳过 setContent。
   //
   //   触发时机：
-  //   1) 本编辑器打字保存：content 回填 == lastEmitted → 守卫命中 → 不重放。
-  //   2) 对侧编辑器保存后切回来：content 不等于 lastEmitted → 正常 setContent。
+  //   1) 本编辑器打字保存：ACK 令牌匹配 → 不重放。
+  //   2) 对侧编辑器保存后切回来：没有本地 ACK 令牌 → 正常 setContent。
   //   3) 版本恢复 / 切换笔记 / 外部修改：同上，走正常 setContent。
 
   // ---------- 标题单独同步 ----------
@@ -2986,11 +3105,18 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
 
   // 组件卸载时清理 debounce timer
   useEffect(() => {
+    const revisionGuard = editorRevisionGuardRef.current;
     return () => {
       if (debounceTimer.current) {
         clearTimeout(debounceTimer.current);
         debounceTimer.current = null;
       }
+      if (derivedTimer.current) {
+        clearTimeout(derivedTimer.current);
+        derivedTimer.current = null;
+      }
+      revisionGuard.invalidate();
+      pendingSaveAckRef.current = null;
     };
   }, []);
 
@@ -3302,6 +3428,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
   useEffect(() => {
     if (editor) {
       editor.setEditable(editable);
+      publishEditorEditable(editor);
     }
   }, [editor, editable]);
 
@@ -4418,6 +4545,65 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
   const [toolbarShadow, setToolbarShadow] = useState(false);
   // 查找替换面板开关；Ctrl/Cmd+F 切换。
   const [searchOpen, setSearchOpen] = useState(false);
+  const perfRenderSnapshot = isPhaseAPerfEnabled() ? {
+    note,
+    onUpdate,
+    onTagsChange,
+    onHeadingsChange,
+    onEditorReady,
+    onOpenNote,
+    editable,
+    searchQuery,
+    stateKey: [
+      activeListType,
+      showAI,
+      aiSelectedText,
+      aiPosition?.top || 0,
+      attachmentPreview?.id || "",
+      previewImage || "",
+      imageZoom,
+      imageDrag.x,
+      imageDrag.y,
+      isDragging,
+      selectedTextAction,
+      bubble.open,
+      imageBubble.open,
+      imageSizeMenuOpen,
+      replacingImage,
+      localizingSelectedImage,
+      imageEditDialog?.open || false,
+      tableBubble.open,
+      tableSheet,
+      isMobile,
+      resizeDialog.open,
+      linkBubble.open,
+      noteLinkMenu.open,
+      pendingBlockJump?.timestamp || 0,
+      pasteToast?.type || "",
+      searchOpen,
+    ].join("|"),
+  } : null;
+  const previousPerfRenderRef = useRef<typeof perfRenderSnapshot | null>(null);
+  const previousPerfRender = previousPerfRenderRef.current;
+  if (perfRenderSnapshot) recordPhaseAPerfEvent({
+    type: "tiptap-editor-render",
+    detail: {
+      noteChanged: previousPerfRender !== null && previousPerfRender?.note !== note,
+      callbacksChanged: previousPerfRender !== null && (
+        previousPerfRender?.onUpdate !== onUpdate ||
+        previousPerfRender?.onTagsChange !== onTagsChange ||
+        previousPerfRender?.onHeadingsChange !== onHeadingsChange ||
+        previousPerfRender?.onEditorReady !== onEditorReady ||
+        previousPerfRender?.onOpenNote !== onOpenNote
+      ),
+      editableChanged: previousPerfRender !== null && previousPerfRender?.editable !== editable,
+      searchChanged: previousPerfRender !== null && previousPerfRender?.searchQuery !== searchQuery,
+      stateChanged: previousPerfRender !== null && previousPerfRender?.stateKey !== perfRenderSnapshot.stateKey,
+      stateKey: perfRenderSnapshot.stateKey,
+      noteVersion: note.version,
+    },
+  });
+  if (perfRenderSnapshot) previousPerfRenderRef.current = perfRenderSnapshot;
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
@@ -4858,9 +5044,11 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
           <span className="max-md:hidden">·</span>
           <span>{t('tiptap.updatedAt')}{new Date(note.updatedAt + "Z").toLocaleString()}</span>
           <span className="max-md:hidden">·</span>
-          <span>{wordStats.words}{t('tiptap.words')}</span>
-          <span className="max-md:hidden">·</span>
-          <span>{wordStats.charsNoSpace}{t('tiptap.chars')}</span>
+          <WordStatsDisplay
+            ref={wordStatsDisplayRef}
+            wordsLabel={t('tiptap.words')}
+            charsLabel={t('tiptap.chars')}
+          />
         </div>
       </div>
       )}
@@ -5777,6 +5965,8 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
     </div>
   );
 });
+
+export default React.memo(TiptapEditor);
 
 /**
  * 把附件信息渲染成一段「可粘附进 Tiptap 内容」的 HTML 链接。

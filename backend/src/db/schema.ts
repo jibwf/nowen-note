@@ -3,8 +3,10 @@ import path from "path";
 import fs from "fs";
 import { runMigrations, getCurrentSchemaVersion, CURRENT_SCHEMA_VERSION } from "./migrations.js";
 import { enableIncrementalAutoVacuum } from "../lib/reclaimSpace.js";
+import { assertSafeTestDatabasePath } from "./test-db-guard.js";
 
 const DB_PATH = process.env.DB_PATH || path.join(process.env.ELECTRON_USER_DATA || path.join(process.cwd(), "data"), "nowen-note.db");
+assertSafeTestDatabasePath(DB_PATH);
 
 let db: Database.Database;
 

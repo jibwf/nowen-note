@@ -97,6 +97,13 @@ function verifyRemoteRelease({ repo, tag, version }) {
       }
     }
 
+    const unreferencedDesktopAssets = assets
+      .map((asset) => asset.name)
+      .filter((name) => isDesktopUpdaterAsset(name) && !referenced.has(name));
+    if (unreferencedDesktopAssets.length > 0) {
+      throw new Error(`remote Release contains updater binaries not referenced by metadata: ${unreferencedDesktopAssets.join(", ")}`);
+    }
+
     for (const name of referenced) {
       const remoteAsset = byName.get(name);
       if (!remoteAsset) throw new Error(`remote Release is missing metadata-referenced asset: ${name}`);

@@ -19,8 +19,10 @@ module.exports = async function verifyUpdateArtifacts(context) {
       (artifactPaths[0] ? path.dirname(artifactPaths[0]) : path.join(__dirname, "..", "dist-electron")),
   );
 
-  let metadataPaths = artifactPaths.filter((filePath) => isUpdateMetadataName(path.basename(filePath)));
-  if (metadataPaths.length === 0) metadataPaths = discoverMetadataFiles(outDir, version);
+  const metadataPaths = Array.from(new Set([
+    ...artifactPaths.filter((filePath) => isUpdateMetadataName(path.basename(filePath))),
+    ...discoverMetadataFiles(outDir, version),
+  ]));
 
   const hasUpdaterBinary = artifactPaths.some((filePath) => {
     const name = path.basename(filePath);
@@ -33,6 +35,15 @@ module.exports = async function verifyUpdateArtifacts(context) {
     expectedVersion: version,
     requireMetadata: hasUpdaterBinary,
   });
+
+  const referencedNames = new Set(report.assets.map((item) => item.name));
+  const unreferencedUpdaterBinaries = artifactPaths
+    .map((filePath) => path.basename(filePath))
+    .filter((name) => !/portable/i.test(name) && /\.(?:exe|zip|appimage)$/i.test(name))
+    .filter((name) => !referencedNames.has(name));
+  if (unreferencedUpdaterBinaries.length > 0) {
+    throw new Error(`Updater binaries are not referenced by generated metadata: ${unreferencedUpdaterBinaries.join(", ")}`);
+  }
 
   if (report.metadataFiles.length > 0) {
     console.log(

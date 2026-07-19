@@ -47,6 +47,12 @@ function formatLanguageLabel(raw: string | null | undefined): string {
   return v;
 }
 
+export function normalizeCodeBlockIndent(value: unknown): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(8, Math.trunc(numeric)));
+}
+
 export function CodeBlockView(props: NodeViewProps) {
   const { node, updateAttributes, extension, editor, getPos } = props;
   const lowlight = (extension.options as any)?.lowlight;
@@ -54,6 +60,7 @@ export function CodeBlockView(props: NodeViewProps) {
   recordPhaseAPerfEvent({ type: "code-block-render", blockId: perfBlockId });
 
   const currentLang: string = node.attrs.language || "auto";
+  const indent = normalizeCodeBlockIndent(node.attrs.indent);
   const isMermaid = isMermaidLang(currentLang);
   const [copied, setCopied] = useState(false);
   const [showLangPicker, setShowLangPicker] = useState(false);
@@ -310,6 +317,7 @@ export function CodeBlockView(props: NodeViewProps) {
   return (
     <NodeViewWrapper
       className="code-block-wrapper group relative my-4 rounded-xl overflow-hidden border shadow-sm"
+      data-indent={indent > 0 ? indent : undefined}
       // 预览态时把隐藏的 NodeViewContent 用绝对定位藏起来，依赖外层 relative
       style={{ position: "relative" }}
     >

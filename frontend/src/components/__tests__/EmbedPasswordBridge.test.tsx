@@ -58,7 +58,7 @@ describe("EmbedPasswordBridge", () => {
     expect(iframe.parentElement?.textContent).toContain("复制密码");
   });
 
-  it("sends a password-free capability offer to an ordinary cross-origin frame", async () => {
+  it("delivers a cross-origin password only after an exact source/origin handshake", async () => {
     await mountBridge();
     const iframe = appendPreviewIframe("https://example.com/embed?pwd=hidden-value");
     const postMessage = vi.spyOn(iframe.contentWindow!, "postMessage").mockImplementation(() => undefined);
@@ -66,10 +66,30 @@ describe("EmbedPasswordBridge", () => {
     iframe.dispatchEvent(new Event("load"));
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(postMessage).toHaveBeenCalled();
-    const offers = postMessage.mock.calls.map((call) => call[0] as any);
-    expect(offers.some((message) => message?.type === "nowen:embed-password-offer")).toBe(true);
-    expect(offers.every((message) => !("password" in message))).toBe(true);
+    const offer = postMessage.mock.calls
+      .map((call) => call[0] as any)
+      .find((message) => message?.type === "nowen:embed-password-offer");
+    expect(offer).toBeTruthy();
+    expect("password" in offer).toBe(false);
     expect(iframe.parentElement?.textContent).toContain("页面确认后");
+
+    window.dispatchEvent(new MessageEvent("message", {
+      data: { type: "nowen:embed-password-ready", requestId: offer.requestId },
+      origin: "https://example.com",
+      source: iframe.contentWindow,
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const delivery = postMessage.mock.calls
+      .map((call) => call[0] as any)
+      .find((message) => message?.type === "nowen:embed-password");
+    expect(delivery).toMatchObject({ requestId: offer.requestId, password: "hidden-value" });
+
+    window.dispatchEvent(new MessageEvent("message", {
+      data: { type: "nowen:embed-password-applied", requestId: offer.requestId, success: true },
+      origin: "https://example.com",
+      source: iframe.contentWindow,
+    }));
+    expect(iframe.parentElement?.textContent).toContain("已确认填写");
   });
 });

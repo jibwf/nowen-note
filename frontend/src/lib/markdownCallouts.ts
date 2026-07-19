@@ -54,9 +54,6 @@ const CALLOUT_ALIASES: Record<string, SiyuanCalloutType> = {
   bug: "caution",
 };
 
-// SiYuan's current AST exports the five GFM alert types, while older documents and
-// compatible editors may contain aliases. Keep the parser permissive, but always
-// normalize the rendered DOM to the five styles supported by Nowen.
 const CALLOUT_MARKER_RE = /^\s*\[!([A-Z0-9_-]+)\]([+-])?(?:[ \t]+([^\r\n]*?))?(?:\r?\n([\s\S]*))?\s*$/i;
 const IAL_RE = /^\s*\{:\s*[\s\S]*\}\s*$/;
 
@@ -67,7 +64,6 @@ export function parseSiyuanCalloutMarker(value: string): SiyuanCalloutMarker | n
   const type = CALLOUT_ALIASES[match[1].toLowerCase()];
   if (!type) return null;
   const customTitle = match[3]?.trim();
-
   return {
     type,
     title: customTitle || CALLOUT_TITLES[type],
@@ -95,29 +91,31 @@ function isStandaloneIal(node: MarkdownNode): boolean {
   return node.type === "paragraph" && IAL_RE.test(paragraphText(node));
 }
 
-function extractMarker(node: MarkdownNode): SiyuanCalloutMarker | null {
-  const firstParagraph = node.children?.find((child) => !isStandaloneIal(child));
-  if (firstParagraph?.type !== "paragraph") return null;
+function pruneStandaloneIal(node: MarkdownNode): void {
+  if (!Array.isArray(node.children)) return;
+  node.children = node.children.filter((child) => !isStandaloneIal(child));
+  for (const child of node.children) pruneStandaloneIal(child);
+}
 
+function extractMarker(node: MarkdownNode): SiyuanCalloutMarker | null {
+  const firstParagraph = node.children?.[0];
+  if (firstParagraph?.type !== "paragraph") return null;
   const marker = parseSiyuanCalloutMarker(paragraphText(firstParagraph));
   if (!marker) return null;
 
-  const firstIndex = node.children?.indexOf(firstParagraph) ?? -1;
   if (marker.rest) {
     firstParagraph.children = [{ type: "text", value: marker.rest }];
-  } else if (firstIndex >= 0) {
-    node.children = node.children?.filter((_child, index) => index !== firstIndex) || [];
+  } else {
+    node.children = node.children?.slice(1) || [];
   }
-
-  // SiYuan can persist block IAL/Kramdown attribute rows immediately after the
-  // callout marker/body. They describe the source block and must not become a
-  // visible paragraph in either live preview or full preview.
-  node.children = (node.children || []).filter((child) => !isStandaloneIal(child));
   return marker;
 }
 
 export function remarkSiyuanCallouts() {
   return (tree: MarkdownNode) => {
+    // Block IAL rows can be siblings of the callout rather than children of its
+    // blockquote. Remove them at every container level before decorating callouts.
+    pruneStandaloneIal(tree);
     visit(tree, (node) => {
       if (node.type !== "blockquote") return;
       const marker = extractMarker(node);

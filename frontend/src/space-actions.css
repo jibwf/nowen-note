@@ -1,0 +1,8 @@
+/*
+ * 空间入口已经迁移到左侧 NavRail（AI 问答下方）。
+ * NoteTransferCenter 暂时仍保留旧触发按钮作为兼容命令入口；在转移中心完成事件式
+ * 打开 API 之前，强制隐藏该按钮，避免桌面端和移动端再次出现重复悬浮入口。
+ */
+button[aria-label="跨空间转移笔记"] {
+  display: none !important;
+}

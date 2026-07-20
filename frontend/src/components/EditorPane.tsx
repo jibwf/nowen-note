@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState, useEffect, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Star, Pin, Trash2, Cloud, CloudOff, RefreshCw, Check, Loader2, ChevronLeft, FolderInput, ChevronRight, ChevronDown, X, ListTree, Lock, Unlock, Tag as TagIcon, Type, MoreHorizontal, Share2, History, MessageCircle, FileCode, FileText, Eye, Pencil, CloudUpload, PanelLeft, Paperclip, Search, Sparkles, Network, Maximize2, Minimize2, Image, Link2, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -34,6 +34,8 @@ import {
 } from "@/components/PresenceBar";
 import { EditorErrorBoundary } from "@/components/EditorErrorBoundary";
 import NoteTabsBar from "@/components/NoteTabsBar";
+import NoteLoadingSkeleton from "@/components/NoteLoadingSkeleton";
+import { useNoteLoader } from "@/hooks/useNoteLoader";
 import { useRealtimeNote } from "@/hooks/useRealtimeNote";
 import { useYDoc } from "@/hooks/useYDoc";
 import { realtime } from "@/lib/realtime";
@@ -86,7 +88,9 @@ const SHOW_EDITOR_MODE_TOGGLE = false;
 export default function EditorPane() {
   const { state } = useApp();
   const actions = useAppActions();
-  const { activeNote, syncStatus, lastSyncedAt, noteLoading } = state;
+  const { loadNote, retryNoteLoad } = useNoteLoader();
+  const { activeNote, syncStatus, lastSyncedAt, noteLoading, noteLoadingState } = state;
+  const reduceMotion = useReducedMotion();
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showMoveDropdown, setShowMoveDropdown] = useState(false);
   const moveDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -122,7 +126,8 @@ export default function EditorPane() {
    */
   const isViewLocked = !!activeNote && viewLockedIds.has(activeNote.id);
   const isTrashed = !!activeNote?.isTrashed;
-  const effectiveLocked = !!activeNote?.isLocked || isViewLocked || isTrashed;
+  const noteSwitchPending = !!noteLoadingState.pendingNoteId;
+  const effectiveLocked = !!activeNote?.isLocked || isViewLocked || isTrashed || noteSwitchPending;
   const canEditActiveNote = canWriteNote(activeNote);
   const showDesktopOutline = showOutline && !state.editorFullscreen;
 
@@ -145,13 +150,13 @@ export default function EditorPane() {
   }, [activeNote?.id, actions, t]);
 
   useEffect(() => subscribeOpenInternalNoteLink(async ({ noteId }) => {
-    try {
-      const target = await api.getNote(noteId);
-      if (target) actions.setActiveNote(target);
-    } catch {
-      toast.error("目标笔记不存在、已删除或无权访问");
-    }
-  }), [actions]);
+    await loadNote({
+      noteId,
+      summary: { title: t("editor.noteLoading"), notebookId: "" },
+      request: () => api.getNote(noteId),
+      onSuccess: (target) => actions.setActiveNote(target),
+    });
+  }), [actions, loadNote, t]);
 
   // �бʼ�ʱ��ƫ��Ӧ��"�򿪼�����"��
   // ����ֻ�� activeNote.id �仯ʱ��һ�Σ������� prefs.lockOnOpen���������û���
@@ -1642,9 +1647,15 @@ const moveToTrash = useCallback(async () => {
     actions.removeNoteFromList(noteId);
     actions.removeNoteTab(noteId);
     if (nextTab) {
-      actions.setNoteLoading(true);
-      api.getNote(nextTab.id)
-        .then((nextNote) => {
+      void loadNote({
+        noteId: nextTab.id,
+        summary: {
+          title: nextTab.title || t("editorTabs.noTitle"),
+          notebookId: nextTab.notebookId,
+          contentFormat: nextTab.contentFormat,
+        },
+        request: () => api.getNote(nextTab.id),
+        onSuccess: (nextNote) => {
           actions.setActiveNote(nextNote);
           actions.openNoteTab({
             id: nextNote.id,
@@ -1656,9 +1667,8 @@ const moveToTrash = useCallback(async () => {
             isTrashed: nextNote.isTrashed,
             updatedAt: nextNote.updatedAt,
           });
-        })
-        .catch(console.error)
-        .finally(() => actions.setNoteLoading(false));
+        },
+      });
     }
     api.updateNote(noteId, { isTrashed: 1 } as any)
       .then(() => {
@@ -1668,27 +1678,17 @@ const moveToTrash = useCallback(async () => {
         actions.refreshNotes();
       })
       .catch(console.error);
-  }, [activeNote, actions, state.openNoteTabs, userPrefs.enableNoteTabs]);
+  }, [activeNote, actions, loadNote, state.openNoteTabs, t, userPrefs.enableNoteTabs]);
 
   // BLOCK-LINKS-JUMP-01: 打开笔记回调（用于笔记引用跳转）
   const handleOpenNote = useCallback(async (noteId: string) => {
-    try {
-      const note = await api.getNote(noteId);
-      if (note) {
-        actions.setActiveNote(note);
-      }
-    } catch (err: any) {
-      console.error("Failed to open note:", err);
-      const msg = err?.message || "";
-      if (msg.includes("not found") || msg.includes("404")) {
-        toast.error(t("noteLink.noteNotFound", { defaultValue: "笔记不存在或已删除" }));
-      } else if (msg.includes("forbidden") || msg.includes("403")) {
-        toast.error(t("noteLink.noPermission", { defaultValue: "无权访问该笔记" }));
-      } else {
-        toast.error(t("noteLink.openFailed", { defaultValue: "打开笔记失败" }));
-      }
-    }
-  }, [actions, t]);
+    await loadNote({
+      noteId,
+      summary: { title: t("editor.noteLoading"), notebookId: "" },
+      request: () => api.getNote(noteId),
+      onSuccess: (note) => actions.setActiveNote(note),
+    });
+  }, [actions, loadNote, t]);
 
   const handleTagsChange = useCallback((tags: Tag[]) => {
     if (!activeNote) return;
@@ -2063,32 +2063,15 @@ const moveToTrash = useCallback(async () => {
   // �ڵ���ʼ��б������ݻ�û����ǰ��ʾ����̬
   if (noteLoading && !activeNote) {
     return (
-      <div className="flex-1 flex flex-col bg-app-bg overflow-hidden transition-colors">
-        {/* 未读消息数 */}
-        <div className="flex items-center gap-3 px-6 py-4 border-b border-app-border">
-          <div className="h-7 w-48 rounded-md bg-app-hover animate-pulse" />
-          <div className="ml-auto flex items-center gap-2">
-            <div className="h-7 w-7 rounded-md bg-app-hover animate-pulse" />
-            <div className="h-7 w-7 rounded-md bg-app-hover animate-pulse" />
-          </div>
-        </div>
-        {/* 未读消息数 */}
-        <div className="flex-1 px-6 py-6 space-y-4">
-          <div className="h-8 w-3/5 rounded-md bg-app-hover animate-pulse" />
-          <div className="space-y-3 mt-6">
-            <div className="h-4 w-full rounded bg-app-hover animate-pulse" />
-            <div className="h-4 w-11/12 rounded bg-app-hover animate-pulse" />
-            <div className="h-4 w-4/5 rounded bg-app-hover animate-pulse" />
-            <div className="h-4 w-full rounded bg-app-hover animate-pulse" />
-            <div className="h-4 w-3/4 rounded bg-app-hover animate-pulse" />
-          </div>
-          <div className="space-y-3 mt-4">
-            <div className="h-4 w-full rounded bg-app-hover animate-pulse" />
-            <div className="h-4 w-5/6 rounded bg-app-hover animate-pulse" />
-            <div className="h-4 w-2/3 rounded bg-app-hover animate-pulse" />
-          </div>
-        </div>
-      </div>
+      <NoteLoadingSkeleton
+        state={noteLoadingState}
+        onRetry={() => { void retryNoteLoad(); }}
+        onBack={() => actions.setMobileView("list")}
+        loadingLabel={t("editor.noteLoading")}
+        errorTitle={t("noteList.loadErrorTitle")}
+        errorDescription={t("noteList.loadErrorDesc")}
+        retryLabel={t("noteList.retryLoad")}
+      />
     );
   }
 
@@ -2167,23 +2150,30 @@ const moveToTrash = useCallback(async () => {
       key={activeNote.id}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{ duration: 0.15 }}
+      transition={{ duration: reduceMotion ? 0 : 0.15 }}
       className="flex-1 flex flex-col bg-app-bg overflow-hidden transition-colors relative"
     >
       {/* �ʼ��л� loading ���� */}
       <AnimatePresence>
         {noteLoading && (
           <motion.div
+            key={`note-loading-${noteLoadingState.requestId}`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.12 }}
-            className="absolute inset-0 z-50 flex items-center justify-center bg-app-bg/60 backdrop-blur-[2px]"
+            transition={{ duration: reduceMotion ? 0 : 0.14, ease: "easeOut" }}
+            className="absolute inset-0 z-50"
           >
-            <div className="flex flex-col items-center gap-3">
-              <Loader2 size={24} className="animate-spin text-accent-primary" />
-              <span className="text-xs text-tx-tertiary">{t('editor.noteLoading')}</span>
-            </div>
+            <NoteLoadingSkeleton
+              mode="overlay"
+              state={noteLoadingState}
+              onRetry={() => { void retryNoteLoad(); }}
+              onBack={() => actions.setMobileView("list")}
+              loadingLabel={t("editor.noteLoading")}
+              errorTitle={t("noteList.loadErrorTitle")}
+              errorDescription={t("noteList.loadErrorDesc")}
+              retryLabel={t("noteList.retryLoad")}
+            />
           </motion.div>
         )}
       </AnimatePresence>

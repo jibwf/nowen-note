@@ -2,7 +2,6 @@ import { realtime } from "@/lib/realtime";
 import {
   SYNC_SNAPSHOT_APPLIED_EVENT,
   syncNow,
-  type SyncSummary,
 } from "@/lib/syncEngine";
 
 const INSTALL_KEY = "__NOWEN_WORKSPACE_REFRESH_BRIDGE__" as const;
@@ -14,6 +13,8 @@ type BridgeWindow = Window & typeof globalThis & {
   [INSTALL_KEY]?: () => void;
 };
 
+type RefreshResult = Awaited<ReturnType<typeof syncNow>>;
+
 type RefreshReason =
   | "manual"
   | "window-focus"
@@ -22,7 +23,7 @@ type RefreshReason =
   | "pageshow"
   | "sync-snapshot";
 
-let refreshPromise: Promise<ReturnType<typeof syncNow> extends Promise<infer T> ? T : never> | null = null;
+let refreshPromise: Promise<RefreshResult> | null = null;
 let lastAutomaticRefreshAt = 0;
 let lastSnapshotAnnouncementAt = 0;
 let backgroundedAt = 0;
@@ -85,7 +86,8 @@ function setButtonsBusy(busy: boolean): void {
 async function showToast(kind: "success" | "error", message: string): Promise<void> {
   try {
     const { toast } = await import("@/lib/toast");
-    toast[kind](message);
+    if (kind === "success") toast.success(message);
+    else toast.error(message);
   } catch {
     // Toast is a progressive enhancement. Refresh must still complete if the
     // notification chunk cannot be loaded.
@@ -95,7 +97,7 @@ async function showToast(kind: "success" | "error", message: string): Promise<vo
 export async function refreshWorkspaceCollections(
   reason: RefreshReason = "manual",
   options: { notify?: boolean; force?: boolean } = {},
-) {
+): Promise<RefreshResult | null> {
   if (!isMainAppRoute() || !isAuthenticated()) return null;
   if (refreshPromise) return refreshPromise;
 
@@ -111,8 +113,8 @@ export async function refreshWorkspaceCollections(
   refreshPromise = syncNow()
     .then(async (result) => {
       // syncNow normally dispatches SYNC_SNAPSHOT_APPLIED_EVENT. Keep this direct
-      // fallback for older servers/builds and partial hot-reload sessions where the
-      // event listener may not have been installed when the snapshot completed.
+      // fallback for older builds and partial hot-reload sessions where the event
+      // listener may not have been installed when the snapshot completed.
       if (result.ok && Date.now() - lastSnapshotAnnouncementAt > 500) {
         emitCollectionRefresh(reason);
       }

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   queueLength: 0,
   queueSubscribers: new Set<(count: number) => void>(),
-  syncNow: vi.fn<() => Promise<void>>(),
+  syncNow: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -77,7 +77,7 @@ describe("useNetworkStatus recovery semantics", () => {
     mocks.queueLength = 0;
     mocks.queueSubscribers.clear();
     mocks.syncNow.mockReset();
-    mocks.syncNow.mockResolvedValue(undefined);
+    mocks.syncNow.mockResolvedValue({ ok: true, pending: 0, versionConflicts: 0 });
     setOnline(true);
     setVisibility("visible");
 
@@ -106,7 +106,9 @@ describe("useNetworkStatus recovery semantics", () => {
     expect(snapshot?.wasOffline).toBe(false);
     expect(mocks.syncNow).not.toHaveBeenCalled();
 
-    document.dispatchEvent(new Event("visibilitychange"));
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
     await settle();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -116,25 +118,32 @@ describe("useNetworkStatus recovery semantics", () => {
 
   it("signals once only after real offline changes are successfully synchronized", async () => {
     setOnline(false);
-    window.dispatchEvent(new Event("offline"));
+    await act(async () => {
+      window.dispatchEvent(new Event("offline"));
+    });
     await settle();
     expect(snapshot?.isOnline).toBe(false);
 
     await act(async () => emitQueue(2));
     mocks.syncNow.mockImplementationOnce(async () => {
       emitQueue(0);
+      return { ok: true, pending: 0, versionConflicts: 0 };
     });
 
     setOnline(true);
-    window.dispatchEvent(new Event("online"));
+    await act(async () => {
+      window.dispatchEvent(new Event("online"));
+    });
     await settle();
 
     expect(mocks.syncNow).toHaveBeenCalledTimes(1);
     expect(snapshot?.pendingCount).toBe(0);
     expect(snapshot?.wasOffline).toBe(true);
 
-    document.dispatchEvent(new Event("visibilitychange"));
-    document.dispatchEvent(new Event("visibilitychange"));
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
     await settle();
     expect(mocks.syncNow).toHaveBeenCalledTimes(1);
     expect(snapshot?.wasOffline).toBe(true);
@@ -147,16 +156,43 @@ describe("useNetworkStatus recovery semantics", () => {
 
   it("stays silent when the network recovers without offline edits", async () => {
     setOnline(false);
-    window.dispatchEvent(new Event("offline"));
+    await act(async () => {
+      window.dispatchEvent(new Event("offline"));
+    });
     await settle();
 
     setOnline(true);
-    window.dispatchEvent(new Event("online"));
+    await act(async () => {
+      window.dispatchEvent(new Event("online"));
+    });
     await settle();
 
     expect(snapshot?.isOnline).toBe(true);
     expect(snapshot?.wasOffline).toBe(false);
     expect(mocks.syncNow).not.toHaveBeenCalled();
+  });
+
+  it("does not signal success when syncNow returns ok=false", async () => {
+    setOnline(false);
+    await act(async () => {
+      window.dispatchEvent(new Event("offline"));
+      emitQueue(1);
+    });
+    await settle();
+
+    mocks.syncNow.mockImplementationOnce(async () => {
+      emitQueue(0);
+      return { ok: false, pending: 0, versionConflicts: 0, error: "snapshot failed" };
+    });
+    setOnline(true);
+    await act(async () => {
+      window.dispatchEvent(new Event("online"));
+    });
+    await settle();
+
+    expect(mocks.syncNow).toHaveBeenCalledTimes(1);
+    expect(snapshot?.pendingCount).toBe(0);
+    expect(snapshot?.wasOffline).toBe(false);
   });
 
   it("coalesces concurrent visibility probes", async () => {
@@ -165,9 +201,11 @@ describe("useNetworkStatus recovery semantics", () => {
       resolveProbe = resolve;
     }));
 
-    document.dispatchEvent(new Event("visibilitychange"));
-    document.dispatchEvent(new Event("visibilitychange"));
-    document.dispatchEvent(new Event("visibilitychange"));
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      document.dispatchEvent(new Event("visibilitychange"));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     await act(async () => {
